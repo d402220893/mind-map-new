@@ -1,0 +1,5 @@
+const e = require('electron')
+console.log('ELECTRON_VERSION', process.versions.electron)
+console.log('KEYS', Object.keys(e))
+console.log('app type', typeof e.app)
+console.log('BrowserWindow type', typeof e.BrowserWindow)

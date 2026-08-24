@@ -61,6 +61,7 @@ import xmind from 'simple-mind-map/src/parse/xmind.js'
 import markdown from 'simple-mind-map/src/parse/markdown.js'
 import { mapMutations } from 'vuex'
 import Vue from 'vue'
+import { isSheetsFile } from '@/api'
 
 // 导入
 export default {
@@ -192,7 +193,12 @@ export default {
           if (typeof data !== 'object') {
             throw new Error(this.$t('import.fileContentError'))
           }
-          this.$bus.$emit('setData', data)
+          // 多工作表文件：整体导入所有工作表
+          if (isSheetsFile(data)) {
+            this.$bus.$emit('importSheets', data)
+          } else {
+            this.$bus.$emit('setData', data)
+          }
           this.$message.success(this.$t('import.importSuccess'))
         } catch (error) {
           console.log(error)

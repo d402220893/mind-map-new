@@ -70,6 +70,11 @@
                   <el-checkbox v-model="widthConfig">{{
                     $t('export.include')
                   }}</el-checkbox>
+                  <el-checkbox
+                    v-model="exportAllSheets"
+                    style="margin-left: 12px"
+                    >导出全部工作表</el-checkbox
+                  >
                 </div>
                 <div
                   class="valueItem"
@@ -167,7 +172,8 @@ export default {
       extraText: '',
       isMobile: isMobile(),
       isFitBg: true,
-      imageFormat: 'png'
+      imageFormat: 'png',
+      exportAllSheets: true
     }
   },
   computed: {
@@ -244,13 +250,17 @@ export default {
           }`
         )
       } else if (['smm', 'json'].includes(this.exportType)) {
-        this.$bus.$emit(
-          'export',
-          this.exportType,
-          true,
-          this.fileName,
-          this.widthConfig
-        )
+        if (this.exportAllSheets) {
+          this.$bus.$emit('exportSheets', this.fileName)
+        } else {
+          this.$bus.$emit(
+            'export',
+            this.exportType,
+            true,
+            this.fileName,
+            this.widthConfig
+          )
+        }
       } else if (this.exportType === 'png') {
         this.$bus.$emit(
           'export',
