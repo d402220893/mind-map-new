@@ -620,6 +620,42 @@ export const downTypeList = [
     icon: 'iconjson',
     desc: '流行的数据交换格式，可用于再次导入'
   },
+  {
+    name: 'HTML',
+    type: 'html',
+    icon: 'iconhtml',
+    desc: '网页格式，浏览器直接打开查看思维导图'
+  },
+  {
+    name: 'OPML',
+    type: 'opml',
+    icon: 'iconopml',
+    desc: '大纲交换格式，可导入 RSS 阅读器等工具'
+  },
+  {
+    name: 'Word',
+    type: 'docx',
+    icon: 'iconword',
+    desc: 'Word文档格式，每个节点作为一段（含层级标题）'
+  },
+  {
+    name: 'PPT',
+    type: 'pptx',
+    icon: 'iconppt',
+    desc: 'PowerPoint演示文稿，含整图概览与按一级分支分页'
+  },
+  {
+    name: 'WAV',
+    type: 'wav',
+    icon: 'iconwav',
+    desc: '演示音轨（合成提示音，约8秒）'
+  },
+  {
+    name: 'MP4',
+    type: 'mp4',
+    icon: 'iconmp4',
+    desc: '演示视频（思维导图自动巡演动画，约8秒）'
+  },
 ]
 
 // 编号类型列表

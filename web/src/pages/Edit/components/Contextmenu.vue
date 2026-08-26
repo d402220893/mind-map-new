@@ -62,6 +62,33 @@
       <div class="item" @click="exec('EXPAND_ALL')">
         <span class="name">{{ $t('contextmenu.expandNodeChild') }}</span>
       </div>
+      <div class="item iconMenuItem">
+        <span class="name">{{ $t('contextmenu.nodeIcon') || '图标' }}</span>
+        <span class="el-icon-arrow-right"></span>
+        <div
+          class="subItems iconPanel listBox"
+          :class="{ isDark: isDark, showLeft: subItemsShowLeft }"
+          style="top: -10px"
+        >
+          <div
+            class="iconGroup"
+            v-for="group in allIconGroups"
+            :key="group.name"
+          >
+            <div class="iconGroupTitle">{{ group.name }}</div>
+            <div class="iconGrid">
+              <div
+                class="iconItem"
+                v-for="ic in group.list"
+                :key="ic.name"
+                v-html="getIconHtml(ic.icon)"
+                :class="{ selected: nodeHasIcon(group.type, ic.name) }"
+                @click.stop="setNodeIcon(group.type, ic.name)"
+              ></div>
+            </div>
+          </div>
+        </div>
+      </div>
       <div class="splitLine"></div>
       <div class="item danger" @click="exec('REMOVE_NODE')">
         <span class="name">{{ $t('contextmenu.deleteNode') }}</span>
@@ -188,6 +215,8 @@ import { transformToMarkdown } from 'simple-mind-map/src/parse/toMarkdown'
 import { transformToTxt } from 'simple-mind-map/src/parse/toTxt'
 import { setDataToClipboard, setImgToClipboard, copy } from '@/utils'
 import { numberTypeList, numberLevelList } from '@/config'
+import { nodeIconList } from 'simple-mind-map/src/svg/icons'
+import icon from '@/config/icon'
 
 // 右键菜单
 export default {
@@ -255,6 +284,10 @@ export default {
         })
       }
       return list
+    },
+    // 全部图标分组（simple-mind-map 内置 + 本地 config）
+    allIconGroups() {
+      return [...nodeIconList, ...icon]
     },
     insertNodeBtnDisabled() {
       return !this.node || this.node.isRoot || this.node.isGeneralization
@@ -332,7 +365,8 @@ export default {
       if (x + rect.width > window.innerWidth) {
         x = x - rect.width - 20
       }
-      this.subItemsShowLeft = x + rect.width + 150 > window.innerWidth
+      // 子菜单（含图标面板，宽约 240px）右侧空间不足时翻到左侧
+      this.subItemsShowLeft = x + rect.width + 250 > window.innerWidth
       if (y + rect.height > window.innerHeight) {
         y = window.innerHeight - rect.height - 10
       }
@@ -410,6 +444,39 @@ export default {
       this.node = ''
       this.numberType = ''
       this.numberLevel = ''
+    },
+
+    // 图标渲染：svg 字符串直接渲染，否则当 img src
+    getIconHtml(ic) {
+      return /^<svg/.test(ic) ? ic : `<img src="${ic}" />`
+    },
+
+    // 当前节点是否已挂载该图标
+    nodeHasIcon(type, name) {
+      const iconList = (this.node && this.node.getData('icon')) || []
+      return iconList.includes(type + '_' + name)
+    },
+
+    // 右键菜单图标项：点击切换节点图标（同类型替换、异类型追加、再次点击删除）
+    setNodeIcon(type, name) {
+      if (!this.node) return
+      const key = type + '_' + name
+      let iconList = this.node.getData('icon') || []
+      const index = iconList.findIndex(item => item === key)
+      if (index !== -1) {
+        iconList.splice(index, 1)
+      } else {
+        const typeIndex = iconList.findIndex(
+          item => item.split('_')[0] === type
+        )
+        if (typeIndex !== -1) {
+          iconList.splice(typeIndex, 1, key)
+        } else {
+          iconList.push(key)
+        }
+      }
+      this.node.setIcon([...iconList])
+      this.hide()
     },
 
     // 执行命令
@@ -608,6 +675,71 @@ export default {
 
       &.showLeft {
         left: -150px;
+      }
+    }
+
+    // 图标面板（hover “图标” 项时展开）：宽面板 + 图标网格
+    .iconPanel {
+      width: 240px;
+      max-height: 320px;
+      overflow-y: auto;
+      padding: 10px;
+      cursor: default;
+
+      &.showLeft {
+        left: -240px;
+      }
+
+      .iconGroup {
+        margin-bottom: 10px;
+
+        &:last-child {
+          margin-bottom: 0;
+        }
+
+        .iconGroupTitle {
+          font-size: 12px;
+          color: #909399;
+          margin-bottom: 6px;
+          font-weight: 500;
+        }
+
+        .iconGrid {
+          display: grid;
+          grid-template-columns: repeat(6, 1fr);
+          gap: 6px;
+
+          .iconItem {
+            width: 24px;
+            height: 24px;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            border-radius: 4px;
+            box-sizing: border-box;
+
+            /deep/ img {
+              width: 100%;
+              height: 100%;
+              object-fit: contain;
+            }
+
+            /deep/ svg {
+              width: 100%;
+              height: 100%;
+            }
+
+            &:hover {
+              background: #ecf5ff;
+            }
+
+            &.selected {
+              outline: 2px solid #409eff;
+              outline-offset: -2px;
+            }
+          }
+        }
       }
     }
   }

@@ -69,25 +69,6 @@
         @remove="removeSheet"
         @rename="renameSheet"
       ></SheetTabs>
-      <div
-        class="filePathBar"
-        :class="{ isDark: isDarkMode }"
-        v-if="!isZenMode"
-      >
-        <span class="fpIcon" v-if="!currentFilePath">📄</span>
-        <span class="fpStatus" v-if="!currentFilePath"
-          >未保存为文件（点击「另存为」保存到本地）</span
-        >
-        <span class="fpFile" v-else :title="currentFilePath">
-          <span class="fpName">{{ fileName }}</span>
-          <span class="fpDir">{{ fileDir }}</span>
-        </span>
-        <span class="fpSavedHint" v-if="currentFilePath">已保存</span>
-        <span class="fpSpacer"></span>
-        <span class="fpBtn" @click="doSave" title="保存到当前文件 (Ctrl+S)">保存</span>
-        <span class="fpBtn" @click="doSaveAs" title="另存为新文件">另存为</span>
-        <span class="fpBtn" @click="openWorkbook" title="打开本地文件">打开</span>
-      </div>
   </div>
 </template>
 
@@ -239,13 +220,15 @@ export default {
       prevImg: '',
       storeConfigTimer: null,
       showDragMask: false,
-      // 多工作表
-      sheets: [],
-      activeSheetId: '',
-      // 当前打开/保存的文件路径（空表示尚未保存为文件）
-      currentFilePath: ''
-    }
-  },
+// 多工作表
+        sheets: [],
+        activeSheetId: '',
+        // 当前打开/保存的文件路径（空表示尚未保存为文件）
+        currentFilePath: '',
+        // 粘贴图片时自动缩放的最长边像素（原图 <= 该值时保持原图大小）
+        imgPasteMaxEdge: 600
+      }
+    },
   computed: {
     ...mapState({
       isZenMode: state => state.localConfig.isZenMode,
@@ -320,6 +303,11 @@ export default {
     this.$bus.$on('requestSave', this.doSave)
     this.$bus.$on('requestSaveAs', this.doSaveAs)
     this.$bus.$on('requestOpen', this.openWorkbook)
+    // 工具栏“新建文件”：弹出保存对话框写入并作为单一工作表加载，并记录真实路径
+    this.$bus.$on('newWorkbook', this.newWorkbook)
+    // 全局监听剪贴板图片粘贴：仅当剪贴板包含 image 文件时拦截并预览插入，
+    // 纯文本仍交给库默认 paste 行为处理
+    window.addEventListener('paste', this.onPaste, true)
     this.webTip()
   },
   beforeDestroy() {
@@ -341,7 +329,9 @@ export default {
     this.$bus.$off('requestSave', this.doSave)
     this.$bus.$off('requestSaveAs', this.doSaveAs)
     this.$bus.$off('requestOpen', this.openWorkbook)
+    this.$bus.$off('newWorkbook', this.newWorkbook)
     window.removeEventListener('beforeunload', this.handleBeforeUnload)
+    window.removeEventListener('paste', this.onPaste, true)
     this.mindMap.destroy()
   },
   methods: {
@@ -412,6 +402,102 @@ export default {
     // 手动保存
     manualSave() {
       storeData(this.mindMap.getData(true))
+    },
+
+    // ===== 剪贴板粘贴图片到激活节点 =====
+    // 在捕获阶段监听 paste：仅当剪贴板包含 image 文件时拦截，
+    // 自动读取原图尺寸并按 imgPasteMaxEdge 等比缩放后插入节点；
+    // 纯文本粘贴仍走库默认行为，不影响日常文本输入。
+    async onPaste(e) {
+      if (!this.mindMap) return
+      const cd =
+        e.clipboardData ||
+        (e.originalEvent && e.originalEvent.clipboardData) ||
+        null
+      if (!cd || !cd.items) return
+      let imageItem = null
+      for (let i = 0; i < cd.items.length; i++) {
+        const it = cd.items[i]
+        if (it.kind === 'file' && it.type && /^image\//i.test(it.type)) {
+          imageItem = it
+          break
+        }
+      }
+      if (!imageItem) return // 非图片，走默认行为
+
+      // 节点文本编辑态（含 RichText 编辑器）：不要抢粘贴
+      const renderer = this.mindMap.renderer
+      if (renderer && renderer.textEdit && renderer.textEdit.showTextEdit)
+        return
+
+      const nodes = (renderer && renderer.activeNodeList) || []
+      if (nodes.length === 0) {
+        if (this.$message)
+          this.$message.warning('请先选中一个节点再粘贴图片')
+        return
+      }
+
+      // 抢走浏览器默认行为，避免 base64 文本被粘贴到文本框
+      e.preventDefault()
+      try {
+        const file = imageItem.getAsFile()
+        if (!file) return
+        const dataUrl = await this.readFileAsDataURL(file)
+        const { w, h } = await this.getImageNaturalSize(dataUrl)
+        const [tw, th] = this.fitImageSize(w, h, this.imgPasteMaxEdge)
+        nodes.forEach(node => {
+          node.setImage({
+            url: dataUrl,
+            title: '',
+            width: tw,
+            height: th,
+            custom: true
+          })
+        })
+        if (this.$message) {
+          this.$message.success(
+            nodes.length > 1
+              ? `已为 ${nodes.length} 个节点粘贴图片`
+              : '已粘贴图片到当前节点'
+          )
+        }
+      } catch (err) {
+        console.error('粘贴图片失败', err)
+        if (this.$message) this.$message.error('粘贴图片失败，请查看控制台')
+      }
+    },
+
+    // 读取 File/Blob 为 dataURL
+    readFileAsDataURL(blob) {
+      return new Promise((resolve, reject) => {
+        const reader = new FileReader()
+        reader.onload = () => resolve(reader.result)
+        reader.onerror = () => reject(reader.error)
+        reader.readAsDataURL(blob)
+      })
+    },
+
+    // 读取图片原始像素尺寸
+    getImageNaturalSize(src) {
+      return new Promise(resolve => {
+        const img = new Image()
+        img.onload = () =>
+          resolve({
+            w: img.naturalWidth || img.width || 0,
+            h: img.naturalHeight || img.height || 0
+          })
+        img.onerror = () => resolve({ w: 0, h: 0 })
+        img.src = src
+      })
+    },
+
+    // 等比缩放：最长边 <= maxEdge；原图更小时保持原图
+    fitImageSize(w, h, maxEdge) {
+      if (!w || !h) return [maxEdge, maxEdge]
+      const longEdge = Math.max(w, h)
+      if (longEdge <= maxEdge) return [Math.round(w), Math.round(h)]
+      const scale = maxEdge / longEdge
+      return [Math.round(w * scale), Math.round(h * scale)]
     },
 
     // 全局拦截 Ctrl/Cmd+S：桌面端交给主进程菜单命令（Ctrl+S -> 'save'）处理，
@@ -556,8 +642,12 @@ export default {
         this.$message.error('工作表文件格式不正确')
         return
       }
+      // 覆盖当前内容：清空旧文件路径、刷新标题
+      this.currentFilePath = null
+      setCurrentFilePath(null)
       this.loadSheetData(getActiveSheetData())
       this.refreshSheets()
+      this.updateTitle()
     },
 
     // ===== 文件保存 / 打开（桌面端，显示真实路径与文件名）=====
@@ -636,6 +726,65 @@ export default {
       }
     },
 
+    // 新建本地文件（来自工具栏“新建文件”/“另存为”）：弹出保存对话框写入，并作为单一工作表加载，记录真实路径
+    async newWorkbook(content) {
+      if (!window.smmApi || !window.smmApi.saveWorkbook) {
+        // 网页端无文件对话框：直接以单工作表加载，不落盘
+        const container = {
+          app: 'smm-multisheet',
+          version: 1,
+          sheets: [{ name: 'Sheet1', data: content }]
+        }
+        if (!loadSheetsContainer(container)) {
+          this.$message.error('工作表文件格式不正确')
+          return
+        }
+        this.currentFilePath = null
+        setCurrentFilePath(null)
+        this.loadSheetData(getActiveSheetData())
+        this.refreshSheets()
+        this.updateTitle()
+        return
+      }
+      try {
+        const defaultName =
+          (this.$t && this.$t('toolbar.defaultFileName')) || '思维导图.smm'
+        const container = {
+          app: 'smm-multisheet',
+          version: 1,
+          sheets: [
+            {
+              id: 'sheet_' + Date.now(),
+              name: 'Sheet1',
+              data: content
+            }
+          ]
+        }
+        const res = await window.smmApi.saveWorkbook(
+          JSON.stringify(container),
+          defaultName
+        )
+        if (res && res.canceled) return
+        if (res && res.error) {
+          this.$message.error('创建失败：' + res.error)
+          return
+        }
+        if (!loadSheetsContainer(container)) {
+          this.$message.error('工作表文件格式不正确')
+          return
+        }
+        this.currentFilePath = res.filePath
+        setCurrentFilePath(res.filePath)
+        this.loadSheetData(getActiveSheetData())
+        this.refreshSheets()
+        this.updateTitle()
+        this.$message.success('已创建：' + this.fileName)
+      } catch (err) {
+        console.error(err)
+        this.$message.error('创建失败，请查看控制台')
+      }
+    },
+
     // 更新窗口标题并触发路径显示
     updateTitle() {
       const base = '思绪思维导图'
@@ -649,7 +798,7 @@ export default {
       }
     },
 
-    // 主进程菜单命令：保存 / 另存为 / 打开
+    // 主进程菜单命令：保存 / 另存为 / 打开（.emmx 入口已移至工具栏“导入”按钮）
     handleMenuCommand(cmd) {
       if (cmd === 'save') this.doSave()
       else if (cmd === 'saveAs') this.doSaveAs()
@@ -878,13 +1027,37 @@ export default {
 
     // 导出
     async export(...args) {
+      const [type, isDownload, name, ...rest] = args
+      const EXTRA_DATA = ['html', 'opml', 'mm', 'xlsx', 'docx', 'pptx']
+      const EXTRA_MEDIA = ['wav', 'mp4']
       try {
         showLoading()
-        await this.mindMap.export(...args)
+        if (EXTRA_DATA.includes(type)) {
+          const { extraExport, downloadBlob } = await import('@/utils/exportExtra')
+          const r = await extraExport(type, this.mindMap, name)
+          if (isDownload && r && r.blob) {
+            downloadBlob(r.blob, name + '.' + r.ext)
+          }
+        } else if (EXTRA_MEDIA.includes(type)) {
+          const { exportWAV, exportMP4, downloadBlob } = await import('@/utils/exportMedia')
+          const blob =
+            type === 'wav'
+              ? await exportWAV(this.mindMap, name)
+              : await exportMP4(this.mindMap, name)
+          if (isDownload && blob) {
+            downloadBlob(blob, name + '.' + type)
+          }
+        } else {
+          await this.mindMap.export(...args)
+        }
         hideLoading()
       } catch (error) {
-        console.log(error)
+        console.error(error)
         hideLoading()
+        const msg = error && error.message ? error.message : String(error)
+        if (this.$notify) {
+          this.$notify.error('导出失败：' + msg)
+        }
       }
     },
 
@@ -1041,92 +1214,8 @@ export default {
     left: 0px;
     top: 0px;
     width: 100%;
-    bottom: 68px;
-    height: auto;
-  }
-
-  .filePathBar {
-    position: fixed;
-    left: 0;
-    right: 0;
     bottom: 38px;
-    height: 30px;
-    display: flex;
-    align-items: center;
-    padding: 0 12px;
-    background: #f2f3f5;
-    border-top: 1px solid #e4e7ed;
-    border-bottom: 1px solid #e4e7ed;
-    font-size: 12px;
-    color: #606266;
-    z-index: 2001;
-    user-select: none;
-
-    &.isDark {
-      background: #2b2f33;
-      border-color: rgba(255, 255, 255, 0.1);
-      color: rgba(255, 255, 255, 0.8);
-    }
-
-    .fpIcon {
-      margin-right: 6px;
-    }
-
-    .fpStatus {
-      color: #909399;
-    }
-
-    .fpFile {
-      display: flex;
-      align-items: baseline;
-      min-width: 0;
-      max-width: 70%;
-
-      .fpName {
-        font-weight: 600;
-        color: #303133;
-        max-width: 38vw;
-        overflow: hidden;
-        text-overflow: ellipsis;
-        white-space: nowrap;
-
-        .isDark & {
-          color: rgba(255, 255, 255, 0.95);
-        }
-      }
-
-      .fpDir {
-        margin-left: 8px;
-        color: #909399;
-        overflow: hidden;
-        text-overflow: ellipsis;
-        white-space: nowrap;
-        flex: 1;
-      }
-    }
-
-    .fpSavedHint {
-      margin-left: 8px;
-      color: #67c23a;
-    }
-
-    .fpSpacer {
-      flex: 1;
-    }
-
-    .fpBtn {
-      margin-left: 6px;
-      padding: 3px 10px;
-      border-radius: 4px;
-      cursor: pointer;
-      color: #409eff;
-      border: 1px solid transparent;
-      flex-shrink: 0;
-
-      &:hover {
-        background: rgba(64, 158, 255, 0.12);
-      }
-    }
+    height: auto;
   }
 }
 </style>

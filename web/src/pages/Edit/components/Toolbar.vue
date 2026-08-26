@@ -313,6 +313,13 @@ export default {
 
     // 加载本地文件树
     async loadFileTreeNode(node, resolve) {
+      // 桌面端无目录枚举 API，禁用文件夹树浏览，避免误导性的报错
+      if (window.__LOCAL_APP__) {
+        this.fileTreeVisible = false
+        this.$message.info('桌面版暂不支持文件夹树浏览，请使用“打开文件”')
+        resolve([])
+        return
+      }
       try {
         let dirHandle
         if (node.level === 0) {
@@ -389,6 +396,11 @@ export default {
 
     // 打开本地文件
     async openLocalFile() {
+      // 桌面端：复用 Edit.vue 的打开流程（主进程文件对话框）
+      if (window.__LOCAL_APP__ && window.smmApi && window.smmApi.openWorkbookDialog) {
+        this.$bus.$emit('requestOpen')
+        return
+      }
       try {
         let [_fileHandle] = await window.showOpenFilePicker({
           types: [
@@ -492,6 +504,11 @@ export default {
 
     // 创建本地文件
     async createLocalFile(content) {
+      // 桌面端：通过主进程文件对话框保存，并交由 Edit.vue 加载（File System Access API 在 Electron 渲染进程中不可用）
+      if (window.__LOCAL_APP__ && window.smmApi) {
+        this.$bus.$emit('newWorkbook', content)
+        return
+      }
       try {
         let _fileHandle = await window.showSaveFilePicker({
           types: [

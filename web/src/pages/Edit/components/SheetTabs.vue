@@ -11,7 +11,17 @@
         @dblclick="onRename(s)"
         @contextmenu.prevent="onContextMenu(s, $event)"
       >
-        <span class="sheetName">{{ s.name }}</span>
+        <input
+          v-if="s.id === editingId"
+          ref="renameInput"
+          class="sheetNameInput"
+          v-model="editValue"
+          @click.stop
+          @keyup.enter="commitRename"
+          @keyup.esc="cancelRename"
+          @blur="commitRename"
+        />
+        <span v-else class="sheetName">{{ s.name }}</span>
         <span
           v-if="sheets.length > 1"
           class="sheetClose"
@@ -38,6 +48,12 @@ export default {
     activeId: {
       type: String,
       default: ''
+    }
+  },
+  data() {
+    return {
+      editingId: '',
+      editValue: ''
     }
   },
   computed: {
@@ -73,21 +89,30 @@ export default {
         .catch(() => {})
     },
     onRename(s) {
-      this.$prompt('请输入工作表名称', '重命名工作表', {
-        confirmButtonText: '确定',
-        cancelButtonText: '取消',
-        inputValue: s.name,
-        inputValidator: val => {
-          if (!val || !val.trim()) {
-            return '名称不能为空'
-          }
-          return true
+      // 原地编辑：进入编辑态并聚焦输入框，不再弹 $prompt
+      this.editValue = s.name
+      this.editingId = s.id
+      this.$nextTick(() => {
+        const el = this.$refs.renameInput
+        if (el && typeof el.focus === 'function') {
+          el.focus()
+          if (typeof el.select === 'function') el.select()
         }
       })
-        .then(({ value }) => {
-          this.$emit('rename', { id: s.id, name: value.trim() })
-        })
-        .catch(() => {})
+    },
+    commitRename() {
+      // 已清空（如被 cancelRename 先行触发）则直接返回，避免重复提交
+      if (!this.editingId) return
+      const name = (this.editValue || '').trim()
+      if (name) {
+        this.$emit('rename', { id: this.editingId, name })
+      }
+      this.editingId = ''
+      this.editValue = ''
+    },
+    cancelRename() {
+      this.editingId = ''
+      this.editValue = ''
     },
     onContextMenu(s, e) {
       // 右键菜单：重命名 / 删除
@@ -210,6 +235,20 @@ export default {
       white-space: nowrap;
     }
 
+    .sheetNameInput {
+      box-sizing: border-box;
+      width: 100%;
+      height: 26px;
+      line-height: 24px;
+      padding: 0 4px;
+      border: 1px solid #409eff;
+      border-radius: 4px;
+      outline: none;
+      font-size: 13px;
+      color: #303133;
+      background: #fff;
+    }
+
     .sheetClose {
       margin-left: 6px;
       width: 16px;
@@ -258,6 +297,12 @@ export default {
 
       .sheetClose {
         color: rgba(255, 255, 255, 0.6);
+      }
+
+      .sheetNameInput {
+        color: rgba(255, 255, 255, 0.9);
+        background: #1f2326;
+        border-color: #409eff;
       }
     }
 

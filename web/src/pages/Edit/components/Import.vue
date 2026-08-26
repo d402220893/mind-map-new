@@ -4,7 +4,7 @@
       class="nodeImportDialog"
       :title="$t('import.title')"
       :visible.sync="dialogVisible"
-      width="350px"
+      width="380px"
     >
       <el-upload
         ref="upload"
@@ -25,6 +25,23 @@
           {{ $t('import.support') }}{{ supportFileStr }}{{ $t('import.file') }}
         </div>
       </el-upload>
+      <div
+        class="localImportBox"
+        :class="{ isDragOver: dragOver > 0 }"
+        v-if="isLocalApp"
+        @dragenter.prevent.stop="onDragEnter"
+        @dragover.prevent.stop="onDragOver"
+        @dragleave.prevent.stop="onDragLeave"
+        @drop.prevent.stop="onDrop"
+      >
+        <div class="localImportLabel">{{ $t('import.localFileImport') || '本地文件导入' }}</div>
+        <el-button size="small" type="primary" plain @click="handleLocalFile">
+          {{ $t('import.selectLocalFile') || '选择本地文件' }}
+        </el-button>
+        <div class="localImportTip">
+          支持 {{ supportFileStr }} 格式，可将文件<strong>拖入此区域</strong>或点击按钮，读取后自动作为新工作表载入。
+        </div>
+      </div>
       <span slot="footer" class="dialog-footer">
         <el-button @click="cancel">{{ $t('dialog.cancel') }}</el-button>
         <el-button type="primary" @click="confirm">{{
@@ -62,6 +79,7 @@ import markdown from 'simple-mind-map/src/parse/markdown.js'
 import { mapMutations } from 'vuex'
 import Vue from 'vue'
 import { isSheetsFile } from '@/api'
+import { parseEmmx } from '@/utils/parseEmmx'
 
 // 导入
 export default {
@@ -73,12 +91,17 @@ export default {
       xmindCanvasSelectDialogVisible: false,
       selectCanvas: '',
       canvasList: [],
-      mdStr: ''
+      mdStr: '',
+      dragOver: 0
     }
   },
   computed: {
     supportFileStr() {
-      return '.smm,.json,.xmind,.md'
+      // 导入入口统一支持 .smm/.json/.xmind/.md/.emmx
+      return '.smm,.json,.xmind,.md,.emmx'
+    },
+    isLocalApp() {
+      return typeof window !== 'undefined' && !!window.__LOCAL_APP__
     }
   },
   watch: {
@@ -106,7 +129,7 @@ export default {
     },
 
     getRegexp() {
-      return new RegExp(`\.(smm|json|xmind|md)$`)
+      return new RegExp(`\.(smm|json|xmind|md|emmx)$`)
     },
 
     // 检查url中是否操作需要打开的文件
@@ -130,6 +153,8 @@ export default {
           this.handleXmind(data)
         } else if (type === 'md') {
           this.handleMd(data)
+        } else if (type === 'emmx') {
+          this.handleEmmx(data)
         }
       } catch (error) {
         console.log(error)
@@ -165,6 +190,43 @@ export default {
       this.dialogVisible = false
     },
 
+    // 拖拽进入本地导入区（用计数器避免子元素反复触发 dragleave 造成的闪烁）
+    onDragEnter() {
+      this.dragOver++
+    },
+
+    // 拖拽在本地导入区上方移动时持续 preventDefault 才能触发 drop
+    onDragOver(e) {
+      e.preventDefault()
+      if (this.dragOver === 0) this.dragOver = 1
+    },
+
+    // 拖拽离开本地导入区（若完全离开 box，计数归零）
+    onDragLeave() {
+      this.dragOver = Math.max(0, this.dragOver - 1)
+    },
+
+    // 拖拽放下文件到本地导入区
+    onDrop(e) {
+      e.preventDefault()
+      this.dragOver = 0
+      const files = e.dataTransfer && e.dataTransfer.files
+      if (!files || files.length === 0) return
+      const file = files[0]
+      if (!this.getRegexp().test(file.name)) {
+        this.$message.error(
+          this.$t('import.pleaseSelect') +
+            this.supportFileStr +
+            this.$t('import.file')
+        )
+        return
+      }
+      // 复用 confirm() 现有分支：构造与 el-upload 一致的 file 对象
+      const fileObj = { raw: file, name: file.name }
+      this.fileList.push(fileObj)
+      this.confirm()
+    },
+
     // 确定
     confirm() {
       if (this.fileList.length <= 0) {
@@ -178,6 +240,8 @@ export default {
         this.handleXmind(file)
       } else if (/\.md$/.test(file.name)) {
         this.handleMd(file)
+      } else if (/\.emmx$/.test(file.name)) {
+        this.handleEmmx(file)
       }
       this.cancel()
       this.setActiveSidebar(null)
@@ -239,6 +303,84 @@ export default {
       this.selectCanvas = 0
     },
 
+    // 处理 .emmx 文件（MindManager / 亿图脑图 格式）
+    async handleEmmx(file) {
+      try {
+        const buffer = await file.raw.arrayBuffer()
+        const { trees, warning, fileName } = await parseEmmx(buffer, file.name)
+        const baseName =
+          (fileName || file.name || '思维导图')
+            .replace(/\.emmx$/i, '') || 'Sheet1'
+        // 包装成多工作表容器，发 importSheets 事件由 Edit.vue 接管
+        this.$bus.$emit('importSheets', {
+          app: 'smm-multisheet',
+          version: 1,
+          sheets: trees.map((t, i) => ({
+            name: t.name || (i === 0 ? baseName : `${baseName} (${i + 1})`),
+            data: t.tree
+          }))
+        })
+        this.$store.commit('setIsHandleLocalFile', false)
+        this.cancel()
+        this.setActiveSidebar(null)
+        if (warning) {
+          this.$message.warning(warning)
+        } else {
+          this.$message.success('已导入：' + baseName)
+        }
+      } catch (error) {
+        console.error(error)
+        this.$message.error(
+          '导入失败：' + (error && error.message ? error.message : '请查看控制台')
+        )
+      }
+    },
+
+    // 本地客户端：调用主进程通用文件选择对话框，统一导入所有支持格式
+    async handleLocalFile() {
+      if (!window.smmApi || !window.smmApi.importFileDialog) {
+        this.$message.warning('当前环境不支持本地文件导入')
+        return
+      }
+      try {
+        const exts = ['smm', 'json', 'xmind', 'md', 'emmx']
+        const res = await window.smmApi.importFileDialog(exts)
+        if (!res || res.canceled) return
+        if (res.error) {
+          this.$message.error('读取文件失败：' + res.error)
+          return
+        }
+        const fileName = res.filePath
+          ? res.filePath.split(/[\\/]/).pop()
+          : 'unknown'
+        const ext = (fileName.match(/\.([^.]+)$/) || [null, ''])[1].toLowerCase()
+        const file = {
+          name: fileName,
+          raw: new Blob([res.buffer], { type: 'application/octet-stream' })
+        }
+        this.$store.commit('setIsHandleLocalFile', false)
+        if (['smm', 'json'].includes(ext)) {
+          this.handleSmm(file)
+        } else if (ext === 'xmind') {
+          await this.handleXmind(file)
+        } else if (ext === 'md') {
+          this.handleMd(file)
+        } else if (ext === 'emmx') {
+          await this.handleEmmx(file)
+        } else {
+          this.$message.error('不支持的文件格式：' + ext)
+          return
+        }
+        this.cancel()
+        this.setActiveSidebar(null)
+      } catch (error) {
+        console.error(error)
+        this.$message.error(
+          '导入失败：' + (error && error.message ? error.message : '请查看控制台')
+        )
+      }
+    },
+
     // 处理markdown文件
     async handleMd(file) {
       let fileReader = new FileReader()
@@ -270,6 +412,41 @@ export default {
 
 <style lang="less" scoped>
 .nodeImportDialog {
+}
+
+.localImportBox {
+  margin-top: 16px;
+  padding: 12px;
+  background: rgba(64, 158, 255, 0.06);
+  border: 1px dashed rgba(64, 158, 255, 0.35);
+  border-radius: 4px;
+  transition: background 0.15s, border-color 0.15s, box-shadow 0.15s;
+  cursor: default;
+
+  &.isDragOver {
+    background: rgba(64, 158, 255, 0.18);
+    border-color: rgba(64, 158, 255, 0.9);
+    box-shadow: inset 0 0 0 2px rgba(64, 158, 255, 0.35);
+  }
+
+  .localImportLabel {
+    font-size: 12px;
+    color: rgba(26, 26, 26, 0.7);
+    margin-bottom: 8px;
+    font-weight: 500;
+  }
+
+  .localImportTip {
+    margin-top: 8px;
+    font-size: 11px;
+    color: rgba(26, 26, 26, 0.5);
+    line-height: 1.5;
+
+    strong {
+      color: rgba(64, 158, 255, 0.95);
+      font-weight: 500;
+    }
+  }
 }
 
 .canvasList {

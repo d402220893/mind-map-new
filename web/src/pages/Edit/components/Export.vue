@@ -183,17 +183,7 @@ export default {
     }),
 
     downTypeList() {
-      const list = downTypeList[this.$i18n.locale] || downTypeList.zh
-      return list.filter(item => {
-        if (item.type === 'mm') {
-          return false
-        }
-        if (item.type === 'xlsx') {
-          return false
-        } else {
-          return true
-        }
-      })
+      return downTypeList[this.$i18n.locale] || downTypeList.zh
     },
 
     currentTypeData() {
@@ -208,7 +198,19 @@ export default {
     },
 
     noOptions() {
-      return ['md', 'xmind', 'txt', 'xlsx', 'mm'].includes(this.exportType)
+      return [
+        'md',
+        'xmind',
+        'txt',
+        'xlsx',
+        'mm',
+        'html',
+        'opml',
+        'docx',
+        'pptx',
+        'wav',
+        'mp4'
+      ].includes(this.exportType)
     }
   },
   created() {
@@ -553,6 +555,30 @@ export default {
 
             &.xlsx {
               background-image: url('../../../assets/img/foramt/9.png');
+            }
+
+            &.html {
+              background-image: url('../../../assets/img/foramt/3.png');
+            }
+
+            &.opml {
+              background-image: url('../../../assets/img/foramt/7.png');
+            }
+
+            &.docx {
+              background-image: url('../../../assets/img/foramt/9.png');
+            }
+
+            &.pptx {
+              background-image: url('../../../assets/img/foramt/9.png');
+            }
+
+            &.wav {
+              background-image: url('../../../assets/img/foramt/7.png');
+            }
+
+            &.mp4 {
+              background-image: url('../../../assets/img/foramt/4.png');
             }
           }
 
