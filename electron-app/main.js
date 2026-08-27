@@ -163,6 +163,25 @@ ipcMain.handle('smm:set-title', (e, title) => {
   if (mainWindow) mainWindow.setTitle(title || '思绪思维导图')
 })
 
+// 窗口控制按钮（自定义标题栏用）
+ipcMain.handle('smm:window-minimize', () => {
+  if (mainWindow) mainWindow.minimize()
+})
+ipcMain.handle('smm:window-maximize', () => {
+  if (!mainWindow) return
+  if (mainWindow.isMaximized()) {
+    mainWindow.unmaximize()
+  } else {
+    mainWindow.maximize()
+  }
+})
+ipcMain.handle('smm:window-close', () => {
+  if (mainWindow) mainWindow.close()
+})
+ipcMain.handle('smm:window-state', () => {
+  return mainWindow ? { maximized: mainWindow.isMaximized() } : { maximized: false }
+})
+
 // =====================================================================
 // 安装向导（--install 模式）：自带的 GUI 安装器
 // 由 WinRAR SFX 的 Setup=MindMap.exe --install 拉起。
@@ -459,6 +478,8 @@ function createWindow() {
     title: '思绪思维导图',
     show: false,
     backgroundColor: '#ffffff',
+    frame: false,
+    thickFrame: true,
     webPreferences: {
       preload: path.join(APP_DIR, 'preload.js'),
       contextIsolation: true,

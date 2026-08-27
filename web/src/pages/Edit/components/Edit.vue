@@ -706,20 +706,26 @@ export default {
           return
         }
         let data
+        const raw = (res.content || '').trim()
+        if (!raw) {
+          this.$message.error('文件为空（0 字节），无法打开，请确认文件未损坏')
+          return
+        }
         try {
-          data = JSON.parse(res.content)
+          data = JSON.parse(raw)
         } catch (e) {
-          this.$message.error('文件解析失败')
+          this.$message.error('文件解析失败：内容不是合法的 JSON')
           return
         }
         if (isSheetsFile(data)) {
+          // 本应用多工作表格式
           loadSheetsContainer(data)
         } else {
-          // 旧版单张思维导图文件：作为单一工作表导入
+          // 标准 simple-mind-map 单图文件（如 {root:{...}}、{content:{root}}）：作为单一工作表导入
           loadSheetsContainer({
             app: 'smm-multisheet',
             version: 1,
-            sheets: [{ name: 'Sheet1', data }]
+            sheets: [{ name: 'Sheet1', data: this.extractMindmapData(data) }]
           })
         }
         // === 把打开的文件注册为新 workbook（而不是覆盖当前 workbook）===
@@ -911,6 +917,13 @@ export default {
           window.smmApi.setTitle(title)
         } catch (e) {}
       }
+    },
+
+    // 从各种标准 simple-mind-map 文件形状中提取思维导图数据
+    extractMindmapData(data) {
+      if (data && data.content && data.content.root) return data.content
+      if (data && data.data && data.data.root) return data.data
+      return data
     },
 
     // 主进程菜单命令：保存 / 另存为 / 打开（.emmx 入口已移至工具栏“导入”按钮）
@@ -1327,7 +1340,7 @@ export default {
   .mindMapContainer {
     position: absolute;
     left: 0px;
-    top: 32px;
+    top: 84px;
     width: 100%;
     bottom: 38px;
     height: auto;

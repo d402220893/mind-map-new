@@ -264,27 +264,67 @@ npm run dist        # = electron-builder --win --x64
 
 ### 9.4 当前交付物
 
-- `electron-app/dist-electron/思绪思维导图 Setup.exe`
-  - **大小 73.4 MB（73,381,957 字节）**，**时间戳 2026-08-27 09:23:15**（含全部 4 功能 + openWorkbook 修复 + 5 项 UI/交互修复）
-  - NSIS 签名有效（`Nullsoft Install System`）
-  - 包内已验证含修复字符串：`workbook-list-changed`×5、`fileBrand`×2、CSS `top:44px`/`backdrop-filter`×4/`linear-gradient`×15、`nodeIcon`/`nodeNote`/`FileTabs`/`showNodeNote` 均在；`51.la` 已剥离
+- **当前源码状态（2026-08-27 11:50）**：新增「自定义标题栏」改造，但**尚未构建出包**（agent shell 后端暂时不可用，需用户手动跑或等客户端重启后重跑）。
+  - 已改文件（未提交）：
+    - `electron-app/main.js`：`createWindow` 改 `frame: false` + 新增 4 个窗口控制 IPC
+    - `electron-app/preload.js`：暴露 `smmApi.windowControls`（minimize/maximize/close/getState）
+    - `web/src/pages/Edit/components/FileTabs.vue`：顶部标签栏变为标题栏，右侧加「最小化/最大化/关闭」按钮；`-webkit-app-region: drag` 支持拖动；双击空白区最大化
+    - `web/src/pages/Edit/components/Toolbar.vue`：`top` 从 `44px` 改为 `34px`（紧贴标签栏下沿）
+    - `web/src/pages/Edit/components/Edit.vue`：`.mindMapContainer` 从 `top:32px` 改为 `top:84px`（给 34px 标签栏 + ~50px 工具栏让位）
+- 目标产物（构建后）：`electron-app/dist-electron/思绪思维导图 Setup.exe`，版本号会经 `bump_version.js` 自动 `patch+1`（当前 `package.json` 已是 `1.0.1`，出包变 `1.0.2`），NSIS 覆盖安装无需手动卸载。
 - 旧的 `build/MindMap-Setup.exe`（WinRAR SFX）已弃用，不再更新。
 
 ### 9.5 Git 状态
 
-- **已提交**：`ce069d3` = `feat: 多文件工作区 + 4项功能（图标中文/去菜单栏/节点备注/openWorkbook 注册文件）`（2026-08-26，含 4 功能 + openWorkbook 修复的源码）。
-- **未提交工作区改动**（5 项 UI/交互修复 + 此前漏提的 `FileTabs.vue` 新文件）：
-  - `M web/src/pages/Edit/Index.vue`（FileTabs 引入 + bus 监听）
-  - `M web/src/pages/Edit/components/Edit.vue`（去 toast、发 bus、top:34px）
-  - `M web/src/pages/Edit/components/SheetTabs.vue`（美化）
-  - `M web/src/pages/Edit/components/Toolbar.vue`（top:44px + max-width）
-  - `M electron-app/index.html`（strip 后）
-  - `?? web/src/pages/Edit/components/FileTabs.vue`（**新文件，ce069d3 漏提**，属 4 功能核心组件，务必一并提交）
-  - `?? web/src/pages/Edit/components/_probe_import.py`（疑似误入的探针脚本，建议删除或确认）
-- ⚠️ **交接提醒**：下次接续前，先把 `FileTabs.vue`（及 5 修复）`git add` 提交，否则新克隆会缺核心文件、构建产物与源码不一致。
+- **已提交链**（截至 2026-08-27 10:31）：
+  - `45fff55` = `ui: 文件标签栏去掉品牌区，工具栏/画布回退原位`
+  - `b99408b` = `chore: 提交构建辅助脚本与依赖锁文件`
+  - `f1154eb` = `fix: 多文件工作区 5 项 UI/交互修复 + 新增 FileTabs.vue + 仓库清理`
+  - `ce069d3` = `feat: 多文件工作区 + 4项功能（图标中文/去菜单栏/节点备注/openWorkbook 注册文件）`
+- **未提交改动**（自定义标题栏 + Toolbar/画布位置 + 双格式兼容 + 版本号脚本）：
+  - `M electron-app/main.js`
+  - `M electron-app/preload.js`
+  - `M electron-app/package.json`（版本 `1.0.1`）
+  - `M web/src/pages/Edit/components/FileTabs.vue`
+  - `M web/src/pages/Edit/components/Toolbar.vue`
+  - `M web/src/pages/Edit/components/Edit.vue`
+  - `A electron-app/bump_version.js`
+- 仓库已新增 `.gitignore`，构建产物已排除；`verify_emmx.node.js` 仍为未跟踪探针。
 
-### 9.6 待用户确认 / 未决
+### 9.6 手动出包命令（原方式，不用脚本）
 
-- 5 项 UI 修复仅经构建验证（字符串/CSS 已在包内），**尚未人工在界面实测**（圆角观感、Toolbar 与 FileTabs 的精确间隙、新建/打开文件 tab 实际刷新效果）。装新 `Setup.exe` 后请用户确认。
+在 **git-bash** 中逐行执行（agent 当前 shell 后端不可用，需你本地跑）：
+
+```bash
+export ELECTRON_MIRROR=https://npmmirror.com/mirrors/electron/
+export ELECTRON_BUILDER_BINARIES_MIRROR=https://registry.npmmirror.com/-/binary/electron-builder-binaries/
+export CSC_IDENTITY_AUTO_DISCOVERY=false
+export PATH="/c/Users/d36847/.workbuddy/binaries/node/versions/22.22.2:$PATH"
+NODE=/c/Users/d36847/.workbuddy/binaries/node/versions/22.22.2/node.exe
+
+# 1. vue 生产构建
+cd /e/03_学习文件/mind-map-main/web
+BUILD_LOW_MEM=1 NODE_OPTIONS="--openssl-legacy-provider --max-old-space-size=4096" "$NODE" node_modules/@vue/cli-service/bin/vue-cli-service.js build
+
+# 2. 同步到 electron-app 并剥离 51.la
+cd /e/03_学习文件/mind-map-main
+rm -rf electron-app/dist
+cp -rf dist/. electron-app/dist/
+"$NODE" strip_index.js
+
+# 3. 版本号 +1（覆盖安装）
+cd /e/03_学习文件/mind-map-main/electron-app
+"$NODE" bump_version.js
+
+# 4. 打包 NSIS
+npm run dist
+```
+
+产物：`electron-app/dist-electron/思绪思维导图 Setup.exe`（版本 `1.0.2`）。
+
+### 9.7 待用户确认 / 未决
+
+- 自定义标题栏在 Windows 下的拖动、最大化/还原、关闭按钮、双击空白区最大化，需人工实测。
+- 标签栏上移后，Toolbar 与画布的垂直间距是否符合预期。
 - 多文件保存语义：切换文件时 `before-workbook-switch` 先 `manualSave` 写旧 workbook，再切换——需实测多文件分别保存互不串数据。
 - 安装包默认图标仍由 `nsis.installerIcon` 控制（无 rcedit 嵌入），若需 exe 本体品牌图标再单独处理。

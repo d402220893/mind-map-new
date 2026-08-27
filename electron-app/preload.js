@@ -18,6 +18,13 @@ contextBridge.exposeInMainWorld('smmApi', {
   readFile: filePath => ipcRenderer.invoke('smm:read-file', { filePath }),
   // 设置窗口标题（用于直观显示当前文件路径）
   setTitle: title => ipcRenderer.invoke('smm:set-title', title),
+  // 自定义标题栏窗口控制
+  windowControls: {
+    minimize: () => ipcRenderer.invoke('smm:window-minimize'),
+    maximize: () => ipcRenderer.invoke('smm:window-maximize'),
+    close: () => ipcRenderer.invoke('smm:window-close'),
+    getState: () => ipcRenderer.invoke('smm:window-state')
+  },
   // 导入本地文件：弹出打开对话框并读取原始字节，返回 { canceled, filePath, buffer }
   // exts: 扩展名数组，如 ['smm','json','xmind','md','emmx']
   importFileDialog: (exts, title) => ipcRenderer.invoke('smm:import-file', { exts, title }),

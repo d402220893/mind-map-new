@@ -1,6 +1,6 @@
 {
   "name": "mind-map",
-  "version": "1.0.0",
+  "version": "1.0.2",
   "description": "思绪思维导图（多工作表离线版）",
   "main": "main.js",
   "author": "Jia Hao",
@@ -32,7 +32,10 @@
     },
     "win": {
       "target": [
-        { "target": "nsis", "arch": "x64" }
+        {
+          "target": "nsis",
+          "arch": "x64"
+        }
       ],
       "icon": "appicon.ico",
       "artifactName": "${productName} Setup.${ext}",

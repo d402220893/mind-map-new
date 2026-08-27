@@ -1,5 +1,5 @@
 <template>
-  <div class="fileTabs" :class="{ isDark: isDark }">
+  <div class="fileTabs" :class="{ isDark: isDark }" @dblclick.self="onMaximize">
     <div class="fileTabsInner customScrollbar">
       <div
         v-for="w in workbooks"
@@ -34,6 +34,19 @@
       </div>
       <div class="fileAdd" title="新建文件" @click="onAdd">＋</div>
     </div>
+    <!-- 自定义标题栏窗口控制按钮（frameless 窗口用） -->
+    <div class="windowControls">
+      <div class="windowBtn minimize" title="最小化" @click="onMinimize">
+        <svg viewBox="0 0 12 12"><rect x="0" y="5.5" width="12" height="1" fill="currentColor"/></svg>
+      </div>
+      <div class="windowBtn maximize" :title="isMaximized ? '还原' : '最大化'" @click="onMaximize">
+        <svg v-if="!isMaximized" viewBox="0 0 12 12"><rect x="0.5" y="0.5" width="11" height="11" rx="1" fill="none" stroke="currentColor" stroke-width="1"/></svg>
+        <svg v-else viewBox="0 0 12 12"><path d="M2.5 2.5h7v7h-7z" fill="none" stroke="currentColor" stroke-width="1"/><path d="M2.5 4.5h-1v-3h3v1" fill="none" stroke="currentColor" stroke-width="1"/></svg>
+      </div>
+      <div class="windowBtn close" title="关闭" @click="onClose">
+        <svg viewBox="0 0 12 12"><path d="M2 2l8 8M10 2l-8 8" stroke="currentColor" stroke-width="1.2" fill="none" stroke-linecap="round"/></svg>
+      </div>
+    </div>
   </div>
 </template>
 
@@ -57,7 +70,8 @@ export default {
   data() {
     return {
       editingId: '',
-      editValue: ''
+      editValue: '',
+      isMaximized: false
     }
   },
   computed: {
@@ -65,7 +79,47 @@ export default {
       isDark: state => state.localConfig.isDark
     })
   },
+  mounted() {
+    this.updateWindowState()
+    this._onResize = () => this.updateWindowState()
+    window.addEventListener('resize', this._onResize)
+  },
+  beforeDestroy() {
+    if (this._onResize) {
+      window.removeEventListener('resize', this._onResize)
+    }
+  },
   methods: {
+    async updateWindowState() {
+      try {
+        if (window.smmApi && window.smmApi.windowControls && window.smmApi.windowControls.getState) {
+          const state = await window.smmApi.windowControls.getState()
+          this.isMaximized = !!state.maximized
+        }
+      } catch (e) {}
+    },
+    async onMinimize() {
+      try {
+        if (window.smmApi && window.smmApi.windowControls && window.smmApi.windowControls.minimize) {
+          await window.smmApi.windowControls.minimize()
+        }
+      } catch (e) {}
+    },
+    async onMaximize() {
+      try {
+        if (window.smmApi && window.smmApi.windowControls && window.smmApi.windowControls.maximize) {
+          await window.smmApi.windowControls.maximize()
+          await this.updateWindowState()
+        }
+      } catch (e) {}
+    },
+    async onClose() {
+      try {
+        if (window.smmApi && window.smmApi.windowControls && window.smmApi.windowControls.close) {
+          await window.smmApi.windowControls.close()
+        }
+      } catch (e) {}
+    },
     onSwitch(w) {
       if (w.id === this.activeId) return
       this.$emit('switch', w.id)
@@ -189,6 +243,8 @@ export default {
   display: flex;
   align-items: center;
   user-select: none;
+  // 自定义标题栏：可拖动区域
+  -webkit-app-region: drag;
 
   &.isDark {
     background: linear-gradient(180deg, rgba(36,40,44,0.92), rgba(28,32,36,0.96));
@@ -201,8 +257,9 @@ export default {
     height: 100%;
     overflow-x: auto;
     overflow-y: hidden;
-    padding: 0 8px;
+    padding: 0 120px 0 8px;
     white-space: nowrap;
+    -webkit-app-region: no-drag;
 
     &::-webkit-scrollbar {
       height: 0;
@@ -214,6 +271,7 @@ export default {
     align-items: center;
     height: 24px;
     max-width: 200px;
+    -webkit-app-region: no-drag;
     padding: 0 8px 0 10px;
     margin-right: 4px;
     border-radius: 8px;
@@ -294,10 +352,48 @@ export default {
     font-size: 16px;
     flex-shrink: 0;
     transition: background 0.15s ease, color 0.15s ease;
+    -webkit-app-region: no-drag;
 
     &:hover {
       background: rgba(64, 158, 255, 0.12);
       color: #409eff;
+    }
+  }
+
+  // 自定义标题栏窗口控制按钮
+  .windowControls {
+    position: absolute;
+    right: 0;
+    top: 0;
+    bottom: 0;
+    display: flex;
+    align-items: center;
+    -webkit-app-region: no-drag;
+    z-index: 10;
+
+    .windowBtn {
+      width: 38px;
+      height: 100%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      cursor: pointer;
+      color: rgba(60, 64, 70, 0.85);
+      transition: background 0.15s ease, color 0.15s ease;
+
+      svg {
+        width: 12px;
+        height: 12px;
+      }
+
+      &:hover {
+        background: rgba(0, 0, 0, 0.06);
+      }
+
+      &.close:hover {
+        background: #e81123;
+        color: #fff;
+      }
     }
   }
 
@@ -339,6 +435,21 @@ export default {
       &:hover {
         background: rgba(64, 158, 255, 0.18);
         color: #409eff;
+      }
+    }
+
+    .windowControls {
+      .windowBtn {
+        color: rgba(255, 255, 255, 0.75);
+
+        &:hover {
+          background: rgba(255, 255, 255, 0.1);
+        }
+
+        &.close:hover {
+          background: #e81123;
+          color: #fff;
+        }
       }
     }
   }
