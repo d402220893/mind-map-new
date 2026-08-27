@@ -7,19 +7,30 @@ const SIMPLE_MIND_MAP_DATA = 'SIMPLE_MIND_MAP_DATA'
 const SIMPLE_MIND_MAP_CONFIG = 'SIMPLE_MIND_MAP_CONFIG'
 const SIMPLE_MIND_MAP_LANG = 'SIMPLE_MIND_MAP_LANG'
 const SIMPLE_MIND_MAP_LOCAL_CONFIG = 'SIMPLE_MIND_MAP_LOCAL_CONFIG'
-// 多工作表容器存储键
+// 多工作表容器存储键（兼容旧版本：单一 workbook 时代使用）
 const SIMPLE_MIND_MAP_SHEETS = 'SIMPLE_MIND_MAP_SHEETS'
-// 最近一次保存/打开的文件路径（用于“保存”时覆盖、以及标题显示）
+// 多文件容器存储键（新：多个 workbook 同时打开）
+const SIMPLE_MIND_MAP_WORKBOOKS = 'SIMPLE_MIND_MAP_WORKBOOKS'
+// 最近一次保存/打开的文件路径（兼容旧版本；新版改为存到 workbook 内）
 const SIMPLE_MIND_MAP_LAST_FILE = 'SIMPLE_MIND_MAP_LAST_FILE'
 
 let mindMapData = null
 
 // ===== 多工作表状态管理 =====
 // sheetState 结构：{ activeId, sheets: [{ id, name, data: { root, theme, layout, config, view } }] }
+// 模块级 sheetState 始终指向当前激活 workbook 的 sheetState（切换 workbook 时重新指向）
 let sheetState = null
+
+// ===== 多文件（workbook）状态管理 =====
+// workbookState 结构：{ activeId, workbooks: [{ id, name, filePath, sheetState }] }
+let workbookState = null
 
 function uid() {
   return 'sheet-' + Date.now() + '-' + Math.floor(Math.random() * 1e6)
+}
+
+function wbUid() {
+  return 'wb-' + Date.now() + '-' + Math.floor(Math.random() * 1e6)
 }
 
 function createDefaultSheet(name) {
@@ -38,49 +49,107 @@ function createDefaultSheetState() {
   }
 }
 
-function loadSheetState() {
-  if (sheetState) return sheetState
-  const raw = localStorage.getItem(SIMPLE_MIND_MAP_SHEETS)
+function createDefaultWorkbook(name, filePath) {
+  return {
+    id: wbUid(),
+    name: name || '未命名',
+    filePath: filePath || '',
+    sheetState: createDefaultSheetState()
+  }
+}
+
+// 加载/保存 workbook 列表
+function loadWorkbookState() {
+  if (workbookState) return workbookState
+  const raw = localStorage.getItem(SIMPLE_MIND_MAP_WORKBOOKS)
   if (raw) {
     try {
       const parsed = JSON.parse(raw)
-      if (parsed && Array.isArray(parsed.sheets) && parsed.sheets.length) {
-        sheetState = parsed
-        return sheetState
+      if (
+        parsed &&
+        Array.isArray(parsed.workbooks) &&
+        parsed.workbooks.length > 0
+      ) {
+        // 兜底：每个 workbook 都需要有完整的 sheetState
+        parsed.workbooks.forEach(w => {
+          if (!w.sheetState || !Array.isArray(w.sheetState.sheets)) {
+            w.sheetState = createDefaultSheetState()
+          }
+        })
+        workbookState = parsed
+        return workbookState
       }
     } catch (e) {
-      console.warn('解析多工作表数据失败，使用默认值', e)
+      console.warn('解析多文件数据失败，使用默认', e)
     }
   }
-  // 兼容旧版本：把单个思维导图数据迁移为单个工作表
-  let data = null
-  const oldRaw = localStorage.getItem(SIMPLE_MIND_MAP_DATA)
+  // 兼容旧版本：从单个 sheetState 迁移为一个 workbook
+  let oldSheetState = null
+  const oldRaw = localStorage.getItem(SIMPLE_MIND_MAP_SHEETS)
   if (oldRaw) {
     try {
-      data = JSON.parse(oldRaw)
+      oldSheetState = JSON.parse(oldRaw)
+    } catch (e) {}
+  }
+  if (!oldSheetState || !Array.isArray(oldSheetState.sheets)) {
+    oldSheetState = createDefaultSheetState()
+  }
+  workbookState = {
+    activeId: 'wb-1',
+    workbooks: [
+      {
+        id: 'wb-1',
+        name: '未命名-1',
+        filePath: localStorage.getItem(SIMPLE_MIND_MAP_LAST_FILE) || '',
+        sheetState: oldSheetState
+      }
+    ]
+  }
+  saveWorkbookState()
+  return workbookState
+}
+
+function saveWorkbookState() {
+  if (workbookState) {
+    try {
+      localStorage.setItem(
+        SIMPLE_MIND_MAP_WORKBOOKS,
+        JSON.stringify(workbookState)
+      )
     } catch (e) {
-      data = null
+      console.warn('保存多文件数据失败', e)
     }
   }
-  if (!data) {
-    data = simpleDeepClone(exampleData)
-  }
-  const sheet = {
-    id: uid(),
-    name: 'Sheet1',
-    data
-  }
-  sheetState = {
-    activeId: sheet.id,
-    sheets: [sheet]
-  }
-  saveSheetState()
+}
+
+// sheetState 的加载/保存改为始终指向当前激活 workbook
+function loadSheetState() {
+  if (sheetState) return sheetState
+  const wbState = loadWorkbookState()
+  const activeWb =
+    wbState.workbooks.find(w => w.id === wbState.activeId) ||
+    wbState.workbooks[0]
+  sheetState = activeWb.sheetState
   return sheetState
 }
 
 function saveSheetState() {
   if (sheetState) {
-    localStorage.setItem(SIMPLE_MIND_MAP_SHEETS, JSON.stringify(sheetState))
+    // 同步写回当前激活 workbook 的 sheetState
+    const wbState = loadWorkbookState()
+    const activeWb = wbState.workbooks.find(
+      w => w.id === wbState.activeId
+    )
+    if (activeWb) {
+      activeWb.sheetState = sheetState
+    }
+    try {
+      localStorage.setItem(
+        SIMPLE_MIND_MAP_SHEETS,
+        JSON.stringify(sheetState)
+      )
+    } catch (e) {}
+    saveWorkbookState()
   }
 }
 
@@ -343,18 +412,33 @@ export const isSheetsFile = data => {
   )
 }
 
-// 获取最近一次保存/打开的文件路径（空字符串表示尚未保存为文件）
+// 获取当前激活 workbook 的文件路径（空字符串表示尚未保存为文件）
 export const getCurrentFilePath = () => {
   try {
+    const wbState = loadWorkbookState()
+    const activeWb = wbState.workbooks.find(
+      w => w.id === wbState.activeId
+    )
+    if (activeWb && activeWb.filePath) return activeWb.filePath
+    // 兜底：旧版本独立存储的文件路径
     return localStorage.getItem(SIMPLE_MIND_MAP_LAST_FILE) || ''
   } catch (e) {
     return ''
   }
 }
 
-// 记录最近一次保存/打开的文件路径
+// 记录当前激活 workbook 的文件路径
 export const setCurrentFilePath = p => {
   try {
+    const wbState = loadWorkbookState()
+    const activeWb = wbState.workbooks.find(
+      w => w.id === wbState.activeId
+    )
+    if (activeWb) {
+      activeWb.filePath = p || ''
+    }
+    saveWorkbookState()
+    // 兼容旧版本：同步写到独立存储键
     if (p) {
       localStorage.setItem(SIMPLE_MIND_MAP_LAST_FILE, p)
     } else {
@@ -362,3 +446,158 @@ export const setCurrentFilePath = p => {
     }
   } catch (e) {}
 }
+
+// ===== 多文件（workbook）管理接口 =====
+
+// 获取文件列表与激活项：{ activeId, workbooks: [{ id, name, filePath }] }
+export const getWorkbookList = () => {
+  const wbState = loadWorkbookState()
+  return {
+    activeId: wbState.activeId,
+    workbooks: wbState.workbooks.map(w => ({
+      id: w.id,
+      name: w.name,
+      filePath: w.filePath
+    }))
+  }
+}
+
+// 获取当前激活 workbook 的 id
+export const getActiveWorkbookId = () => {
+  const wbState = loadWorkbookState()
+  return wbState.activeId
+}
+
+// 切换到指定 workbook：先把当前 sheetState 写回旧 workbook，再把目标 workbook 的 sheetState 装载为模块变量
+export const switchWorkbook = id => {
+  const wbState = loadWorkbookState()
+  const target = wbState.workbooks.find(w => w.id === id)
+  if (!target || id === wbState.activeId) return false
+  // 写回旧 workbook
+  const oldWb = wbState.workbooks.find(w => w.id === wbState.activeId)
+  if (oldWb && sheetState) {
+    oldWb.sheetState = sheetState
+  }
+  wbState.activeId = id
+  // 指向新 workbook 的 sheetState（直接引用对象，便于切换工作表后保存能写回 workbook）
+  sheetState = target.sheetState
+  try {
+    localStorage.setItem(
+      SIMPLE_MIND_MAP_SHEETS,
+      JSON.stringify(sheetState)
+    )
+  } catch (e) {}
+  saveWorkbookState()
+  return true
+}
+
+// 新增一个 workbook（可选携带初始 sheetState 与 filePath），并切换为激活
+// skipOldWriteback=true 时不会把当前 module-level sheetState 写回旧 workbook
+// —— 用于"打开文件"场景：module-level 已被新文件数据覆盖，不应回写到旧 workbook
+export const addWorkbook = ({ name, filePath, sheetState: initialSheetState, skipOldWriteback = false } = {}) => {
+  const wbState = loadWorkbookState()
+  const newWb = {
+    id: wbUid(),
+    name: name || `未命名-${wbState.workbooks.length + 1}`,
+    filePath: filePath || '',
+    sheetState: initialSheetState || createDefaultSheetState()
+  }
+  wbState.workbooks.push(newWb)
+  // 把当前 sheetState 写回旧 workbook（保持数据一致）
+  // skipOldWriteback=true 时跳过：调用方自己负责旧 workbook 的数据持久化
+  if (!skipOldWriteback) {
+    const oldWb = wbState.workbooks.find(w => w.id === wbState.activeId)
+    if (oldWb && sheetState) {
+      oldWb.sheetState = sheetState
+    }
+  }
+  wbState.activeId = newWb.id
+  sheetState = newWb.sheetState
+  try {
+    localStorage.setItem(
+      SIMPLE_MIND_MAP_SHEETS,
+      JSON.stringify(sheetState)
+    )
+  } catch (e) {}
+  saveWorkbookState()
+  return { id: newWb.id, name: newWb.name, filePath: newWb.filePath }
+}
+
+// 关闭 workbook：至少保留一个；关闭最后一个时新建一个空的替换
+export const removeWorkbook = id => {
+  const wbState = loadWorkbookState()
+  if (wbState.workbooks.length <= 1) {
+    const newWb = createDefaultWorkbook('未命名-1')
+    const oldId = wbState.workbooks[0].id
+    wbState.workbooks = [newWb]
+    wbState.activeId = newWb.id
+    sheetState = newWb.sheetState
+    try {
+      localStorage.setItem(
+        SIMPLE_MIND_MAP_SHEETS,
+        JSON.stringify(sheetState)
+      )
+    } catch (e) {}
+    saveWorkbookState()
+    return { removed: oldId, newActiveId: newWb.id }
+  }
+  const idx = wbState.workbooks.findIndex(w => w.id === id)
+  if (idx === -1) return null
+  wbState.workbooks.splice(idx, 1)
+  if (wbState.activeId === id) {
+    const newActive = wbState.workbooks[Math.max(0, idx - 1)]
+    wbState.activeId = newActive.id
+    sheetState = newActive.sheetState
+    try {
+      localStorage.setItem(
+        SIMPLE_MIND_MAP_SHEETS,
+        JSON.stringify(sheetState)
+      )
+    } catch (e) {}
+  }
+  saveWorkbookState()
+  return { removed: id, newActiveId: wbState.activeId }
+}
+
+// 重命名 workbook
+export const renameWorkbook = (id, name) => {
+  if (!name) return
+  const wbState = loadWorkbookState()
+  const w = wbState.workbooks.find(w => w.id === id)
+  if (w) {
+    w.name = name
+    saveWorkbookState()
+  }
+}
+
+// 直接覆盖当前激活 workbook 的 sheetState（用于从文件载入新内容）
+export const setActiveWorkbookSheetState = newSheetState => {
+  const wbState = loadWorkbookState()
+  const activeWb = wbState.workbooks.find(
+    w => w.id === wbState.activeId
+  )
+  if (activeWb && newSheetState) {
+    activeWb.sheetState = newSheetState
+    sheetState = newSheetState
+    try {
+      localStorage.setItem(
+        SIMPLE_MIND_MAP_SHEETS,
+        JSON.stringify(sheetState)
+      )
+    } catch (e) {}
+    saveWorkbookState()
+  }
+}
+
+// 把当前激活 workbook 的 sheetState 拷贝一份返回（切换前持久化用）
+export const getActiveWorkbookSheetState = () => {
+  const wbState = loadWorkbookState()
+  const activeWb = wbState.workbooks.find(
+    w => w.id === wbState.activeId
+  )
+  return activeWb ? activeWb.sheetState : null
+}
+
+// 获取当前 module-level sheetState（与激活 workbook 的 sheetState 共享引用）
+// 用于：刚通过 loadSheetsContainer 载入新数据后，把该数据作为新 workbook 的初始内容
+export const getCurrentSheetState = () => sheetState

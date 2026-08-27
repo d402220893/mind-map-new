@@ -135,6 +135,8 @@ export default {
     number: '將其子節點編號',
     expandNodeChild: '展開所有下級節點',
     unExpandNodeChild: '收起所有下級節點',
+    nodeIcon: '圖標',
+    nodeNote: '備註',
     addToDo: '添加待辦',
     removeToDo: '刪除待辦',
     aiCreate: 'AI續寫',

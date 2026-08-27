@@ -448,45 +448,8 @@ ipcMain.handle('install:quit', () => {
 })
 
 function createWindow() {
-  // 自定义菜单：含“文件”菜单（打开/保存/另存为），避免 Electron 默认菜单用 Ctrl+S 弹出“另存为”抢走组合键
-  const template = [
-    {
-      label: '文件',
-      submenu: [
-        { label: '打开', accelerator: 'Ctrl+O', click: () => sendCmd('open') },
-        { label: '保存', accelerator: 'Ctrl+S', click: () => sendCmd('save') },
-        { label: '另存为', click: () => sendCmd('saveAs') },
-        { type: 'separator' },
-        { role: 'quit', label: '退出' }
-      ]
-    },
-    {
-      label: '视图',
-      submenu: [
-        { role: 'reload' },
-        { role: 'toggleDevTools' },
-        { type: 'separator' },
-        { role: 'resetZoom' },
-        { role: 'zoomIn' },
-        { role: 'zoomOut' },
-        { type: 'separator' },
-        { role: 'togglefullscreen' }
-      ]
-    },
-    {
-      label: '帮助',
-      submenu: [
-        {
-          label: '关于',
-          click: () =>
-            dialog.showMessageBox(mainWindow, {
-              message: '思绪思维导图（多工作表离线版）'
-            })
-        }
-      ]
-    }
-  ]
-  Menu.setApplicationMenu(Menu.buildFromTemplate(template))
+  // 隐藏原生菜单栏（文件/视图/帮助），UI 操作改由前端 Toolbar 与 FileTabs 完成
+  Menu.setApplicationMenu(null)
 
   mainWindow = new BrowserWindow({
     width: 1400,

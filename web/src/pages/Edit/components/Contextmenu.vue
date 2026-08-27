@@ -62,6 +62,9 @@
       <div class="item" @click="exec('EXPAND_ALL')">
         <span class="name">{{ $t('contextmenu.expandNodeChild') }}</span>
       </div>
+      <div class="item" @click="addOrEditNote">
+        <span class="name">{{ $t('contextmenu.nodeNote') }}</span>
+      </div>
       <div class="item iconMenuItem">
         <span class="name">{{ $t('contextmenu.nodeIcon') || '图标' }}</span>
         <span class="el-icon-arrow-right"></span>
@@ -579,6 +582,13 @@ export default {
     // AI续写
     aiCreate() {
       this.$bus.$emit('ai_create_part', this.node)
+      this.hide()
+    },
+
+    // 添加/编辑备注：触发 NodeNote 弹窗（已有备注则编辑，无则新增）
+    addOrEditNote() {
+      if (!this.node) return
+      this.$bus.$emit('showNodeNote', this.node)
       this.hide()
     }
   }

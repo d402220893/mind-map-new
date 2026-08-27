@@ -138,6 +138,8 @@ export default {
     number: 'Number child nodes',
     expandNodeChild: 'Expand all sub nodes',
     unExpandNodeChild: 'Un expand all sub nodes',
+    nodeIcon: 'Icon',
+    nodeNote: 'Note',
     addToDo: 'Add toDo',
     removeToDo: 'Remove toDo',
     aiCreate: 'AI Continuation',

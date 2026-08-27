@@ -305,6 +305,11 @@ export default {
     this.$bus.$on('requestOpen', this.openWorkbook)
     // 工具栏“新建文件”：弹出保存对话框写入并作为单一工作表加载，并记录真实路径
     this.$bus.$on('newWorkbook', this.newWorkbook)
+    // FileTabs 上的“+”新建：与工具栏“新建”复用同一弹窗逻辑
+    this.$bus.$on('newWorkbookFromTabs', this.newWorkbookFromTabs)
+    // 顶部 FileTabs 切换文件：先保存当前 mind map，再载入新 workbook 的数据
+    this.$bus.$on('before-workbook-switch', this.beforeWorkbookSwitch)
+    this.$bus.$on('workbook-switched', this.onWorkbookSwitched)
     // 全局监听剪贴板图片粘贴：仅当剪贴板包含 image 文件时拦截并预览插入，
     // 纯文本仍交给库默认 paste 行为处理
     window.addEventListener('paste', this.onPaste, true)
@@ -330,6 +335,9 @@ export default {
     this.$bus.$off('requestSaveAs', this.doSaveAs)
     this.$bus.$off('requestOpen', this.openWorkbook)
     this.$bus.$off('newWorkbook', this.newWorkbook)
+    this.$bus.$off('newWorkbookFromTabs', this.newWorkbookFromTabs)
+    this.$bus.$off('before-workbook-switch', this.beforeWorkbookSwitch)
+    this.$bus.$off('workbook-switched', this.onWorkbookSwitched)
     window.removeEventListener('beforeunload', this.handleBeforeUnload)
     window.removeEventListener('paste', this.onPaste, true)
     this.mindMap.destroy()
@@ -714,11 +722,27 @@ export default {
             sheets: [{ name: 'Sheet1', data }]
           })
         }
+        // === 把打开的文件注册为新 workbook（而不是覆盖当前 workbook）===
+        // module-level sheetState 此时已是新文件数据。
+        // skipOldWriteback:true 防止 addWorkbook 把新数据回写到旧 workbook，覆盖用户当前编辑。
+        // 旧 workbook 的数据已通过前面的 manualSave 同步到其 sheetState（同一对象引用）。
+        const baseName = (res.filePath || '未命名')
+          .split(/[\\/]/)
+          .pop()
+          .replace(/\.smm$/i, '')
+        const { addWorkbook, getCurrentSheetState } = await import('@/api')
+        addWorkbook({
+          name: baseName || '未命名',
+          filePath: res.filePath,
+          sheetState: getCurrentSheetState(),
+          skipOldWriteback: true
+        })
         this.currentFilePath = res.filePath
         setCurrentFilePath(res.filePath)
         this.loadSheetData(getActiveSheetData())
         this.refreshSheets()
         this.updateTitle()
+        this.$emit('workbook-updated')
         this.$message.success('已打开：' + this.fileName)
       } catch (err) {
         console.error(err)
@@ -785,6 +809,97 @@ export default {
       }
     },
 
+    // FileTabs 上的“+”新建文件：弹保存对话框、创建新 workbook 并切换为激活
+    async newWorkbookFromTabs() {
+      // 先把当前 mind map 数据落盘到当前 workbook（保持当前 workbook 完整）
+      this.manualSave()
+      // 直接以当前 mind map 数据作为新 workbook 的内容（用户也可以后续编辑）
+      const currentData = this.mindMap ? this.mindMap.getData(true) : null
+      if (!window.smmApi || !window.smmApi.saveWorkbook) {
+        // 网页端：直接新建一个内存 workbook 并切换
+        const { addWorkbook } = await import('@/api')
+        addWorkbook({ name: '未命名', filePath: '' })
+        this.loadSheetData(getActiveSheetData())
+        this.refreshSheets()
+        this.currentFilePath = ''
+        setCurrentFilePath('')
+        this.updateTitle()
+        this.$emit('workbook-updated')
+        return
+      }
+      try {
+        const defaultName =
+          (this.$t && this.$t('toolbar.defaultFileName')) || '思维导图.smm'
+        const container = {
+          app: 'smm-multisheet',
+          version: 1,
+          sheets: [
+            {
+              id: 'sheet_' + Date.now(),
+              name: 'Sheet1',
+              data: currentData || {}
+            }
+          ]
+        }
+        const res = await window.smmApi.saveWorkbook(
+          JSON.stringify(container),
+          defaultName
+        )
+        if (res && res.canceled) return
+        if (res && res.error) {
+          this.$message.error('创建失败：' + res.error)
+          return
+        }
+        // 在 API 层新建一个 workbook 并切换为激活
+        const { addWorkbook } = await import('@/api')
+        const baseName = (res.filePath || defaultName)
+          .split(/[\\/]/)
+          .pop()
+          .replace(/\.smm$/i, '')
+        addWorkbook({
+          name: baseName || '未命名',
+          filePath: res.filePath,
+          sheetState: {
+            activeId: container.sheets[0].id,
+            sheets: container.sheets.map(s => ({
+              id: s.id,
+              name: s.name,
+              data: s.data
+            }))
+          }
+        })
+        // 切换 mind map 到新 workbook
+        this.loadSheetData(getActiveSheetData())
+        this.refreshSheets()
+        this.currentFilePath = res.filePath
+        setCurrentFilePath(res.filePath)
+        this.updateTitle()
+        this.$message.success('已创建：' + this.fileName)
+        this.$emit('workbook-updated')
+      } catch (err) {
+        console.error(err)
+        this.$message.error('创建失败，请查看控制台')
+      }
+    },
+
+    // FileTabs 切换文件前：把当前 mind map 数据持久化到当前 workbook
+    // 必须在 API 切换 sheetState 之前调用，否则会写到新 workbook
+    beforeWorkbookSwitch() {
+      if (this.mindMap) {
+        this.manualSave()
+      }
+    },
+
+    // FileTabs 切换文件：API 已把 sheetState 指向新 workbook，这里只需载入到 mind map 实例
+    onWorkbookSwitched() {
+      if (!this.mindMap) return
+      this.loadSheetData(getActiveSheetData())
+      this.refreshSheets()
+      this.currentFilePath = getCurrentFilePath()
+      this.updateTitle()
+      this.$message.success('已切换文件')
+    },
+
     // 更新窗口标题并触发路径显示
     updateTitle() {
       const base = '思绪思维导图'
@@ -844,7 +959,7 @@ export default {
             this.$bus.$emit('showNoteContent', content, left, top, node)
           },
           hide: () => {
-            // this.$bus.$emit('hideNoteContent')
+            this.$bus.$emit('hideNoteContent')
           }
         },
         openRealtimeRenderOnNodeTextEdit: true,
@@ -1212,7 +1327,7 @@ export default {
   .mindMapContainer {
     position: absolute;
     left: 0px;
-    top: 0px;
+    top: 32px;
     width: 100%;
     bottom: 38px;
     height: auto;

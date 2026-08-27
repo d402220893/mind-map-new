@@ -139,6 +139,8 @@ export default {
     number: 'Đánh số các nút con',
     expandNodeChild: 'Mở rộng tất cả nút con',
     unExpandNodeChild: 'Thu gọn tất cả nút con',
+    nodeIcon: 'Biểu tượng',
+    nodeNote: 'Ghi chú',
     addToDo: 'Thêm việc cần làm',
     removeToDo: 'Xóa việc cần làm',
     aiCreate: 'AI Tiếp tục',
