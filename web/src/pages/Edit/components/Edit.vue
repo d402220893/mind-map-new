@@ -1340,9 +1340,9 @@ export default {
   .mindMapContainer {
     position: absolute;
     left: 0px;
-    top: 84px;
+    top: 0;
     width: 100%;
-    bottom: 38px;
+    bottom: 40px;
     height: auto;
   }
 }

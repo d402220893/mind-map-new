@@ -256,7 +256,8 @@ export default {
   padding: 0 12px;
   position: fixed;
   right: 20px;
-  bottom: 20px;
+  /* 留出底部 SheetTabs 高度(40px) + 10px 间距，避免被切掉一半 */
+  bottom: 50px;
   background: hsla(0, 0%, 100%, 0.8);
   border-radius: 5px;
   opacity: 0.8;

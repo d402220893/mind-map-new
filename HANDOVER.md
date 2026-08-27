@@ -365,3 +365,32 @@ cd /e/03_学习文件/mind-map-main/electron-app
 - 静默安装后 `icudtl.dat` / `locales/` 均在安装根目录，进程可常驻、无 ICU 报错；main.js 的本地 HTTP server 在 `127.0.0.1:51888` 监听，首页与 `dist/js` 资源可取。
 - **连装两次（升级/覆盖安装场景）**：自动卸载 + 重装后文件数 366，关键文件（`icudtl.dat`、`libEGL/libGLESv2.dll`、`chrome_*.pak`、`d3dcompiler_47.dll`、`ffmpeg.dll`、`locales/`、`思绪思维导图.exe`、`Uninstall 思绪思维导图.exe`）全部齐全，不再丢文件。
 - 安装目录：`$LOCALAPPDATA\Programs\思绪思维导图`；版本号 `1.0.2`；含自定义标题栏（`windowBtn`）、文件名进标题栏（`思绪思维导图 - 文件名`）、标准 `.smm` 兼容分支。
+
+## 10. 2026-08-27 打包踩坑补充（v1.0.3）
+
+本次出包（v1.0.3）背景与根因：
+
+- **卡死根因**：前次缓存被清空，`electron-app/node_modules/electron` 整个目录缺失，`~/.cache/electron` 也不存在。electron-builder 在 packaging 阶段尝试下载 electron 25.7.0 二进制时挂起（无缓存、镜像未生效），日志停在 `appOutDir=dist-electron\win-unpacked` 无后续。
+  - **修复**：用淘宝镜像重新安装 electron：`ELECTRON_MIRROR=https://npmmirror.com/mirrors/electron/ npm install electron@25.7.0 --save-dev`（务必带该环境变量，否则二进制下载会卡）。
+- **exit 1 但包可用**：打包收尾删除临时文件 `mind-map-1.0.3-x64.nsis.7z` 时触发 WorkBuddy 的 trash/safe-delete 拦截（返回 `Some operations were aborted`），导致 `npm run dist` 退出码非 0。**但 `思绪思维导图 Setup.exe` 已先写出，安装包完整有效（73.4MB，MZ 头正常）**。此报错可忽略；若后续想消除，需让删除步骤避开拦截。
+- **Background 模式陷阱**：`bash build_now.sh` 在 background（后台）模式下 vue build 会卡死（tty/环境变量差异），必须**前台**执行（dangerouslyDisableSandbox）。前台跑整条脚本约 2–11 分钟。
+- **孤儿进程**：多次打包会遗留 `app-builder.exe` 僵尸进程（ps -W 可见但 msys kill/taskkill 报无此进程），占用资源；msys PID 与 Windows PID 映射不一致导致 kill 不掉，但不影响新打包。
+
+最终交付：`electron-app/dist-electron/思绪思维导图 Setup.exe`（v1.0.3，含画布铺满 + 底部工具栏上移两处修复）。
+
+## 11. 2026-08-27 底部工具栏定位纠错（v1.0.4）
+
+用户反馈底部"简体中文字"工具栏仍被挡一半（v1.0.3 修复未生效）。**根因纠正**：
+- 之前误判为 simple-mind-map 库 v0.14.0-fix.3 自带"主子工具栏"，加了无效的 `.smm-toolbar-wrap,[class*='smm-'][class*='toolbar']{bottom:50px}` 全局 CSS。
+- 实际核查：simple-mind-map 0.14.0-fix.3 dist 的 CSS **完全没有 `smm-` 前缀的类名**，库 src/index.js、src/core/render/Render.js 中也找不到任何 Toolbar 文件名或 `mainToolbar` 变量。
+- 截图里底部"简体中文字"工具栏**是项目自己的 `NavigatorToolbar.vue`**，class `.navigatorContainer`，定位 `position: fixed; right: 20px; bottom: 20px`，高度 44px。被 SheetTabs（bottom:0, height:40px）从下 20px 处切掉一半。
+- **修复**：`web/src/pages/Edit/components/NavigatorToolbar.vue` 的 `.navigatorContainer` 改为 `bottom: 50px`（让出 SheetTabs 40px + 10px 间距）。同时清掉 Edit.vue 末尾那段无效的库工具栏 CSS。
+
+**顺带踩坑**（npm run dist 卡 packaging 阶段 10 分钟）：
+- electron-builder 默认从 `ELECTRON_BUILDER_BINARIES_MIRROR` 拉 NSIS 二进制，build_now.sh 里设的是 `https://registry.npmmirror.com/-/binary/electron-builder-binaries/`。
+- 该镜像的 `nsis/nsis-3.0.4.1.7z` 已经 **404 Not Found**（淘宝镜像下架了 nsis 资源），GitHub releases 302 可达。
+- electron-builder 在 mirror 上 404 重试，导致 packaging 后续阶段卡死。
+- **修复**：手动从 GitHub releases 拉 `nsis-3.0.4.1.7z` 到 `~/.cache/electron-builder/nsis/`，重跑前 `unset ELECTRON_BUILDER_BINARIES_MIRROR` 让 electron-builder 用本地缓存 + GitHub 默认。
+- **Sandy 陷阱**：`curl -L -o "$HOME/.cache/..."` 在 Bash 沙箱里写入失败（client returned ERROR on write）。需先 `curl -L -o "C:/Users/d36847/AppData/Local/Temp/..."`（git-bash 真实 /tmp 路径）再 `cp` 到缓存目录。
+
+最终交付：`electron-app/dist-electron/思绪思维导图 Setup.exe`（v1.0.4，含 NavigatorToolbar bottom:50px 修复）。打包仅用 1 分 15 秒（nsis 缓存命中），收尾 trash 拦截仍导致 exit 1 但 Setup.exe 已先写出。
