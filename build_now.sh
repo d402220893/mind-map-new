@@ -2,7 +2,9 @@
 set -e
 cd /e/03_学习文件/mind-map-main
 export ELECTRON_MIRROR=https://npmmirror.com/mirrors/electron/
-export ELECTRON_BUILDER_BINARIES_MIRROR=https://registry.npmmirror.com/-/binary/electron-builder-binaries/
+# 注意：npmmirror 的 electron-builder-binaries 镜像已下架 nsis 等资源（返回 404），
+# 会导致 packaging 阶段卡死。nsis 等二进制已缓存到 ~/.cache/electron-builder，
+# 故不再设置 ELECTRON_BUILDER_BINARIES_MIRROR，让 electron-builder 用本地缓存 + GitHub 默认。
 export CSC_IDENTITY_AUTO_DISCOVERY=false
 export PATH="/c/Users/d36847/.workbuddy/binaries/node/versions/22.22.2:$PATH"
 NODE=/c/Users/d36847/.workbuddy/binaries/node/versions/22.22.2/node.exe

@@ -88,7 +88,14 @@ export default {
     enableAutoEnterTextEditWhenKeydown: '鍵盤輸入時自動進入文本編輯',
     enableInheritAncestorLineStyle: '節點連線樣式繼承祖先節點的樣式',
     alwaysShowExpandBtn: '是否壹直顯示展開收起按鈕',
-    enableAi: '是否開啓AI功能'
+    enableAi: '是否開啓AI功能',
+    canvasBackground: '畫布背景',
+    canvasBgPreset: '預設純色',
+    canvasBgCustomColor: '自定義顏色',
+    canvasBgImage: '上傳圖片背景',
+    canvasBgClear: '恢復預設白色',
+    canvasBgTip: '支持 jpg/png，將鋪滿畫布',
+    canvasBgPresets: ''
   },
   color: {
     moreColor: '更多顏色'

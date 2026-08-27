@@ -4,7 +4,7 @@
     @dragenter.stop.prevent="onDragenter"
     @dragleave.stop.prevent
     @dragover.stop.prevent
-    @drop.stop.prevent
+    @drop.stop.prevent="onContainerDrop"
   >
     <div
       class="mindMapContainer"
@@ -52,12 +52,12 @@
     <NodeNoteSidebar v-if="mindMap" :mindMap="mindMap"></NodeNoteSidebar>
     <AiCreate v-if="mindMap && enableAi" :mindMap="mindMap"></AiCreate>
     <AiChat v-if="enableAi"></AiChat>
-    <div
+      <div
         class="dragMask"
         v-if="showDragMask"
         @dragleave.stop.prevent="onDragleave"
         @dragover.stop.prevent
-        @drop.stop.prevent="onDrop"
+        @drop.stop.prevent="onContainerDrop"
       >
         <div class="dragTip">{{ $t('edit.dragTip') }}</div>
       </div>
@@ -691,6 +691,53 @@ export default {
       this.saveWorkbookToFile(this.fileName || '思维导图.smm')
     },
 
+    // 从原始文件内容（JSON 字符串）打开为新的 workbook
+    async loadWorkbookFromRaw(raw, filePath) {
+      const trimmed = (raw || '').trim()
+      if (!trimmed) {
+        this.$message.error('文件为空（0 字节），无法打开，请确认文件未损坏')
+        return false
+      }
+      let data
+      try {
+        data = JSON.parse(trimmed)
+      } catch (e) {
+        this.$message.error('文件解析失败：内容不是合法的 JSON')
+        return false
+      }
+      if (isSheetsFile(data)) {
+        // 本应用多工作表格式
+        loadSheetsContainer(data)
+      } else {
+        // 标准 simple-mind-map 单图文件（如 {root:{...}}、{content:{root}}）：作为单一工作表导入
+        loadSheetsContainer({
+          app: 'smm-multisheet',
+          version: 1,
+          sheets: [{ name: 'Sheet1', data: this.extractMindmapData(data) }]
+        })
+      }
+      // === 把打开的文件注册为新 workbook（而不是覆盖当前 workbook）===
+      const baseName = (filePath || '未命名')
+        .split(/[\\/]/)
+        .pop()
+        .replace(/\.smm$/i, '')
+      const { addWorkbook, getCurrentSheetState } = await import('@/api')
+      addWorkbook({
+        name: baseName || '未命名',
+        filePath: filePath || '',
+        sheetState: getCurrentSheetState(),
+        skipOldWriteback: true
+      })
+      this.currentFilePath = filePath || null
+      setCurrentFilePath(filePath || null)
+      this.loadSheetData(getActiveSheetData())
+      this.refreshSheets()
+      this.updateTitle()
+      this.$bus.$emit('workbook-list-changed')
+      this.$message.success('已打开：' + this.fileName)
+      return true
+    },
+
     // 打开本地文件
     async openWorkbook() {
       if (!window.smmApi || !window.smmApi.openWorkbookDialog) {
@@ -705,54 +752,36 @@ export default {
           this.$message.error('打开失败：' + res.error)
           return
         }
-        let data
-        const raw = (res.content || '').trim()
-        if (!raw) {
-          this.$message.error('文件为空（0 字节），无法打开，请确认文件未损坏')
-          return
-        }
-        try {
-          data = JSON.parse(raw)
-        } catch (e) {
-          this.$message.error('文件解析失败：内容不是合法的 JSON')
-          return
-        }
-        if (isSheetsFile(data)) {
-          // 本应用多工作表格式
-          loadSheetsContainer(data)
-        } else {
-          // 标准 simple-mind-map 单图文件（如 {root:{...}}、{content:{root}}）：作为单一工作表导入
-          loadSheetsContainer({
-            app: 'smm-multisheet',
-            version: 1,
-            sheets: [{ name: 'Sheet1', data: this.extractMindmapData(data) }]
-          })
-        }
-        // === 把打开的文件注册为新 workbook（而不是覆盖当前 workbook）===
-        // module-level sheetState 此时已是新文件数据。
-        // skipOldWriteback:true 防止 addWorkbook 把新数据回写到旧 workbook，覆盖用户当前编辑。
-        // 旧 workbook 的数据已通过前面的 manualSave 同步到其 sheetState（同一对象引用）。
-        const baseName = (res.filePath || '未命名')
-          .split(/[\\/]/)
-          .pop()
-          .replace(/\.smm$/i, '')
-        const { addWorkbook, getCurrentSheetState } = await import('@/api')
-        addWorkbook({
-          name: baseName || '未命名',
-          filePath: res.filePath,
-          sheetState: getCurrentSheetState(),
-          skipOldWriteback: true
-        })
-        this.currentFilePath = res.filePath
-        setCurrentFilePath(res.filePath)
-        this.loadSheetData(getActiveSheetData())
-        this.refreshSheets()
-        this.updateTitle()
-        this.$bus.$emit('workbook-list-changed')
-        this.$message.success('已打开：' + this.fileName)
+        await this.loadWorkbookFromRaw(res.content, res.filePath)
       } catch (err) {
         console.error(err)
         this.$message.error('打开失败，请查看控制台')
+      }
+    },
+
+    // 拖拽文件到画布：.smm 打开为新文件；其它类型走原拖入导入逻辑
+    onContainerDrop(e) {
+      const dt = e.dataTransfer
+      const file = dt && dt.files && dt.files[0]
+      if (!file) return
+      const name = file.name || ''
+      const ext = (name.split('.').pop() || '').toLowerCase()
+      if (ext === 'smm') {
+        // 读取文件内容并打开为新 workbook（不覆盖当前正在编辑的文件）
+        const reader = new FileReader()
+        reader.onload = () => {
+          this.manualSave()
+          this.loadWorkbookFromRaw(reader.result, name)
+        }
+        reader.onerror = () => {
+          this.$message.error('读取文件失败')
+        }
+        reader.readAsText(file)
+        return
+      }
+      // 其它类型（图片/其它思维导图格式）：沿用原拖入导入逻辑
+      if (this.enableDragImport) {
+        this.$bus.$emit('importFile', file)
       }
     },
 
@@ -903,7 +932,31 @@ export default {
       this.refreshSheets()
       this.currentFilePath = getCurrentFilePath()
       this.updateTitle()
+      // 切换文件时同步画布背景
+      this.applyStoredCanvasBackground()
       // 切换文件时不弹 toast，保持 UI 静默切换
+    },
+
+    // 应用已保存的画布背景到容器（初始化 / 切换文件时调用）
+    applyStoredCanvasBackground() {
+      if (!this.mindMap || !this.mindMap.el) return
+      const el = this.mindMap.el
+      const bg = this.mindMapConfig && this.mindMapConfig.canvasBackground
+      if (!bg || bg.type === 'default') {
+        el.style.backgroundColor = '#ffffff'
+        el.style.backgroundImage = 'none'
+        return
+      }
+      if (bg.type === 'image') {
+        el.style.backgroundColor = '#ffffff'
+        el.style.backgroundImage = `url(${bg.value})`
+        el.style.backgroundSize = 'cover'
+        el.style.backgroundRepeat = 'no-repeat'
+        el.style.backgroundPosition = 'center'
+      } else {
+        el.style.backgroundColor = bg.value
+        el.style.backgroundImage = 'none'
+      }
     },
 
     // 更新窗口标题并触发路径显示
@@ -1105,6 +1158,8 @@ export default {
       }
       // 协同测试
       this.cooperateTest()
+      // 应用已保存的画布背景
+      this.applyStoredCanvasBackground()
     },
 
     // 加载相关插件
@@ -1245,15 +1300,6 @@ export default {
 
     onDragleave() {
       this.showDragMask = false
-    },
-
-    onDrop(e) {
-      if (!this.enableDragImport) return
-      this.showDragMask = false
-      const dt = e.dataTransfer
-      const file = dt.files && dt.files[0]
-      if (!file) return
-      this.$bus.$emit('importFile', file)
     },
 
     // 网页版试用提示（本地客户端模式下不显示）

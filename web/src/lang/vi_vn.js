@@ -92,7 +92,14 @@ export default {
     textContentMargin: 'Khoảng cách nội dung nút',
     enableInheritAncestorLineStyle:
       'Kiểu kết nối nút kế thừa kiểu của nút tổ tiên',
-    enableAi: 'Bật chức năng AI'
+    enableAi: 'Bật chức năng AI',
+    canvasBackground: 'Nền canvas',
+    canvasBgPreset: 'Màu nền cố định',
+    canvasBgCustomColor: 'Màu tùy chỉnh',
+    canvasBgImage: 'Tải ảnh nền',
+    canvasBgClear: 'Khôi phục trắng',
+    canvasBgTip: 'Hỗ trợ jpg/png, phủ đầy canvas',
+    canvasBgPresets: ''
   },
   color: {
     moreColor: 'Thêm màu'

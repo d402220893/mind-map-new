@@ -367,6 +367,56 @@
           ></el-slider>
         </div>
       </div>
+      <!-- 画布背景 -->
+      <div class="row">
+        <div class="rowItem canvasBgRow">
+          <span class="name canvasBgTitle">{{ $t('setting.canvasBackground') }}</span>
+          <div class="canvasBgPresets">
+            <div
+              v-for="c in canvasBgPresets"
+              :key="c"
+              class="canvasBgSwatch"
+              :class="{
+                active:
+                  canvasBgType === 'color' &&
+                  canvasBgColor.toLowerCase() === c.toLowerCase()
+              }"
+              :style="{ backgroundColor: c }"
+              :title="c"
+              @click="selectPreset(c)"
+            ></div>
+            <div
+              class="canvasBgSwatch canvasBgImageBtn"
+              :class="{ active: canvasBgType === 'image' }"
+              :title="$t('setting.canvasBgImage')"
+              @click="triggerImageUpload"
+            >
+              <span>🖼</span>
+            </div>
+          </div>
+          <div class="canvasBgActions">
+            <el-color-picker
+              v-model="canvasBgColor"
+              size="small"
+              @change="onCustomColor"
+            ></el-color-picker>
+            <el-button size="small" @click="triggerImageUpload">{{
+              $t('setting.canvasBgImage')
+            }}</el-button>
+            <el-button size="small" @click="clearCanvasBg">{{
+              $t('setting.canvasBgClear')
+            }}</el-button>
+            <input
+              ref="canvasBgFile"
+              type="file"
+              accept="image/*"
+              style="display:none"
+              @change="onImageSelected"
+            />
+          </div>
+          <span class="name canvasBgTip">{{ $t('setting.canvasBgTip') }}</span>
+        </div>
+      </div>
     </div>
   </Sidebar>
 </template>
@@ -425,7 +475,22 @@ export default {
         isShowScrollbar: false,
         enableDragImport: false,
         enableAi: false
-      }
+      },
+      // 画布背景
+      canvasBgType: 'default',
+      canvasBgColor: '#ffffff',
+      canvasBgPresets: [
+        '#ffffff',
+        '#f5f7fa',
+        '#e8f0fe',
+        '#fde2e1',
+        '#e6f4ea',
+        '#fff4e5',
+        '#f3e8fd',
+        '#1e1e1e',
+        '#0d1b2a',
+        '#003b46'
+      ]
     }
   },
   computed: {
@@ -441,6 +506,7 @@ export default {
         this.$refs.sidebar.show = true
         this.initConfig()
         this.initWatermark()
+        this.initCanvasBg()
       } else {
         this.$refs.sidebar.show = false
       }
@@ -573,6 +639,78 @@ export default {
       this.setLocalConfig({
         [key]: value
       })
+    },
+
+    // 初始化画布背景 UI 状态（从已保存配置回显）
+    initCanvasBg() {
+      const bg = this.configData && this.configData.canvasBackground
+      if (bg && bg.type === 'image') {
+        this.canvasBgType = 'image'
+      } else if (bg && bg.type === 'color') {
+        this.canvasBgType = 'color'
+        this.canvasBgColor = bg.value || '#ffffff'
+      } else {
+        this.canvasBgType = 'default'
+        this.canvasBgColor = '#ffffff'
+      }
+    },
+
+    // 统一应用画布背景到容器 + 持久化
+    applyCanvasBackground(bg) {
+      const el = this.mindMap && this.mindMap.el
+      if (el) {
+        if (bg.type === 'image') {
+          el.style.backgroundColor = '#ffffff'
+          el.style.backgroundImage = `url(${bg.value})`
+          el.style.backgroundSize = 'cover'
+          el.style.backgroundRepeat = 'no-repeat'
+          el.style.backgroundPosition = 'center'
+        } else if (bg.type === 'color') {
+          el.style.backgroundColor = bg.value
+          el.style.backgroundImage = 'none'
+        } else {
+          el.style.backgroundColor = '#ffffff'
+          el.style.backgroundImage = 'none'
+        }
+      }
+      this.configData.canvasBackground = bg
+      storeConfig(this.configData)
+    },
+
+    selectPreset(color) {
+      this.canvasBgType = 'color'
+      this.canvasBgColor = color
+      this.applyCanvasBackground({ type: 'color', value: color })
+    },
+
+    onCustomColor(color) {
+      if (!color) return
+      this.canvasBgType = 'color'
+      this.applyCanvasBackground({ type: 'color', value: color })
+    },
+
+    triggerImageUpload() {
+      if (this.$refs.canvasBgFile) {
+        this.$refs.canvasBgFile.click()
+      }
+    },
+
+    onImageSelected(e) {
+      const file = e.target.files && e.target.files[0]
+      if (!file) return
+      const reader = new FileReader()
+      reader.onload = () => {
+        this.canvasBgType = 'image'
+        this.applyCanvasBackground({ type: 'image', value: reader.result })
+      }
+      reader.readAsDataURL(file)
+      e.target.value = ''
+    },
+
+    clearCanvasBg() {
+      this.canvasBgType = 'default'
+      this.canvasBgColor = '#ffffff'
+      this.applyCanvasBackground({ type: 'default' })
     }
   }
 }
@@ -614,6 +752,66 @@ export default {
     display: flex;
     justify-content: space-between;
     margin-bottom: 10px;
+
+    .canvasBgRow {
+      flex-direction: column;
+      align-items: flex-start;
+      width: 100%;
+    }
+
+    .canvasBgTitle {
+      margin-bottom: 8px;
+      font-weight: 500;
+    }
+
+    .canvasBgPresets {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 6px;
+      margin-bottom: 8px;
+
+      .canvasBgSwatch {
+        width: 22px;
+        height: 22px;
+        border-radius: 5px;
+        border: 1px solid rgba(0, 0, 0, 0.12);
+        cursor: pointer;
+        position: relative;
+        transition: transform 0.12s ease, box-shadow 0.12s ease;
+
+        &:hover {
+          transform: scale(1.08);
+        }
+
+        &.active {
+          box-shadow: 0 0 0 2px #409eff;
+        }
+      }
+
+      .canvasBgImageBtn {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 13px;
+        background: rgba(64, 158, 255, 0.08);
+
+        &.active {
+          box-shadow: 0 0 0 2px #409eff;
+        }
+      }
+    }
+
+    .canvasBgActions {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      margin-bottom: 6px;
+    }
+
+    .canvasBgTip {
+      color: #999;
+      font-size: 11px;
+    }
 
     .rowItem {
       display: flex;

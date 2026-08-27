@@ -91,7 +91,14 @@ export default {
     textContentMargin: 'Node contents margin',
     enableInheritAncestorLineStyle:
       'Node connection style inherits the style of ancestor nodes',
-    enableAi: 'Is enable AI function'
+    enableAi: 'Is enable AI function',
+    canvasBackground: 'Canvas Background',
+    canvasBgPreset: 'Preset Solid Colors',
+    canvasBgCustomColor: 'Custom Color',
+    canvasBgImage: 'Upload Image Background',
+    canvasBgClear: 'Reset to White',
+    canvasBgTip: 'Supports jpg/png, fills the canvas',
+    canvasBgPresets: ''
   },
   color: {
     moreColor: 'More color'

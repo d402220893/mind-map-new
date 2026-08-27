@@ -87,7 +87,14 @@ export default {
     enableDragImport: '是否允许直接拖拽文件到页面进行导入',
     imgTextMargin: '节点图片和文本间隔',
     textContentMargin: '节点各种内容间隔',
-    enableAi: '是否开启AI功能'
+    enableAi: '是否开启AI功能',
+    canvasBackground: '画布背景',
+    canvasBgPreset: '预设纯色',
+    canvasBgCustomColor: '自定义颜色',
+    canvasBgImage: '上传图片背景',
+    canvasBgClear: '恢复默认白色',
+    canvasBgTip: '支持 jpg/png，将铺满画布',
+    canvasBgPresets: ''
   },
   color: {
     moreColor: '更多颜色'

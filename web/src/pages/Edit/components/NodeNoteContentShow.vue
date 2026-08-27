@@ -20,6 +20,8 @@
 <script>
 import Viewer from '@toast-ui/editor/dist/toastui-editor-viewer'
 import '@toast-ui/editor/dist/toastui-editor-viewer.css'
+import Prism from '@/utils/prismSetup'
+import 'prismjs/themes/prism.css'
 
 // 节点备注内容显示
 export default {
@@ -81,8 +83,19 @@ export default {
       this.node = node
       this.editor.setMarkdown(content)
       this.handleALink()
+      this.highlightCode()
       this.updateNoteContentPosition(left, top)
       this.show = true
+    },
+
+    // 对渲染后的代码块做语法高亮（python/C#/c/C++/go/verilog 等）
+    highlightCode() {
+      this.$nextTick(() => {
+        const wrap = this.$refs.noteContentWrap
+        if (wrap && typeof Prism !== 'undefined') {
+          Prism.highlightAllUnder(wrap)
+        }
+      })
     },
 
     // 超链接新窗口打开
@@ -140,5 +153,32 @@ export default {
     max-height: 300px;
     overflow-y: auto;
   }
+}
+</style>
+
+<!-- 备注代码块样式（viewer 动态生成的内容，需用非 scoped 全局样式命中） -->
+<style>
+.noteContentWrap pre {
+  margin: 6px 0;
+  padding: 8px 10px;
+  border-radius: 4px;
+  background: #f6f8fa;
+  max-height: 260px;
+  overflow: auto;
+}
+.noteContentWrap pre code {
+  font-family: 'SFMono-Regular', Consolas, 'Liberation Mono', Menlo, monospace;
+  font-size: 12px;
+  line-height: 1.5;
+  white-space: pre;
+  background: transparent;
+  text-shadow: none;
+}
+.noteContentWrap :not(pre) > code {
+  background: rgba(135, 131, 120, 0.15);
+  padding: 1px 4px;
+  border-radius: 3px;
+  font-size: 12px;
+  font-family: 'SFMono-Regular', Consolas, 'Liberation Mono', Menlo, monospace;
 }
 </style>

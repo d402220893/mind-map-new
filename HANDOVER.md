@@ -394,3 +394,33 @@ cd /e/03_学习文件/mind-map-main/electron-app
 - **Sandy 陷阱**：`curl -L -o "$HOME/.cache/..."` 在 Bash 沙箱里写入失败（client returned ERROR on write）。需先 `curl -L -o "C:/Users/d36847/AppData/Local/Temp/..."`（git-bash 真实 /tmp 路径）再 `cp` 到缓存目录。
 
 最终交付：`electron-app/dist-electron/思绪思维导图 Setup.exe`（v1.0.4，含 NavigatorToolbar bottom:50px 修复）。打包仅用 1 分 15 秒（nsis 缓存命中），收尾 trash 拦截仍导致 exit 1 但 Setup.exe 已先写出。
+
+## 12. 2026-08-27 三新增功能（v1.0.5）
+
+本次在 v1.0.4 基础上新增 3 个功能并出包 v1.0.5。
+
+### 12.1 备注支持代码高亮（兼容 python/C#/c/C++/go/verilog）
+- 根因：simple-mind-map 的备注用 `@toast-ui/editor`(markdown) 编辑、`@toast-ui/editor-viewer` 渲染，但 Toast UI v3 **不内置 Prism**，且 prismjs 此前不在依赖里，所以代码块无高亮。
+- 新增 `web/src/utils/prismSetup.js`：注入 Prism 单例并注册官方语言组件 `prism-c / prism-cpp / prism-csharp / prism-python / prism-go`；Verilog 无官方组件，自定义最小语法（关键字/数字/字符串/注释/操作符/标点）。
+- `web/src/pages/Edit/components/NodeNoteContentShow.vue`：在 `onShowNoteContent` 调 `highlightCode()`（`$nextTick` 内 `Prism.highlightAllUnder(wrap)`）；新增非 scoped 全局样式让代码块可横向滚动、等宽字体。
+- 新增依赖 `prismjs@1.29.0`（写入 web/package.json）。
+
+### 12.2 画布背景设置（右侧"设置"面板）
+- 背景真相：simple-mind-map v0.14 此版本**无内置画布背景渲染**（Render 不读 themeConfig.background），画布背景就是容器 CSS。故直接操作 `mindMap.el` 容器样式。
+- `Setting.vue` 新增"画布背景"区块：10 个预设纯色色板 + `el-color-picker` 自定义颜色 + 图片上传（`FileReader` 读为 dataURL，cover 铺满）+ 恢复默认白色。
+- 持久化：`applyCanvasBackground` 把 `{type,value}` 写入 `configData.canvasBackground`（即 `mindMapConfig`，与 Edit.vue 共享同一对象引用）并 `storeConfig` 持久化。
+- `Edit.vue` 新增 `applyStoredCanvasBackground()`，在 `init()` 末尾与 `onWorkbookSwitched()` 中调用，从 `mindMapConfig.canvasBackground` 回放背景（初始化/切换文件时生效）。
+- i18n：zh_cn/zh_tw/en_us/vi_vn 的 `setting` 段补 `canvasBackground/canvasBgPreset/canvasBgCustomColor/canvasBgImage/canvasBgClear/canvasBgTip`。
+
+### 12.3 文件名栏固定品牌 + 拖拽 .smm 打开
+- `FileTabs.vue`：最左侧固定显示"思绪思维导图"品牌区（`.fileBrand`，`flex-shrink:0`，不与文件标签一起横向滚动），深色模式同步配色；`.fileTabsInner` 改为 `flex:1 + min-width:0` 以正确滚动。
+- `Edit.vue` 拖拽重构：模板 `editContainer`/`dragMask` 的 `@drop` 统一改为 `onContainerDrop`。
+  - 拖入 `.smm` → `FileReader` 读文本 → `loadWorkbookFromRaw(raw, name)` **打开为新文件**（注册新 workbook，不覆盖当前编辑），与"打开本地文件"同款逻辑（已抽出复用）。
+  - 其它类型（图片/其它格式）→ 沿用原 `importFile` 拖入导入逻辑（仍受 `enableDragImport` 开关控制）。
+  - 删除已无引用的旧 `onDrop` 死方法。
+
+### 12.4 构建链路修正（重要）
+- **误删依赖回归**：本次 `npm install prismjs` 触发 npm 把 web 下未登记进 package.json 的 `docx / mp4-muxer / pptxgenjs`（exportExtra/exportMedia 运行时动态 import）当作 extraneous 剪除，导致首次 `vue build` 报 "dependencies were not found"。已重新 `npm install docx mp4-muxer pptxgenjs --save` 补回并写入 package.json（docx ^9.7.1 / mp4-muxer ^5.2.2 / pptxgenjs ^4.0.1）——**今后给 web 工程加依赖务必 `--save`，且勿让 npm 修剪掉未登记的重依赖**。
+- `build_now.sh`：删除 `ELECTRON_BUILDER_BINARIES_MIRROR`（npmmirror 该镜像已下架 nsis 返回 404，会让 packaging 卡死）；nsis 等二进制已缓存于 `~/.cache/electron-builder/nsis/`，electron-builder 改用本地缓存 + GitHub 默认。本次 `npm run dist` 退出码 0（无收尾 trash 拦截）。
+
+最终交付：`electron-app/dist-electron/思绪思维导图 Setup.exe`（v1.0.5，含上述三功能）。

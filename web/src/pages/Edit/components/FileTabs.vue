@@ -1,5 +1,6 @@
 <template>
   <div class="fileTabs" :class="{ isDark: isDark }" @dblclick.self="onMaximize">
+    <div class="fileBrand">思绪思维导图</div>
     <div class="fileTabsInner customScrollbar">
       <div
         v-for="w in workbooks"
@@ -251,10 +252,27 @@ export default {
     border-bottom-color: rgba(255, 255, 255, 0.08);
   }
 
+  .fileBrand {
+    flex-shrink: 0;
+    display: flex;
+    align-items: center;
+    height: 100%;
+    padding: 0 14px 0 12px;
+    font-size: 13px;
+    font-weight: 600;
+    color: rgba(26, 26, 26, 0.9);
+    letter-spacing: 0.5px;
+    user-select: none;
+    border-right: 1px solid rgba(0, 0, 0, 0.06);
+    -webkit-app-region: drag;
+  }
+
   .fileTabsInner {
     display: flex;
     align-items: center;
     height: 100%;
+    flex: 1;
+    min-width: 0;
     overflow-x: auto;
     overflow-y: hidden;
     padding: 0 120px 0 8px;
@@ -398,6 +416,11 @@ export default {
   }
 
   &.isDark {
+    .fileBrand {
+      color: rgba(255, 255, 255, 0.9);
+      border-right-color: rgba(255, 255, 255, 0.08);
+    }
+
     .fileTab {
       color: rgba(255, 255, 255, 0.7);
       background: transparent;
