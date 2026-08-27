@@ -26,9 +26,13 @@ Section "Install"
   SetOutPath "$INSTDIR"
 
   ; 自动卸载旧版本（同 appId/同安装目录），实现覆盖安装免手动卸载
+  ; 注意：不要加 _?=$INSTDIR，否则卸载器会在 $INSTDIR 原地运行、删不掉自身，
+  ;       导致重装后目录里缺文件（表现为“打不开”）。去掉后卸载器会自拷贝到临时目录，
+  ;       可完整删除旧目录；再补一次 RMDir 清掉残留的旧卸载器 exe。
   ReadRegStr $0 HKCU "Software\Microsoft\Windows\CurrentVersion\Uninstall\${APPID}" "UninstallString"
   ${If} $0 != ""
-    ExecWait '$0 /S _?=$INSTDIR'
+    ExecWait '$0 /S'
+    RMDir /r "$INSTDIR"
   ${EndIf}
 
   ; 复制应用（win-unpacked 的全部内容，不含 win-unpacked 自身目录）

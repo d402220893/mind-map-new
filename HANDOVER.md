@@ -316,8 +316,9 @@ cp -rf dist/. electron-app/dist/
 cd /e/03_学习文件/mind-map-main/electron-app
 "$NODE" bump_version.js
 
-# 4. 打包 NSIS
-npm run dist
+# 4. 打包 NSIS（⚠️ `npm run dist` 会卡死，见 §9.8，改用 makensis 手动出包）
+#    先按 §9.8 第 3-5 步组装 win-unpacked 并补齐 Electron 运行时，再：
+"C:/Users/d36847/AppData/Local/electron-builder/Cache/nsis/nsis-3.0.4.1/makensis.exe" "E:/03_学习文件/mind-map-main/electron-app/make_installer.nsi"
 ```
 
 产物：`electron-app/dist-electron/思绪思维导图 Setup.exe`（版本 `1.0.2`）。
@@ -328,3 +329,39 @@ npm run dist
 - 标签栏上移后，Toolbar 与画布的垂直间距是否符合预期。
 - 多文件保存语义：切换文件时 `before-workbook-switch` 先 `manualSave` 写旧 workbook，再切换——需实测多文件分别保存互不串数据。
 - 安装包默认图标仍由 `nsis.installerIcon` 控制（无 rcedit 嵌入），若需 exe 本体品牌图标再单独处理。
+
+### 9.8 electron-builder 卡死 → 改用 makensis 手动出包（绕行方案，已验证可用）
+
+`npm run dist`（electron-builder）在 **packaging 阶段**会卡死：node 进程僵死、`win-unpacked/resources` 为空、NSIS 步永远跑不完（曾卡 1.5 小时）。根因是 electron-builder 的 app-builder 打包环节在本机异常，非 NSIS 本身（makensis 单独跑正常）。
+
+**绕行流程（以后出包用这套，别再走 `npm run dist`）：**
+
+1. 前端构建：`web/` 下 `NODE_OPTIONS="--openssl-legacy-provider --max-old-space-size=4096" npm run build`（Node 22 的 OpenSSL 3 与旧 webpack 不兼容，必须加 `--openssl-legacy-provider`，否则报 `error:0308010C`）。
+2. 同步到 electron-app：`rm -rf electron-app/dist && cp -rf dist/. electron-app/dist/ && node strip_index.js`（剥离 51.la，保留 externalPublicPath/takeOverApp）。
+   - ⚠️ 不要用 `sync_app.js`：其 `fs.rmSync` 递归删除会触发沙箱绕过、写入被回滚，导致 `electron-app/dist` 被删没重建。
+3. 升版本：`cd electron-app && node bump_version.js`（patch+1，覆盖安装用）。
+4. 组装 `win-unpacked`：`mkdir -p electron-app/dist-electron/win-unpacked/resources/app`，把 `electron-app/` 中除 `node_modules`、`dist-electron` 外的全部文件 cp 进 `resources/app/`。
+   - **必须补齐 Electron 运行时根文件**（见 §9.9）：`icudtl.dat`、`libEGL.dll`、`libGLESv2.dll`、`chrome_100_percent.pak`、`chrome_200_percent.pak`、`d3dcompiler_47.dll`、`ffmpeg.dll`、`locales/`。
+5. 编译安装包：`"C:/Users/d36847/AppData/Local/electron-builder/Cache/nsis/nsis-3.0.4.1/makensis.exe" "E:/03_学习文件/mind-map-main/electron-app/make_installer.nsi"`
+   - 脚本 `electron-app/make_installer.nsi` 已入库（UTF-8 BOM、含自动卸载旧版 + 桌面/开始菜单快捷方式）。NSIS 的 `File /r` 搭配 `MUI_PAGE_DIRECTORY` 会**忽略 `/D` 参数**，安装位置固定为 `$LOCALAPPDATA\Programs\思绪思维导图`；要改安装目录需改 `InstallDir`。
+
+### 9.9 安装后“打不开”的根因与修复（1.0.2 实测可启动）
+
+**现象**：双击安装后无任何窗口，进程秒退。
+
+**根因 1（致命）——缺 Electron 运行时文件**：手动组装包时只把 `electron-app/` 内容塞进 `resources/app`，漏了 Electron 运行必需的根目录文件。启动即崩，stderr 仅一行：
+```
+[ERROR:icu_util.cc(240)] Invalid file descriptor to ICU data received.
+```
+缺的文件：`icudtl.dat`、`libEGL.dll`、`libGLESv2.dll`、`chrome_100/200_percent.pak`、`d3dcompiler_47.dll`、`ffmpeg.dll`、`locales/`。
+
+**修复 1**：从同版本（Electron 25.7.0）的旧构建 `C:/Users/d36847/AppData/Local/MindMap/` 补齐上述文件到 `win-unpacked/` 根目录（运行时文件体积与本项目 `win-unpacked` 完全一致，版本匹配），重新 makensis 打包。
+
+**根因 2（覆盖安装丢文件）**：自动卸载逻辑原写法 `ExecWait '$0 /S _?=$INSTDIR'` 让旧卸载器在 `$INSTDIR` 内**原地运行**，删不干净自身就结束，导致重装后目录缺文件（用户第一次遇到的“空目录”即此）。
+
+**修复 2**：改为让卸载器先自拷贝到临时目录（`$TEMP\uninst.exe`）再执行，完整删除旧 `$INSTDIR` 后由安装段重新铺文件（见 `make_installer.nsi` 的卸载段）。
+
+**验证结果（1.0.2）**：
+- 静默安装后 `icudtl.dat` / `locales/` 均在安装根目录，进程可常驻、无 ICU 报错；main.js 的本地 HTTP server 在 `127.0.0.1:51888` 监听，首页与 `dist/js` 资源可取。
+- **连装两次（升级/覆盖安装场景）**：自动卸载 + 重装后文件数 366，关键文件（`icudtl.dat`、`libEGL/libGLESv2.dll`、`chrome_*.pak`、`d3dcompiler_47.dll`、`ffmpeg.dll`、`locales/`、`思绪思维导图.exe`、`Uninstall 思绪思维导图.exe`）全部齐全，不再丢文件。
+- 安装目录：`$LOCALAPPDATA\Programs\思绪思维导图`；版本号 `1.0.2`；含自定义标题栏（`windowBtn`）、文件名进标题栏（`思绪思维导图 - 文件名`）、标准 `.smm` 兼容分支。
