@@ -1,11 +1,6 @@
 <template>
   <div class="fileTabs" :class="{ isDark: isDark }">
     <div class="fileTabsInner customScrollbar">
-      <div class="fileBrand">
-        <span class="brandIcon">🧠</span>
-        <span class="brandText">思绪思维导图</span>
-      </div>
-      <div class="fileBrandDivider"></div>
       <div
         v-for="w in workbooks"
         :key="w.id"
@@ -214,39 +209,6 @@ export default {
     }
   }
 
-  .fileBrand {
-    display: inline-flex;
-    align-items: center;
-    flex-shrink: 0;
-    height: 22px;
-    padding: 0 12px 0 4px;
-    margin-right: 4px;
-    font-size: 13px;
-    font-weight: 600;
-    color: #303133;
-    user-select: none;
-    letter-spacing: 0.4px;
-    border-radius: 6px;
-
-    .brandIcon {
-      margin-right: 6px;
-      font-size: 14px;
-      line-height: 1;
-    }
-
-    .brandText {
-      white-space: nowrap;
-    }
-  }
-
-  .fileBrandDivider {
-    flex-shrink: 0;
-    width: 1px;
-    height: 16px;
-    margin: 0 8px 0 2px;
-    background: rgba(0, 0, 0, 0.12);
-  }
-
   .fileTab {
     display: inline-flex;
     align-items: center;
@@ -340,12 +302,6 @@ export default {
   }
 
   &.isDark {
-    .fileBrand {
-      color: rgba(255, 255, 255, 0.9);
-    }
-    .fileBrandDivider {
-      background: rgba(255, 255, 255, 0.18);
-    }
     .fileTab {
       color: rgba(255, 255, 255, 0.7);
       background: transparent;
