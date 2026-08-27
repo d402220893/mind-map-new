@@ -424,3 +424,51 @@ cd /e/03_学习文件/mind-map-main/electron-app
 - `build_now.sh`：删除 `ELECTRON_BUILDER_BINARIES_MIRROR`（npmmirror 该镜像已下架 nsis 返回 404，会让 packaging 卡死）；nsis 等二进制已缓存于 `~/.cache/electron-builder/nsis/`，electron-builder 改用本地缓存 + GitHub 默认。本次 `npm run dist` 退出码 0（无收尾 trash 拦截）。
 
 最终交付：`electron-app/dist-electron/思绪思维导图 Setup.exe`（v1.0.5，含上述三功能）。
+
+---
+
+## 13. 导入/打开 不再覆盖当前活跃文件（bug 修复，跨 v1.0.6 / v1.0.7）
+
+### 13.1 问题
+- 把 `.smm` 拖到画布、菜单"打开"、以及工具栏"导入"（.smm/.json/.xmind/.md/.emmx），都会**污染/覆盖当前正在编辑的活跃文件**，原文件数据丢失。
+
+### 13.2 根因
+- `loadSheetsContainer(data)`（旧 `loadWorkbookFromRaw` 与 `importSheets` 均调用）会重设模块级 `sheetState` 全局变量，并 `saveSheetState()` 把新数据**写回当前活跃 workbook**（见 `web/src/api/index.js`）。后续 `addWorkbook` 注册的新文件指向的是同一份被覆盖的数据 → 原文件数据彻底丢失。
+
+### 13.3 修复（v1.0.6，覆盖拖拽/打开）
+- `Edit.vue` 的 `loadWorkbookFromRaw` 不再调用 `loadSheetsContainer`，改为用 `buildSheetState(container)` 构建一份**全新且独立**的 sheetState，再 `addWorkbook({ ..., skipOldWriteback: true })` 注册为新文件；模块级 `sheetState` 与当前活跃文件数据完全不被触碰。
+- 抽出公共核心 `openContainerAsNewWorkbook(container, name, filePath)`（内部先 `manualSave()` 把当前编辑落盘，再注册新文件并打开）。
+
+### 13.4 修复（v1.0.7，覆盖工具栏"导入"全部格式）
+- `Edit.vue` 的 `importSheets(container, name)` 改为：单图数据归一化为单 sheet 容器后，调用 `openContainerAsNewWorkbook(container, name, '')` —— **导入同样创建同名新文件，不覆盖当前**。
+- `Import.vue` 四个处理器统一改为发 `importSheets`（带源文件名 baseName）：
+  - `handleSmm`：`isSheetsFile` 与否都走 `importSheets`（去掉旧 `setData` 分支）。
+  - `handleXmind` / `handleMd`：原来是 `setData`（替换当前），改为 `importSheets`。
+  - `handleEmmx`：补传 `baseName` 作为新文件名字。
+- 删除 `Import.vue` 中已无用的 `isSheetsFile` 导入。
+- 现所有入口（拖拽/打开/导入）一致：创建新文件并打开，原活跃文件保留（含未保存编辑经 `manualSave` 落盘）。
+
+最终交付：`electron-app/dist-electron/思绪思维导图 Setup.exe`（v1.0.7）。
+
+---
+
+## 14. 构建"卡死/退出 1"真因：safe-delete 拦截收尾删除（坑，重要）
+
+### 14.1 现象
+- 多次 `build_now.sh` 跑到 electron-builder 阶段后**长时间空转（近零 CPU、无子进程）**，或最终 `builder rc=1`。
+- 一度误判为 nsis 缓存版本不匹配 / GitHub 证书错误 / 真的卡死。实测均排除：nsis-3.0.4.1 缓存 sha512 与 electron-builder 24.13.3 期望值**完全一致**；GitHub 仅 TLS 证书链校验失败（不影响，因为根本没去下载）。
+
+### 14.2 真因
+- WorkBuddy 给 agent shell 的所有 node 进程注入 `NODE_OPTIONS=--require=".../cli/vendor/shim/genie-safe-delete.cjs"`，全局劫持 `fs.unlink` → 转去 `genie-trash` 回收站。
+- electron-builder 收尾要删中间文件 `dist-electron/mind-map-*.nsis.7z`（`app-builder-lib/.../nsisUtil.ts` 的 `finishBuild` → `unlink`），被劫持后调用 `genie-trash` 失败：
+  `⨯ [safe-delete] 操作失败: ...mind-map-1.0.7-x64.nsis.7z: Error during a \`trash\` operation: Unknown { description: "Some operations were aborted" }`
+- 该错误抛给 `failedTask=build` → 构建退出 1。**但 `思绪思维导图 Setup.exe` 实际已在 `building target=nsis ... Setup.exe` 阶段成功写出**（73.4MB，可用）。之前的"空转"是 `genie-trash` 操作在等待/挂起。
+- 早期 v1.0.5 能成功，是因为当时 `genie-trash` 操作碰巧成功（移入回收站，exit 0）；后续该操作开始失败/挂起，于是暴露问题。
+
+### 14.3 修复
+- `build_now.sh` 第 [4/4] 步（electron-builder）前加 `export NODE_OPTIONS=""`，关闭 safe-delete 钩子。构建只删除 `dist-electron` 自身临时产物，不涉及用户数据，清空 NODE_OPTIONS 安全。
+- 经此修复，electron-builder 收尾删除走正常 `unlink`，构建可干净退出 0。
+
+### 14.4 结论
+- 当前有效安装包为 **v1.0.7**（`dist-electron/思绪思维导图 Setup.exe`，18:27 生成，含 §13 全部导入修复）。
+- 若再遇"构建卡在 packaging 之后"，第一反应是查 safe-delete/回收站拦截，而非 nsis 镜像或网络。

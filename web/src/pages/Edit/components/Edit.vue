@@ -644,18 +644,22 @@ export default {
       })
     },
 
-    // 从文件导入全部工作表
-    importSheets(container) {
-      if (!loadSheetsContainer(container)) {
-        this.$message.error('工作表文件格式不正确')
-        return
+    // 从文件导入（工具栏"导入"按钮）：创建为新的同名文件并打开，
+    // 绝不覆盖当前正在编辑的活跃文件。
+    // container 可为多工作表容器，或单图 mindmap 数据（root / content.root）。
+    importSheets(container, name) {
+      // 归一化：单图数据（非多工作表容器）包成单个 sheet
+      let c = container
+      if (!isSheetsFile(c)) {
+        c = {
+          app: 'smm-multisheet',
+          version: 1,
+          sheets: [
+            { name: name || 'Sheet1', data: this.extractMindmapData(c) }
+          ]
+        }
       }
-      // 覆盖当前内容：清空旧文件路径、刷新标题
-      this.currentFilePath = null
-      setCurrentFilePath(null)
-      this.loadSheetData(getActiveSheetData())
-      this.refreshSheets()
-      this.updateTitle()
+      this.openContainerAsNewWorkbook(c, name || '未命名', '')
     },
 
     // ===== 文件保存 / 打开（桌面端，显示真实路径与文件名）=====
@@ -691,7 +695,38 @@ export default {
       this.saveWorkbookToFile(this.fileName || '思维导图.smm')
     },
 
-    // 从原始文件内容（JSON 字符串）打开为新的 workbook
+    // 打开/导入的核心：把一份（已归一化为多工作表容器的）数据，
+    // 注册为一个全新的 workbook 并打开，绝不触碰当前活跃文件。
+    // filePath 为真实路径（打开对话框 / 拖拽真实文件）或 ''（导入-尚未落盘）。
+    async openContainerAsNewWorkbook(container, name, filePath) {
+      // 先把当前 mind map 的编辑落盘到当前活跃文件，避免切换后丢失
+      this.manualSave()
+      const newSheetState = this.buildSheetState(container)
+      if (!newSheetState) {
+        this.$message.error('工作表文件格式不正确')
+        return false
+      }
+      const baseName = name || '未命名'
+      const { addWorkbook } = await import('@/api')
+      // skipOldWriteback：当前 module-level sheetState 是旧文件的数据，
+      // 不应被回写覆盖；新数据以独立 sheetState 注册为新 workbook。
+      addWorkbook({
+        name: baseName,
+        filePath: filePath || '',
+        sheetState: newSheetState,
+        skipOldWriteback: true
+      })
+      this.currentFilePath = filePath || null
+      setCurrentFilePath(filePath || null)
+      this.loadSheetData(getActiveSheetData())
+      this.refreshSheets()
+      this.updateTitle()
+      this.$bus.$emit('workbook-list-changed')
+      this.$message.success('已打开：' + this.fileName)
+      return true
+    },
+
+    // 从原始文件内容（JSON 字符串）打开为新的 workbook（打开对话框 / 拖拽 .smm）
     async loadWorkbookFromRaw(raw, filePath) {
       const trimmed = (raw || '').trim()
       if (!trimmed) {
@@ -705,37 +740,46 @@ export default {
         this.$message.error('文件解析失败：内容不是合法的 JSON')
         return false
       }
-      if (isSheetsFile(data)) {
-        // 本应用多工作表格式
-        loadSheetsContainer(data)
-      } else {
-        // 标准 simple-mind-map 单图文件（如 {root:{...}}、{content:{root}}）：作为单一工作表导入
-        loadSheetsContainer({
-          app: 'smm-multisheet',
-          version: 1,
-          sheets: [{ name: 'Sheet1', data: this.extractMindmapData(data) }]
-        })
-      }
-      // === 把打开的文件注册为新 workbook（而不是覆盖当前 workbook）===
+      // 归一化为多工作表容器（单图文件包成单个 Sheet1）
+      const container = isSheetsFile(data)
+        ? data
+        : {
+            app: 'smm-multisheet',
+            version: 1,
+            sheets: [{ name: 'Sheet1', data: this.extractMindmapData(data) }]
+          }
       const baseName = (filePath || '未命名')
         .split(/[\\/]/)
         .pop()
         .replace(/\.smm$/i, '')
-      const { addWorkbook, getCurrentSheetState } = await import('@/api')
-      addWorkbook({
-        name: baseName || '未命名',
-        filePath: filePath || '',
-        sheetState: getCurrentSheetState(),
-        skipOldWriteback: true
-      })
-      this.currentFilePath = filePath || null
-      setCurrentFilePath(filePath || null)
-      this.loadSheetData(getActiveSheetData())
-      this.refreshSheets()
-      this.updateTitle()
-      this.$bus.$emit('workbook-list-changed')
-      this.$message.success('已打开：' + this.fileName)
-      return true
+      return this.openContainerAsNewWorkbook(
+        container,
+        baseName,
+        filePath || null
+      )
+    },
+
+    // 由导入/打开的文件容器构建一份全新的 sheetState（不改动任何全局状态）
+    buildSheetState(container) {
+      if (
+        !container ||
+        !Array.isArray(container.sheets) ||
+        container.sheets.length === 0
+      ) {
+        return null
+      }
+      const sheets = container.sheets.map((s, i) => ({
+        id:
+          s.id ||
+          'sheet-' + Date.now() + '-' + Math.floor(Math.random() * 1e6) + '-' + i,
+        name: s.name || 'Sheet' + (i + 1),
+        data: s.data || JSON.parse(JSON.stringify(exampleData))
+      }))
+      const activeId =
+        container.activeId && sheets.find(s => s.id === container.activeId)
+          ? container.activeId
+          : sheets[0].id
+      return { activeId, sheets }
     },
 
     // 打开本地文件

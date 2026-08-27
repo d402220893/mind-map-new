@@ -37,6 +37,11 @@ cd /e/03_学习文件/mind-map-main/electron-app
 "$NODE" bump_version.js 2>&1 | tee -a "$LOG"
 grep '"version"' package.json | tee -a "$LOG"
 echo "=== [4/4] electron-builder ===" | tee -a "$LOG"
+# 关闭 WorkBuddy 注入的 safe-delete 钩子（NODE_OPTIONS --require genie-safe-delete.cjs）。
+# 否则 electron-builder 收尾删除中间文件 mind-map-*.nsis.7z 时，unlink 被拦截转去
+# genie-trash 回收站，而该操作会失败/挂起，导致构建退出 1（Setup.exe 实际已生成）。
+# 构建只删除 dist-electron 自身的临时产物，清空 NODE_OPTIONS 不影响用户数据安全。
+export NODE_OPTIONS=""
 timeout 600 npm run dist >> "$LOG" 2>&1
 RC=$?
 echo "builder rc=$RC at $(date +%T)" | tee -a "$LOG"

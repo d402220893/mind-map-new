@@ -78,7 +78,6 @@ import xmind from 'simple-mind-map/src/parse/xmind.js'
 import markdown from 'simple-mind-map/src/parse/markdown.js'
 import { mapMutations } from 'vuex'
 import Vue from 'vue'
-import { isSheetsFile } from '@/api'
 import { parseEmmx } from '@/utils/parseEmmx'
 
 // 导入
@@ -257,13 +256,10 @@ export default {
           if (typeof data !== 'object') {
             throw new Error(this.$t('import.fileContentError'))
           }
-          // 多工作表文件：整体导入所有工作表
-          if (isSheetsFile(data)) {
-            this.$bus.$emit('importSheets', data)
-          } else {
-            this.$bus.$emit('setData', data)
-          }
-          this.$message.success(this.$t('import.importSuccess'))
+          // 导入为新的同名文件，不覆盖当前正在编辑的文件
+          const baseName =
+            (file.name || '思维导图').replace(/\.(smm|json)$/i, '') || 'Sheet1'
+          this.$bus.$emit('importSheets', data, baseName)
         } catch (error) {
           console.log(error)
           this.$message.error(this.$t('import.fileParsingFailed'))
@@ -280,8 +276,10 @@ export default {
             this.selectPromiseResolve = resolve
           })
         })
-        this.$bus.$emit('setData', data)
-        this.$message.success(this.$t('import.importSuccess'))
+        // 导入为新的同名文件，不覆盖当前正在编辑的文件
+        const baseName =
+          (file.name || '思维导图').replace(/\.xmind$/i, '') || 'Sheet1'
+        this.$bus.$emit('importSheets', data, baseName)
       } catch (error) {
         console.log(error)
         this.$message.error(this.$t('import.fileParsingFailed'))
@@ -311,22 +309,24 @@ export default {
         const baseName =
           (fileName || file.name || '思维导图')
             .replace(/\.emmx$/i, '') || 'Sheet1'
-        // 包装成多工作表容器，发 importSheets 事件由 Edit.vue 接管
-        this.$bus.$emit('importSheets', {
-          app: 'smm-multisheet',
-          version: 1,
-          sheets: trees.map((t, i) => ({
-            name: t.name || (i === 0 ? baseName : `${baseName} (${i + 1})`),
-            data: t.tree
-          }))
-        })
+        // 包装成多工作表容器，发 importSheets 事件由 Edit.vue 接管为新文件
+        this.$bus.$emit(
+          'importSheets',
+          {
+            app: 'smm-multisheet',
+            version: 1,
+            sheets: trees.map((t, i) => ({
+              name: t.name || (i === 0 ? baseName : `${baseName} (${i + 1})`),
+              data: t.tree
+            }))
+          },
+          baseName
+        )
         this.$store.commit('setIsHandleLocalFile', false)
         this.cancel()
         this.setActiveSidebar(null)
         if (warning) {
           this.$message.warning(warning)
-        } else {
-          this.$message.success('已导入：' + baseName)
         }
       } catch (error) {
         console.error(error)
@@ -388,8 +388,10 @@ export default {
       fileReader.onload = async evt => {
         try {
           let data = markdown.transformMarkdownTo(evt.target.result)
-          this.$bus.$emit('setData', data)
-          this.$message.success(this.$t('import.importSuccess'))
+          // 导入为新的同名文件，不覆盖当前正在编辑的文件
+          const baseName =
+            (file.name || '思维导图').replace(/\.md$/i, '') || 'Sheet1'
+          this.$bus.$emit('importSheets', data, baseName)
         } catch (error) {
           console.log(error)
           this.$message.error(this.$t('import.fileParsingFailed'))
