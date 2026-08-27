@@ -14,6 +14,13 @@ _trash/
 # ===== Logs =====
 *.log
 
+# ===== macOS junk =====
+.DS_Store
+
+# ===== Dev/diagnostic monitor scripts (not part of the app) =====
+electron-app/monitor_build.sh
+electron-app/pkg_monitor.sh
+
 # ===== Stray / probe scripts (not part of the app) =====
 web/src/pages/Edit/components/_probe_import.py
 
