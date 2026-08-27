@@ -742,7 +742,7 @@ export default {
         this.loadSheetData(getActiveSheetData())
         this.refreshSheets()
         this.updateTitle()
-        this.$emit('workbook-updated')
+        this.$bus.$emit('workbook-list-changed')
         this.$message.success('已打开：' + this.fileName)
       } catch (err) {
         console.error(err)
@@ -824,7 +824,7 @@ export default {
         this.currentFilePath = ''
         setCurrentFilePath('')
         this.updateTitle()
-        this.$emit('workbook-updated')
+        this.$bus.$emit('workbook-list-changed')
         return
       }
       try {
@@ -875,7 +875,7 @@ export default {
         setCurrentFilePath(res.filePath)
         this.updateTitle()
         this.$message.success('已创建：' + this.fileName)
-        this.$emit('workbook-updated')
+        this.$bus.$emit('workbook-list-changed')
       } catch (err) {
         console.error(err)
         this.$message.error('创建失败，请查看控制台')
@@ -897,7 +897,7 @@ export default {
       this.refreshSheets()
       this.currentFilePath = getCurrentFilePath()
       this.updateTitle()
-      this.$message.success('已切换文件')
+      // 切换文件时不弹 toast，保持 UI 静默切换
     },
 
     // 更新窗口标题并触发路径显示
@@ -1327,9 +1327,9 @@ export default {
   .mindMapContainer {
     position: absolute;
     left: 0px;
-    top: 32px;
+    top: 34px;
     width: 100%;
-    bottom: 38px;
+    bottom: 40px;
     height: auto;
   }
 }

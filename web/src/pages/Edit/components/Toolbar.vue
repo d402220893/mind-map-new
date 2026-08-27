@@ -621,14 +621,27 @@ export default {
     position: fixed;
     left: 50%;
     transform: translateX(-50%);
-    top: 20px;
+    top: 44px;
     width: max-content;
+    max-width: calc(100vw - 32px);
     display: flex;
     font-size: 12px;
     font-family: PingFangSC-Regular, PingFang SC;
     font-weight: 400;
     color: rgba(26, 26, 26, 0.8);
-    z-index: 2;
+    z-index: 100;
+    overflow-x: auto;
+    overflow-y: hidden;
+    white-space: nowrap;
+    padding: 0 8px;
+
+    &::-webkit-scrollbar {
+      height: 6px;
+    }
+    &::-webkit-scrollbar-thumb {
+      background: rgba(0, 0, 0, 0.18);
+      border-radius: 3px;
+    }
 
     .toolbarBlock {
       display: flex;

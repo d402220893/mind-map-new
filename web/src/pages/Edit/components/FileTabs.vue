@@ -1,36 +1,43 @@
 <template>
-  <div class="sheetTabs" :class="{ isDark: isDark }">
-    <div class="sheetTabsInner customScrollbar">
+  <div class="fileTabs" :class="{ isDark: isDark }">
+    <div class="fileTabsInner customScrollbar">
+      <div class="fileBrand">
+        <span class="brandIcon">🧠</span>
+        <span class="brandText">思绪思维导图</span>
+      </div>
+      <div class="fileBrandDivider"></div>
       <div
-        v-for="s in sheets"
-        :key="s.id"
-        class="sheetTab"
-        :class="{ active: s.id === activeId }"
-        :title="s.name"
-        @click="onSwitch(s)"
-        @dblclick="onRename(s)"
-        @contextmenu.prevent="onContextMenu(s, $event)"
+        v-for="w in workbooks"
+        :key="w.id"
+        class="fileTab"
+        :class="{ active: w.id === activeId }"
+        :title="w.name + (w.filePath ? '\n' + w.filePath : '')"
+        @click="onSwitch(w)"
+        @dblclick="onRename(w)"
+        @contextmenu.prevent="onContextMenu(w, $event)"
       >
+        <span class="fileIcon" :class="{ saved: !!w.filePath }">
+          {{ w.filePath ? '📄' : '📝' }}
+        </span>
         <input
-          v-if="s.id === editingId"
+          v-if="w.id === editingId"
           ref="renameInput"
-          class="sheetNameInput"
+          class="fileNameInput"
           v-model="editValue"
           @click.stop
           @keyup.enter="commitRename"
           @keyup.esc="cancelRename"
           @blur="commitRename"
         />
-        <span v-else class="sheetName">{{ s.name }}</span>
+        <span v-else class="fileName">{{ w.name }}</span>
         <span
-          v-if="sheets.length > 1"
-          class="sheetClose"
-          title="删除工作表"
-          @click.stop="onRemove(s)"
+          class="fileClose"
+          title="关闭文件"
+          @click.stop="onRemove(w)"
           >×</span
         >
       </div>
-      <div class="sheetAdd" title="新建工作表" @click="onAdd">＋</div>
+      <div class="fileAdd" title="新建文件" @click="onAdd">＋</div>
     </div>
   </div>
 </template>
@@ -38,10 +45,12 @@
 <script>
 import { mapState } from 'vuex'
 
+// 顶部文件标签栏：在菜单栏位置显示所有打开的思维导图文件，
+// 每个文件可独立保存/加载，但内部仍包含多个 sheet（由底部 SheetTabs 管理）。
 export default {
-  name: 'SheetTabs',
+  name: 'FileTabs',
   props: {
-    sheets: {
+    workbooks: {
       type: Array,
       default: () => []
     },
@@ -62,36 +71,36 @@ export default {
     })
   },
   methods: {
-    onSwitch(s) {
-      if (s.id === this.activeId) return
-      this.$emit('switch', s.id)
+    onSwitch(w) {
+      if (w.id === this.activeId) return
+      this.$emit('switch', w.id)
     },
     onAdd() {
       this.$emit('add')
     },
-    onRemove(s) {
-      if (this.sheets.length <= 1) {
-        this.$message.warning('至少需保留一个工作表')
+    onRemove(w) {
+      // 至少保留一个文件
+      if (this.workbooks.length <= 1) {
+        this.$message.warning('至少需保留一个文件')
         return
       }
       this.$confirm(
-        `确定删除工作表「${s.name}」吗？该工作表的内容将被移除。`,
-        '删除工作表',
+        `确定关闭文件「${w.name}」吗？未保存的内容将丢失。`,
+        '关闭文件',
         {
-          confirmButtonText: '删除',
+          confirmButtonText: '关闭',
           cancelButtonText: '取消',
           type: 'warning'
         }
       )
         .then(() => {
-          this.$emit('remove', s.id)
+          this.$emit('close', w.id)
         })
         .catch(() => {})
     },
-    onRename(s) {
-      // 原地编辑：进入编辑态并聚焦输入框，不再弹 $prompt
-      this.editValue = s.name
-      this.editingId = s.id
+    onRename(w) {
+      this.editValue = w.name
+      this.editingId = w.id
       this.$nextTick(() => {
         const el = this.$refs.renameInput
         if (el && typeof el.focus === 'function') {
@@ -101,7 +110,6 @@ export default {
       })
     },
     commitRename() {
-      // 已清空（如被 cancelRename 先行触发）则直接返回，避免重复提交
       if (!this.editingId) return
       const name = (this.editValue || '').trim()
       if (name) {
@@ -114,10 +122,9 @@ export default {
       this.editingId = ''
       this.editValue = ''
     },
-    onContextMenu(s, e) {
-      // 右键菜单：重命名 / 删除
+    onContextMenu(w, e) {
       const menu = document.createElement('div')
-      menu.className = 'sheetContextMenu'
+      menu.className = 'fileContextMenu'
       menu.style.position = 'fixed'
       menu.style.left = e.clientX + 'px'
       menu.style.top = e.clientY + 'px'
@@ -137,21 +144,23 @@ export default {
         item.style.padding = '8px 18px'
         item.style.cursor = 'pointer'
         item.onmouseenter = () => {
-          item.style.background = this.isDark ? 'rgba(255,255,255,0.08)' : '#f5f7fa'
+          item.style.background = this.isDark
+            ? 'rgba(255,255,255,0.08)'
+            : '#f5f7fa'
         }
         item.onmouseleave = () => {
           item.style.background = 'transparent'
         }
         item.onclick = () => {
-          document.body.removeChild(menu)
+          if (menu.parentNode) document.body.removeChild(menu)
           fn()
         }
         menu.appendChild(item)
       }
 
-      addItem('重命名', () => this.onRename(s))
-      if (this.sheets.length > 1) {
-        addItem('删除', () => this.onRemove(s))
+      addItem('重命名', () => this.onRename(w))
+      if (this.workbooks.length > 1) {
+        addItem('关闭', () => this.onRemove(w))
       }
 
       document.body.appendChild(menu)
@@ -170,28 +179,28 @@ export default {
 </script>
 
 <style lang="less" scoped>
-.sheetTabs {
+.fileTabs {
   position: fixed;
   left: 0;
   right: 0;
-  bottom: 0;
-  height: 40px;
-  background: linear-gradient(0deg, rgba(244,246,250,0.96), rgba(255,255,255,0.92));
+  top: 0;
+  height: 34px;
+  background: linear-gradient(180deg, rgba(255,255,255,0.92), rgba(244,246,250,0.96));
   backdrop-filter: saturate(180%) blur(12px);
   -webkit-backdrop-filter: saturate(180%) blur(12px);
-  border-top: 1px solid rgba(0, 0, 0, 0.06);
-  box-shadow: 0 -1px 2px rgba(0, 0, 0, 0.04);
-  z-index: 2000;
+  border-bottom: 1px solid rgba(0, 0, 0, 0.06);
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.04);
+  z-index: 2001;
   display: flex;
   align-items: center;
   user-select: none;
 
   &.isDark {
-    background: linear-gradient(0deg, rgba(28,32,36,0.96), rgba(36,40,44,0.92));
-    border-top-color: rgba(255, 255, 255, 0.08);
+    background: linear-gradient(180deg, rgba(36,40,44,0.92), rgba(28,32,36,0.96));
+    border-bottom-color: rgba(255, 255, 255, 0.08);
   }
 
-  .sheetTabsInner {
+  .fileTabsInner {
     display: flex;
     align-items: center;
     height: 100%;
@@ -205,21 +214,54 @@ export default {
     }
   }
 
-  .sheetTab {
+  .fileBrand {
     display: inline-flex;
     align-items: center;
-    height: 28px;
-    max-width: 160px;
-    padding: 0 10px 0 12px;
+    flex-shrink: 0;
+    height: 22px;
+    padding: 0 12px 0 4px;
     margin-right: 4px;
-    border-radius: 8px 8px 4px 4px;
+    font-size: 13px;
+    font-weight: 600;
+    color: #303133;
+    user-select: none;
+    letter-spacing: 0.4px;
+    border-radius: 6px;
+
+    .brandIcon {
+      margin-right: 6px;
+      font-size: 14px;
+      line-height: 1;
+    }
+
+    .brandText {
+      white-space: nowrap;
+    }
+  }
+
+  .fileBrandDivider {
+    flex-shrink: 0;
+    width: 1px;
+    height: 16px;
+    margin: 0 8px 0 2px;
+    background: rgba(0, 0, 0, 0.12);
+  }
+
+  .fileTab {
+    display: inline-flex;
+    align-items: center;
+    height: 24px;
+    max-width: 200px;
+    padding: 0 8px 0 10px;
+    margin-right: 4px;
+    border-radius: 8px;
     cursor: pointer;
-    color: rgba(60, 64, 70, 0.75);
+    color: rgba(60, 64, 70, 0.85);
     background: transparent;
     border: 1px solid transparent;
     font-size: 13px;
     flex-shrink: 0;
-    transition: background 0.15s ease, color 0.15s ease;
+    transition: background 0.15s ease, color 0.15s ease, box-shadow 0.15s ease;
 
     &:hover {
       background: rgba(64, 158, 255, 0.10);
@@ -230,20 +272,26 @@ export default {
       color: #fff;
       background: linear-gradient(135deg, #4f8cff, #6aa6ff);
       font-weight: 500;
-      box-shadow: 0 -2px 6px rgba(64, 158, 255, 0.30);
+      box-shadow: 0 2px 6px rgba(64, 158, 255, 0.35);
     }
 
-    .sheetName {
+    .fileIcon {
+      margin-right: 5px;
+      font-size: 12px;
+      line-height: 1;
+    }
+
+    .fileName {
       overflow: hidden;
       text-overflow: ellipsis;
       white-space: nowrap;
     }
 
-    .sheetNameInput {
+    .fileNameInput {
       box-sizing: border-box;
-      width: 100%;
-      height: 26px;
-      line-height: 24px;
+      width: 140px;
+      height: 22px;
+      line-height: 20px;
       padding: 0 4px;
       border: 1px solid #409eff;
       border-radius: 6px;
@@ -253,7 +301,7 @@ export default {
       background: #fff;
     }
 
-    .sheetClose {
+    .fileClose {
       margin-left: 6px;
       width: 16px;
       height: 16px;
@@ -271,12 +319,12 @@ export default {
     }
   }
 
-  .sheetAdd {
+  .fileAdd {
     display: inline-flex;
     align-items: center;
     justify-content: center;
-    height: 28px;
-    width: 28px;
+    height: 24px;
+    width: 24px;
     margin-left: 4px;
     border-radius: 8px;
     cursor: pointer;
@@ -292,21 +340,28 @@ export default {
   }
 
   &.isDark {
-    .sheetTab {
+    .fileBrand {
+      color: rgba(255, 255, 255, 0.9);
+    }
+    .fileBrandDivider {
+      background: rgba(255, 255, 255, 0.18);
+    }
+    .fileTab {
       color: rgba(255, 255, 255, 0.7);
+      background: transparent;
 
       &:hover {
-        color: #409eff;
         background: rgba(64, 158, 255, 0.15);
+        color: #409eff;
       }
 
       &.active {
         color: #fff;
         background: linear-gradient(135deg, #4f8cff, #6aa6ff);
-        box-shadow: 0 -2px 6px rgba(64, 158, 255, 0.5);
+        box-shadow: 0 2px 6px rgba(64, 158, 255, 0.5);
       }
 
-      .sheetClose {
+      .fileClose {
         color: rgba(255, 255, 255, 0.6);
 
         &:hover {
@@ -315,14 +370,14 @@ export default {
         }
       }
 
-      .sheetNameInput {
+      .fileNameInput {
         color: rgba(255, 255, 255, 0.9);
         background: #1f2326;
         border-color: #409eff;
       }
     }
 
-    .sheetAdd {
+    .fileAdd {
       color: rgba(255, 255, 255, 0.6);
 
       &:hover {

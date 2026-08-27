@@ -16,6 +16,7 @@
       <Edit
         :activeWorkbookId="activeWorkbookId"
         @workbook-updated="refreshWorkbooks"
+        ref="editComp"
       ></Edit>
     </template>
   </div>
@@ -59,6 +60,13 @@ export default {
     isDark() {
       this.setBodyDark()
     }
+  },
+  mounted() {
+    // 兜底：Edit.vue 内部对 workbook 列表的修改通过 bus 通知，保证 FileTabs 一定刷新
+    this.$bus.$on('workbook-list-changed', this.refreshWorkbooks)
+  },
+  beforeDestroy() {
+    this.$bus.$off('workbook-list-changed', this.refreshWorkbooks)
   },
   async created() {
     this.initLocalConfig()
