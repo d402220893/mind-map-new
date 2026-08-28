@@ -878,3 +878,43 @@ onRemove(w) {
 - 改名后继续编辑并保存 → 内容写入 `123.smm`，原 `test6.smm` 不再被写入（如已不存在则无残留）。
 
 ---
+
+## 24. v1.0.13 —— 修复 §23 包装器丢失 `newFilePath` 导致的二次重命名失败 / 保存回源文件
+
+### 24.1 用户真机反馈（v1.0.12 安装包）
+- 把 `test6.smm` 标签第一次改名后，**第二次再改名报错**：`重命名失败：ENOENT: no such file or directory, rename 'E:\03_学习文件\test6.smm' -> '...'`。
+- 改名后**源文件 `test6.smm` 仍在**。
+- 保存时提示「已保存：test6.smm」，即**仍然保存回源文件**。
+
+### 24.2 根因
+- `Index.vue` 在磁盘文件重命名成功后调用 `apiRenameWorkbook(id, newBaseName, finalPath)`，**正确传了第三个参数** `finalPath`。
+- 但 `web/src/api/index.js` 的包装函数只转发了前两个参数：
+  ```js
+  export const renameWorkbook = (id, name) => WB.renameWorkbook(id, name)
+  ```
+- 因此状态机 `workbookState.js` 里的 `renameWorkbook(id, name, newFilePath)` 永远收不到 `newFilePath`，`w.filePath` 没有更新，仍指向旧路径 `test6.smm`。
+- 后续第二次重命名用旧路径调 `fs.renameSync` → 文件已不存在 → `ENOENT`；保存时用旧路径 `writeFile` → 重新创建/覆盖 `test6.smm`。
+
+### 24.3 修复
+- `web/src/api/index.js`：包装函数改为透传第三个参数：
+  ```js
+  export const renameWorkbook = (id, name, newFilePath) =>
+    WB.renameWorkbook(id, name, newFilePath)
+  ```
+- 状态机 `workbookState.js` 的 `renameWorkbook` 本身已支持 `newFilePath`，无需再改。
+
+### 24.4 验证
+- 单测：`workbookState.test.mjs` 10/10 通过。
+- 包内校验（win-unpacked）：`app.js` 中包装器被压缩为 `ye=(e,t,n)=>O(e,t,n)`，确认**三参数全部转发**；`chunk-7c6e27e7.js` 中调用处为 `Object(Ca["renameWorkbook"])(e,o,n)`，确认 Index.vue 传入三参数。
+- `51.la` 剥离：0 处残留；版本号三处一致为 **v1.0.13**。
+
+### 24.5 构建 & 出包
+- 版本：**v1.0.13**（`bump_version.js` 1.0.12 → 1.0.13）。
+- 交付物：`electron-app/dist-electron/思绪思维导图 Setup.exe`（v1.0.13，约 102.7MB）。
+
+### 24.6 真机验证建议
+- 打开 `test6.smm` → 双击标签改名 `123` → 文件夹内文件名应变为 `123.smm`。
+- **紧接着再改一次名**（如 `456`）→ 不应报错，文件夹内文件名变为 `456.smm`。
+- 两次改名后保存 → 提示「已保存：456.smm」；原 `test6.smm` 不应被重新创建或写入。
+
+---

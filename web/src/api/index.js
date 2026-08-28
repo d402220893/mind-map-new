@@ -316,8 +316,9 @@ export const addWorkbook = ({ name, filePath, sheetState: initialSheetState, ski
 // 关闭 workbook：至少保留一个；关闭最后一个时新建一个空的替换
 export const removeWorkbook = id => WB.removeWorkbook(id)
 
-// 重命名 workbook
-export const renameWorkbook = (id, name) => WB.renameWorkbook(id, name)
+// 重命名 workbook（newFilePath 为可选参数：传入时同步更新 filePath）
+export const renameWorkbook = (id, name, newFilePath) =>
+  WB.renameWorkbook(id, name, newFilePath)
 
 // 直接覆盖当前激活 workbook 的 sheetState（用于从文件载入新内容）
 export const setActiveWorkbookSheetState = newSheetState =>
