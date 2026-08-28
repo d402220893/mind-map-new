@@ -123,7 +123,8 @@ import {
   loadSheetsContainer,
   isSheetsFile,
   getCurrentFilePath,
-  setCurrentFilePath
+  setCurrentFilePath,
+  getWorkbookList
 } from '@/api'
 import Navigator from './Navigator.vue'
 import NodeImgPreview from './NodeImgPreview.vue'
@@ -733,7 +734,18 @@ export default {
 
     // 另存为：弹出保存对话框，返回真实路径
     doSaveAs() {
-      this.saveWorkbookToFile(this.fileName || '思维导图.smm')
+      let defaultName = this.fileName
+      if (!defaultName) {
+        // 未保存（空路径）文件：用当前 workbook 的名字作为默认文件名
+        try {
+          const list = getWorkbookList()
+          const active = list.workbooks.find(w => w.id === list.activeId)
+          defaultName = (active && active.name ? active.name : '思维导图') + '.smm'
+        } catch (e) {
+          defaultName = '思维导图.smm'
+        }
+      }
+      this.saveWorkbookToFile(defaultName)
     },
 
     // 打开/导入的核心：把一份（已归一化为多工作表容器的）数据，

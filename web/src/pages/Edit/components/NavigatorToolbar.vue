@@ -1,5 +1,5 @@
 <template>
-  <div class="navigatorContainer customScrollbar" :class="{ isDark: isDark }" :style="{ opacity: navigatorOpacity }">
+  <div class="navigatorContainer customScrollbar" :class="{ isDark: isDark }" :style="{ opacity: navigatorOpacity != null ? navigatorOpacity : 1 }">
     <div class="item">
       <el-select
         v-model="lang"
@@ -261,7 +261,6 @@ export default {
   bottom: 50px;
   background: hsla(0, 0%, 100%, 0.8);
   border-radius: 5px;
-  opacity: 0.8;
   height: 44px;
   font-size: 12px;
   display: flex;

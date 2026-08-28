@@ -419,9 +419,11 @@ export const getCurrentFilePath = () => {
     const activeWb = wbState.workbooks.find(
       w => w.id === wbState.activeId
     )
-    if (activeWb && activeWb.filePath) return activeWb.filePath
-    // 兜底：旧版本独立存储的文件路径
-    return localStorage.getItem(SIMPLE_MIND_MAP_LAST_FILE) || ''
+    // 只返回当前激活 workbook 自身记录的绝对路径；
+    // 不再回退到全局 SIMPLE_MIND_MAP_LAST_FILE，否则切换到空路径文件
+    //（拖拽打开/新建未保存）时会把内容错写到上一次保存的文件。
+    if (activeWb && isAbsolutePath(activeWb.filePath)) return activeWb.filePath
+    return ''
   } catch (e) {
     return ''
   }

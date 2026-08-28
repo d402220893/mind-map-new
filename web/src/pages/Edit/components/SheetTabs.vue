@@ -1,5 +1,5 @@
 <template>
-  <div class="sheetTabs" :class="{ isDark: isDark }" :style="{ opacity: fileTabsOpacity }">
+  <div class="sheetTabs" :class="{ isDark: isDark }" :style="{ opacity: fileTabsOpacity != null ? fileTabsOpacity : 1 }">
     <div class="sheetTabsInner customScrollbar">
       <div
         v-for="s in sheets"

@@ -3,7 +3,7 @@
     class="sidebarTriggerContainer "
     @click.stop
     :class="{ hasActive: show && activeSidebar, show: show, isDark: isDark }"
-    :style="{ maxHeight: maxHeight + 'px', opacity: sidebarOpacity }"
+    :style="{ maxHeight: maxHeight + 'px', opacity: sidebarOpacity != null ? sidebarOpacity : 1 }"
   >
     <div class="toggleShowBtn" :class="{ hide: !show }" @click="show = !show">
       <span class="iconfont iconjiantouyou"></span>

@@ -1,5 +1,5 @@
 <template>
-  <div class="fileTabs" :class="{ isDark: isDark }" @dblclick.self="onMaximize" :style="{ opacity: fileTabsOpacity }">
+  <div class="fileTabs" :class="{ isDark: isDark }" @dblclick.self="onMaximize" :style="{ opacity: fileTabsOpacity != null ? fileTabsOpacity : 1 }">
     <div class="fileBrand">思绪思维导图</div>
     <div class="fileTabsInner customScrollbar">
       <div

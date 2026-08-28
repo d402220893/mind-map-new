@@ -698,3 +698,34 @@ onRemove(w) {
   4. `node bump_version.js`（1.0.6 → 1.0.7）
   5. 同步 `electron-app/*` 到 `dist-electron/win-unpacked/resources/app/`
   6. `makensis.exe make_installer.nsi`
+
+---
+
+## 19. v1.0.8 — 修复：保存错文件 / 顶部菜单栏消失 / 透明度无效
+
+### 19.1 问题现象（用户反馈）
+1. 打开 `test3.smm` 后切换到另一个文件，按 Ctrl+S 仍保存到 `test3.smm`，应保存到当前激活文件。
+2. 顶部工具栏（玻璃菜单栏）不显示了（"上面的菜单栏没了"）。
+3. 在设置里改透明度，对应菜单栏的透明度没有任何变化。
+
+### 19.2 根因
+- **保存错文件**：`api/index.js` 的 `getCurrentFilePath()` 在"当前激活 workbook 没有 filePath（拖拽打开 / 新建未保存的文件）"时，会**回退到全局 `SIMPLE_MIND_MAP_LAST_FILE`**（上次保存文件 = test3.smm）。切换到这类空路径文件后，`Edit.vue.currentFilePath` 被这个全局值污染，于是 Ctrl+S 把内容写到了 test3.smm。
+- **菜单栏消失 + 透明度无效**：`Toolbar.vue` 把 `:style="{ opacity }"` 挂在了**外层容器 `.toolbarContainer`** 上，而可见的玻璃条 `.toolbar` 带 `backdrop-filter`。Chromium 合成规则：**祖先元素 `opacity < 1` 时，其子孙的 `backdrop-filter` 会渲染失败、整条消失**（默认 opacity=0.95 即触发）。所以玻璃工具栏直接"没了"，并且无论怎么调透明度数值都救不回来——根因是合成失败，不是数值没变。
+
+### 19.3 修复
+- `api/index.js` `getCurrentFilePath()`：去掉 `SIMPLE_MIND_MAP_LAST_FILE` 回退，只返回当前激活 workbook 自身的绝对路径；空路径一律返回 `''`（→ 走"另存为"）。彻底杜绝错写旧文件。
+- `Edit.vue` `doSaveAs()`：空路径文件另存为时，用当前 workbook 名字作为默认文件名（而非固定"思维导图.smm"）。
+- `Toolbar.vue`：把 `:style="{ opacity: toolbarOpacity }"` 从外层容器移到**带 `backdrop-filter` 的 `.toolbar` 自身**（同一元素同时有 opacity + backdrop-filter 是安全的，规避"祖先 opacity 破坏 backdrop-filter"的合成 bug）。根因修复后，菜单栏既可见、又实时响应透明度滑块。
+- `NavigatorToolbar.vue`：移除 CSS 里写死的 `opacity: 0.8`（避免与 inline 绑定语义混乱），inline 绑定加数值兜底。
+- `SidebarTrigger.vue` / `FileTabs.vue` / `SheetTabs.vue`：inline `opacity` 统一加 `!= null ? v : 1` 兜底，避免任何 undefined 导致异常。
+
+### 19.4 影响范围与回归
+- 切到"已对话框打开（绝对路径）"的文件 → Ctrl+S 直接覆盖该文件（正确）。
+- 切到"拖拽打开 / 新建未保存"的文件 → Ctrl+S 走"另存为"，默认文件名取该文件标签名，不再误写 test3.smm。
+- 顶部工具栏、左侧栏、底部导航栏、文件名栏 / 工作表栏的透明度滑块均实时生效；同一数值下玻璃条正常显示。
+- 透明度默认值：工具栏/侧栏 0.95、底部导航 0.8、文件名栏 1（store.js 已定）。
+
+### 19.5 构建 & 出包
+- 版本：**v1.0.8**（`bump_version.js` 1.0.7 → 1.0.8，已同步 `package.json` 与 `make_installer.nsi`）
+- 出包：`electron-app/dist-electron/思绪思维导图 Setup.exe`（约 101MB）
+- 流程同 §18.4（build → 同步 dist → 剥离 51.la → bump → 同步 win-unpacked → makensis）

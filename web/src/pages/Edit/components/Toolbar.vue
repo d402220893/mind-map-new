@@ -1,6 +1,6 @@
 <template>
-  <div class="toolbarContainer" :class="{ isDark: isDark }" :style="{ opacity: toolbarOpacity }">
-    <div class="toolbar" ref="toolbarRef">
+  <div class="toolbarContainer" :class="{ isDark: isDark }">
+    <div class="toolbar" ref="toolbarRef" :style="{ opacity: toolbarOpacity != null ? toolbarOpacity : 1 }">
       <!-- 节点操作 -->
       <div class="toolbarBlock">
         <ToolbarNodeBtnList :list="horizontalList"></ToolbarNodeBtnList>
