@@ -256,6 +256,62 @@
           >
         </div>
       </div>
+      <!-- 顶部工具栏透明度 -->
+      <div class="row">
+        <div class="rowItem">
+          <span class="name">{{ $t('setting.toolbarOpacity') }}</span>
+          <el-slider
+            v-model="localConfigs.toolbarOpacity"
+            style="width: 150px"
+            :min="0.3"
+            :max="1"
+            :step="0.05"
+            @change="updateLocalConfig('toolbarOpacity', $event)"
+          ></el-slider>
+        </div>
+      </div>
+      <!-- 左侧工具栏透明度 -->
+      <div class="row">
+        <div class="rowItem">
+          <span class="name">{{ $t('setting.sidebarOpacity') }}</span>
+          <el-slider
+            v-model="localConfigs.sidebarOpacity"
+            style="width: 150px"
+            :min="0.3"
+            :max="1"
+            :step="0.05"
+            @change="updateLocalConfig('sidebarOpacity', $event)"
+          ></el-slider>
+        </div>
+      </div>
+      <!-- 底部工具栏透明度 -->
+      <div class="row">
+        <div class="rowItem">
+          <span class="name">{{ $t('setting.navigatorOpacity') }}</span>
+          <el-slider
+            v-model="localConfigs.navigatorOpacity"
+            style="width: 150px"
+            :min="0.3"
+            :max="1"
+            :step="0.05"
+            @change="updateLocalConfig('navigatorOpacity', $event)"
+          ></el-slider>
+        </div>
+      </div>
+      <!-- 文件名栏透明度（顶部文件标签 + 底部工作表标签同步） -->
+      <div class="row">
+        <div class="rowItem">
+          <span class="name">{{ $t('setting.fileTabsOpacity') }}</span>
+          <el-slider
+            v-model="localConfigs.fileTabsOpacity"
+            style="width: 150px"
+            :min="0.3"
+            :max="1"
+            :step="0.05"
+            @change="updateLocalConfig('fileTabsOpacity', $event)"
+          ></el-slider>
+        </div>
+      </div>
       <!-- 配置鼠标滚轮行为 -->
       <div class="row">
         <div class="rowItem">
@@ -474,7 +530,11 @@ export default {
       localConfigs: {
         isShowScrollbar: false,
         enableDragImport: false,
-        enableAi: false
+        enableAi: false,
+        toolbarOpacity: 0.95,
+        sidebarOpacity: 0.95,
+        navigatorOpacity: 0.8,
+        fileTabsOpacity: 1
       },
       // 画布背景
       canvasBgType: 'default',

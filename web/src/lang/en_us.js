@@ -92,6 +92,10 @@ export default {
     enableInheritAncestorLineStyle:
       'Node connection style inherits the style of ancestor nodes',
     enableAi: 'Is enable AI function',
+    toolbarOpacity: 'Toolbar opacity',
+    sidebarOpacity: 'Sidebar opacity',
+    navigatorOpacity: 'Navigator opacity',
+    fileTabsOpacity: 'File tabs opacity',
     canvasBackground: 'Canvas Background',
     canvasBgPreset: 'Preset Solid Colors',
     canvasBgCustomColor: 'Custom Color',

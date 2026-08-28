@@ -641,3 +641,60 @@ onRemove(w) {
 ### 17.4 提交 & 出包
 - 提交：`9e4a388`（仅 8 个我改的文件）
 - 出包：**v1.0.11**（`electron-app/dist-electron/思绪思维导图 Setup.exe`，73.4MB，09:52:17 生成，MZ 校验有效）
+
+---
+
+## 18. v1.0.7 —— 保存回原路径 + 菜单栏/文件名栏透明度可调（2026-08-28）
+
+### 18.1 问题与根因
+
+| # | 现象 | 根因 |
+|---|---|---|
+| 1 | 打开 `E:\03_学习文件\test3.smm` 后按 Ctrl+S，文件保存到了 `D:\Program Files (x86)\思绪思维导图\test3.smm` | 拖拽打开时 `Edit.vue` 把 `file.name`（裸文件名）当作 `filePath` 写入；`doSave()` 只判断 `currentFilePath` 是否为真值，不校验是否为绝对路径，于是 `fs.writeFileSync('test3.smm')` 被解析为进程 CWD（即 exe 所在目录）。 |
+| 2 | 三个菜单栏（顶部工具栏、左侧工具栏、底部工具栏）透明度不可调 | 没有相关配置项与样式绑定。 |
+| 3 | 底部 Sheet 标签栏与顶部文件标签栏透明度不一致 | 没有统一控制。 |
+
+### 18.2 修复
+
+**1. `web/src/pages/Edit/components/Edit.vue`** —— 保存路径安全化：
+- 新增 `isAbsolutePath(p)`：仅当路径为 Windows 盘符路径（`X:\...`）或 Unix 绝对路径（`/...`）时返回 `true`。
+- `doSave()` 判断改为：仅当 `currentFilePath` 是绝对路径时才走 `smm:write-file` 直接覆盖；否则降级为 `doSaveAs()`。
+- `saveWorkbookToFile(defaultName)` 的 `defaultPath` 改为：仅当 `currentFilePath` 是绝对路径时才作为对话框默认路径，否则退化为 `defaultName`，避免 Electron 把保存对话框定位到 exe 目录。
+- `onContainerDrop()` 拖拽 `.smm` 打开时，把 `loadWorkbookFromRaw(reader.result, name)` 改为传 `''`，避免把裸文件名持久化为文件路径。
+
+**2. `web/src/api/index.js`** —— 持久化层防御：
+- `setCurrentFilePath(p)` 写入前先经 `isAbsolutePath` 校验，非绝对路径统一存为空字符串，避免相对路径/裸文件名污染 localStorage 与 workbook 状态。
+
+**3. `web/src/store.js` + `web/src/pages/Edit/components/Setting.vue`** —— 新增透明度设置：
+- `localConfig` 新增四项：
+  - `toolbarOpacity`（顶部工具栏透明度，默认 0.95）
+  - `sidebarOpacity`（左侧工具栏透明度，默认 0.95）
+  - `navigatorOpacity`（底部工具栏透明度，默认 0.8）
+  - `fileTabsOpacity`（文件名栏透明度，默认 1.0）
+- `Setting.vue` 在设置面板新增 4 个滑块，分别控制上述配置。
+
+**4. 菜单栏/文件名栏样式绑定**：
+- `Toolbar.vue`：容器 `:style="{ opacity: toolbarOpacity }"`。
+- `SidebarTrigger.vue`：容器 `:style="{ opacity: sidebarOpacity }"`。
+- `NavigatorToolbar.vue`：容器 `:style="{ opacity: navigatorOpacity }"`（同时移除原来写死的 `opacity: 0.8`）。
+- `FileTabs.vue` + `SheetTabs.vue`：容器 `:style="{ opacity: fileTabsOpacity }"`，使底部 Sheet 标签栏与顶部文件标签栏共用同一透明度，保持一致。
+
+**5. i18n**：
+- `web/src/lang/zh_cn.js`、`zh_tw.js`、`en_us.js` 的 `setting` 命名空间新增 `toolbarOpacity`、`sidebarOpacity`、`navigatorOpacity`、`fileTabsOpacity` 文案。
+
+### 18.3 影响范围与回归
+- 已通过对话框打开的绝对路径文件，Ctrl+S / 工具栏保存会**直接覆盖原文件**，不会再弹对话框或落入安装目录。
+- 拖拽打开、新建文件等拿不到真实绝对路径的场景，保存会正确走"另存为"弹框，让用户自行选择落盘位置。
+- 透明度设置保存到 `localStorage`，切换 workbook / 重启应用后仍生效。
+- 底部 `SheetTabs` 与顶部 `FileTabs` 共用 `fileTabsOpacity`，保持视觉一致。
+
+### 18.4 提交 & 出包
+- 版本：**v1.0.7**（`electron-app/package.json` + `make_installer.nsi` `!define VERSION` 已同步）
+- 出包：`electron-app/dist-electron/思绪思维导图 Setup.exe`（约 104MB，MZ 校验有效）
+- 构建流程：
+  1. `cd web && export NODE_OPTIONS='--openssl-legacy-provider --max-old-space-size=4096' && npm run build`
+  2. `cp -rf ../dist electron-app/dist`
+  3. 剥离 `dist/index.html` 中的 51.la 统计脚本
+  4. `node bump_version.js`（1.0.6 → 1.0.7）
+  5. 同步 `electron-app/*` 到 `dist-electron/win-unpacked/resources/app/`
+  6. `makensis.exe make_installer.nsi`

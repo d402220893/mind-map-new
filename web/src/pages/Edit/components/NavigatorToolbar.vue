@@ -1,5 +1,5 @@
 <template>
-  <div class="navigatorContainer customScrollbar" :class="{ isDark: isDark }">
+  <div class="navigatorContainer customScrollbar" :class="{ isDark: isDark }" :style="{ opacity: navigatorOpacity }">
     <div class="item">
       <el-select
         v-model="lang"
@@ -162,7 +162,8 @@ export default {
   computed: {
     ...mapState({
       isReadonly: state => state.isReadonly,
-      isDark: state => state.localConfig.isDark
+      isDark: state => state.localConfig.isDark,
+      navigatorOpacity: state => state.localConfig.navigatorOpacity
     })
   },
   created() {

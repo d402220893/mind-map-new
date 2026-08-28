@@ -1,5 +1,5 @@
 <template>
-  <div class="fileTabs" :class="{ isDark: isDark }" @dblclick.self="onMaximize">
+  <div class="fileTabs" :class="{ isDark: isDark }" @dblclick.self="onMaximize" :style="{ opacity: fileTabsOpacity }">
     <div class="fileBrand">思绪思维导图</div>
     <div class="fileTabsInner customScrollbar">
       <div
@@ -77,7 +77,8 @@ export default {
   },
   computed: {
     ...mapState({
-      isDark: state => state.localConfig.isDark
+      isDark: state => state.localConfig.isDark,
+      fileTabsOpacity: state => state.localConfig.fileTabsOpacity
     })
   },
   mounted() {

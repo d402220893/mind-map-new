@@ -19,7 +19,15 @@ const store = new Vuex.Store({
       // 是否是暗黑模式
       isDark: false,
       // 是否开启AI功能
-      enableAi: true
+      enableAi: true,
+      // 顶部工具栏透明度
+      toolbarOpacity: 0.95,
+      // 左侧工具栏透明度
+      sidebarOpacity: 0.95,
+      // 底部工具栏透明度
+      navigatorOpacity: 0.8,
+      // 文件名栏（顶部文件标签 + 底部工作表标签）透明度
+      fileTabsOpacity: 1
     },
     activeSidebar: '', // 当前显示的侧边栏
     isOutlineEdit: false, // 是否是大纲编辑模式

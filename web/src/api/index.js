@@ -427,6 +427,12 @@ export const getCurrentFilePath = () => {
   }
 }
 
+// 判断是否为绝对路径（Windows 盘符路径或 Unix 绝对路径）
+function isAbsolutePath(p) {
+  if (!p || typeof p !== 'string') return false
+  return /^[a-zA-Z]:[\\/]/.test(p) || /^\//.test(p)
+}
+
 // 记录当前激活 workbook 的文件路径
 export const setCurrentFilePath = p => {
   try {
@@ -434,13 +440,15 @@ export const setCurrentFilePath = p => {
     const activeWb = wbState.workbooks.find(
       w => w.id === wbState.activeId
     )
+    // 只接受绝对路径或空：避免把裸文件名/相对路径写进持久化状态
+    const safePath = isAbsolutePath(p) ? p : ''
     if (activeWb) {
-      activeWb.filePath = p || ''
+      activeWb.filePath = safePath
     }
     saveWorkbookState()
     // 兼容旧版本：同步写到独立存储键
-    if (p) {
-      localStorage.setItem(SIMPLE_MIND_MAP_LAST_FILE, p)
+    if (safePath) {
+      localStorage.setItem(SIMPLE_MIND_MAP_LAST_FILE, safePath)
     } else {
       localStorage.removeItem(SIMPLE_MIND_MAP_LAST_FILE)
     }

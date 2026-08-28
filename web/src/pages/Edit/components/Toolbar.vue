@@ -1,5 +1,5 @@
 <template>
-  <div class="toolbarContainer" :class="{ isDark: isDark }">
+  <div class="toolbarContainer" :class="{ isDark: isDark }" :style="{ opacity: toolbarOpacity }">
     <div class="toolbar" ref="toolbarRef">
       <!-- 节点操作 -->
       <div class="toolbarBlock">
@@ -218,7 +218,8 @@ export default {
       isDark: state => state.localConfig.isDark,
       isHandleLocalFile: state => state.isHandleLocalFile,
       openNodeRichText: state => state.localConfig.openNodeRichText,
-      enableAi: state => state.localConfig.enableAi
+      enableAi: state => state.localConfig.enableAi,
+      toolbarOpacity: state => state.localConfig.toolbarOpacity
     }),
 
     btnLit() {

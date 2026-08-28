@@ -631,8 +631,11 @@ export default {
       try {
         this.manualSave()
         const container = getSheetsContainer()
-        // 若当前 workbook 已有真实文件路径，对话框默认定位到该路径（解决另存为跑到安装目录的问题）
-        const defaultPath = this.currentFilePath || defaultName
+        // 仅当 currentFilePath 是绝对路径时，才将其作为保存对话框默认位置；
+        // 相对路径或空时退化为仅文件名，避免 Electron 把对话框定位到 exe 目录。
+        const defaultPath = this.isAbsolutePath(this.currentFilePath)
+          ? this.currentFilePath
+          : defaultName
         const res = await window.smmApi.saveWorkbook(
           JSON.stringify(container),
           defaultPath
@@ -692,9 +695,19 @@ export default {
 
     // ===== 文件保存 / 打开（桌面端，显示真实路径与文件名）=====
 
-    // 保存：若已有文件路径则覆盖写入，否则等同于另存为
+    // 判断是否为绝对路径（Windows 盘符路径或 Unix 绝对路径）
+    isAbsolutePath(p) {
+      if (!p || typeof p !== 'string') return false
+      return /^[a-zA-Z]:[\\/]/.test(p) || /^\//.test(p)
+    },
+
+    // 保存：若已有绝对文件路径则覆盖写入，否则等同于另存为
     async doSave() {
-      if (this.currentFilePath && window.smmApi && window.smmApi.writeFile) {
+      if (
+        this.isAbsolutePath(this.currentFilePath) &&
+        window.smmApi &&
+        window.smmApi.writeFile
+      ) {
         try {
           this.manualSave()
           const container = getSheetsContainer()
@@ -840,10 +853,12 @@ export default {
       const ext = (name.split('.').pop() || '').toLowerCase()
       if (ext === 'smm') {
         // 读取文件内容并打开为新 workbook（不覆盖当前正在编辑的文件）
+        // 注：浏览器拖拽 API 无法拿到真实绝对路径，故 filePath 传空，
+        // 避免把裸文件名当作路径写入安装目录。
         const reader = new FileReader()
         reader.onload = () => {
           this.manualSave()
-          this.loadWorkbookFromRaw(reader.result, name)
+          this.loadWorkbookFromRaw(reader.result, '')
         }
         reader.onerror = () => {
           this.$message.error('读取文件失败')

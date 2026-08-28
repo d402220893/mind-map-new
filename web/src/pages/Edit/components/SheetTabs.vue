@@ -1,5 +1,5 @@
 <template>
-  <div class="sheetTabs" :class="{ isDark: isDark }">
+  <div class="sheetTabs" :class="{ isDark: isDark }" :style="{ opacity: fileTabsOpacity }">
     <div class="sheetTabsInner customScrollbar">
       <div
         v-for="s in sheets"
@@ -58,7 +58,8 @@ export default {
   },
   computed: {
     ...mapState({
-      isDark: state => state.localConfig.isDark
+      isDark: state => state.localConfig.isDark,
+      fileTabsOpacity: state => state.localConfig.fileTabsOpacity
     })
   },
   methods: {

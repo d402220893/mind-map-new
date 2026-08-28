@@ -3,7 +3,7 @@
     class="sidebarTriggerContainer "
     @click.stop
     :class="{ hasActive: show && activeSidebar, show: show, isDark: isDark }"
-    :style="{ maxHeight: maxHeight + 'px' }"
+    :style="{ maxHeight: maxHeight + 'px', opacity: sidebarOpacity }"
   >
     <div class="toggleShowBtn" :class="{ hide: !show }" @click="show = !show">
       <span class="iconfont iconjiantouyou"></span>
@@ -40,7 +40,8 @@ export default {
       isDark: state => state.localConfig.isDark,
       activeSidebar: state => state.activeSidebar,
       isReadonly: state => state.isReadonly,
-      enableAi: state => state.localConfig.enableAi
+      enableAi: state => state.localConfig.enableAi,
+      sidebarOpacity: state => state.localConfig.sidebarOpacity
     }),
 
     triggerList() {
