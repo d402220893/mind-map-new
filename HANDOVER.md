@@ -845,3 +845,36 @@ onRemove(w) {
 - 编辑后文件标签出现红色 ●，保存后 ● 消失。
 
 ---
+
+## 23. v1.0.12 —— 修复「标签改名后文件仍保存回旧路径 / 磁盘文件名不变」
+
+### 23.1 Bug 现象（用户真机反馈）
+- 把标签改名为 `123` 后，保存提示仍显示「已保存：test6.smm」，文件夹里磁盘文件名仍为 `test6.smm`。
+- 根因：原重命名只改了界面显示名（`w.name`），**未更新底层 `filePath`，也未真正重命名磁盘文件**，且 `Edit.vue` 用的是缓存的 `currentFilePath`，导致后续保存继续写回旧路径。
+
+### 23.2 修复要点
+- `web/src/api/workbookState.js`：`renameWorkbook(id, name, newFilePath)` 在传入绝对路径 `newFilePath` 时同步更新 `w.filePath`（并返回 `{oldName, oldPath, newPath}` 供 UI 反馈）。
+- `web/src/pages/Edit/Index.vue` 的 `renameWorkbook({ id, name })` 处理器：
+  1. 无落盘路径 / 名称未变 → 仅改显示名；
+  2. 组装新路径 = 原目录 + `<新名>.smm`；
+  3. 校验与**其它已打开文件**不冲突；
+  4. 桌面端调 `window.smmApi.renameFile(oldPath, newPath)` 真实移动磁盘文件；
+  5. 主进程成功后 `apiRenameWorkbook(id, 新名, 新路径)` 并 `refreshWorkbooks()`。
+- `electron-app/main.js`：新增 `ipcMain.handle('smm:rename-file', ...)` 执行 `fs.renameSync(oldPath, newPath)`；目标已存在返回 `{ok:false, exists:true}`。
+- `electron-app/preload.js`：暴露 `window.smmApi.renameFile(oldPath, newPath)`。
+- `web/src/pages/Edit/components/Edit.vue` 的 `doSave()`：每次保存先 `this.currentFilePath = getCurrentFilePath()`，以状态机真实路径为准（双保险，杜绝写回旧文件）。
+
+### 23.3 单测
+- `web/src/api/workbookState.test.mjs` 新增 `renameWorkbook` 用例（更新名字；传 newFilePath 时同步 filePath；不传时只改名路径不变）。
+- 重跑结果：**通过 10 项测试，全部通过**。
+
+### 23.4 构建 & 出包
+- 版本：**v1.0.12**（`bump_version.js` 1.0.11 → 1.0.12，已同步 `package.json` 与 `make_installer.nsi`）。
+- 交付物：`electron-app/dist-electron/思绪思维导图 Setup.exe`（v1.0.12，约 102.7MB）。
+- 校验：版本号三处一致（`package.json`/`make_installer.nsi`/`win-unpacked` 均为 1.0.12）；`51.la` 在 win-unpacked `index.html` 中为 0；bundle 内 `renameFile`/`smm:rename-file` 均存在。
+
+### 23.5 真机验证建议
+- 打开 `test6.smm` → 双击标签改名 `123` → 文件夹内文件名应变为 `123.smm`；保存提示应为「已保存：123.smm」，而非旧名。
+- 改名后继续编辑并保存 → 内容写入 `123.smm`，原 `test6.smm` 不再被写入（如已不存在则无残留）。
+
+---

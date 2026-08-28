@@ -317,6 +317,8 @@ export default {
     // 顶部 FileTabs 切换文件：先保存当前 mind map，再载入新 workbook 的数据
     this.$bus.$on('before-workbook-switch', this.beforeWorkbookSwitch)
     this.$bus.$on('workbook-switched', this.onWorkbookSwitched)
+    // 文件重命名后：同步更新当前路径与窗口标题
+    this.$bus.$on('workbook-renamed', this.onWorkbookRenamed)
     // 全局监听剪贴板图片粘贴：仅当剪贴板包含 image 文件时拦截并预览插入，
     // 纯文本仍交给库默认 paste 行为处理
     window.addEventListener('paste', this.onPaste, true)
@@ -348,6 +350,7 @@ export default {
     this.$bus.$off('newWorkbookFromTabs', this.newWorkbookFromTabs)
     this.$bus.$off('before-workbook-switch', this.beforeWorkbookSwitch)
     this.$bus.$off('workbook-switched', this.onWorkbookSwitched)
+    this.$bus.$off('workbook-renamed', this.onWorkbookRenamed)
     window.removeEventListener('beforeunload', this.handleBeforeUnload)
     window.removeEventListener('paste', this.onPaste, true)
     window.removeEventListener('keydown', this.onGlobalKeydown)
@@ -1093,6 +1096,12 @@ export default {
       // 切换文件时同步画布背景
       this.applyStoredCanvasBackground()
       // 切换文件时不弹 toast，保持 UI 静默切换
+    },
+
+    // 文件重命名后：同步更新当前路径与窗口标题（保存会继续写入新路径）
+    onWorkbookRenamed({ newPath }) {
+      this.currentFilePath = newPath || getCurrentFilePath()
+      this.updateTitle()
     },
 
     // 应用全局画布背景到容器（初始化 / 切换文件 / 每次载入后调用）。

@@ -132,8 +132,78 @@ export default {
       }
     },
 
-    renameWorkbook({ id, name }) {
-      apiRenameWorkbook(id, name)
+    async renameWorkbook({ id, name }) {
+      name = (name || '').trim()
+      if (!name) {
+        this.refreshWorkbooks()
+        return
+      }
+      const list = getWorkbookList()
+      const w = list.workbooks.find(w => w.id === id)
+      if (!w) {
+        this.refreshWorkbooks()
+        return
+      }
+
+      // 未落盘的文件：只改显示名
+      if (!w.filePath) {
+        apiRenameWorkbook(id, name)
+        this.refreshWorkbooks()
+        return
+      }
+
+      // 名称实际未变（忽略 .smm 后缀）时，只刷新显示
+      const oldFileName = (w.filePath.split(/[\\/]/).pop() || '').replace(/\.smm$/i, '')
+      const newBaseName = name.replace(/\.smm$/i, '')
+      if (oldFileName === newBaseName) {
+        apiRenameWorkbook(id, newBaseName)
+        this.refreshWorkbooks()
+        return
+      }
+
+      // 组装新路径：同目录下 <newBaseName>.smm
+      const newFileName = newBaseName + '.smm'
+      const lastSep = Math.max(w.filePath.lastIndexOf('\\'), w.filePath.lastIndexOf('/'))
+      const dir = lastSep >= 0 ? w.filePath.slice(0, lastSep) : ''
+      const sep = dir && w.filePath.includes('\\') ? '\\' : (dir ? '/' : '\\')
+      const newPath = dir + (dir ? sep : '') + newFileName
+
+      // 与已打开的其它文件冲突？
+      const existed = list.workbooks.find(
+        x => x.id !== id && x.filePath && x.filePath.toLowerCase() === newPath.toLowerCase()
+      )
+      if (existed) {
+        this.$message.error('该名称与已打开文件冲突，请使用其它名称')
+        this.refreshWorkbooks()
+        return
+      }
+
+      // 桌面端：请求主进程重命名磁盘文件
+      if (window.smmApi && window.smmApi.renameFile) {
+        const res = await window.smmApi.renameFile(w.filePath, newPath)
+        if (!res.ok) {
+          if (res.exists) {
+            this.$message.error('该目录下已存在同名文件，请使用其它名称')
+          } else {
+            this.$message.error('重命名失败：' + res.error)
+          }
+          this.refreshWorkbooks()
+          return
+        }
+        const finalPath = res.newPath || newPath
+        apiRenameWorkbook(id, newBaseName, finalPath)
+        this.refreshWorkbooks()
+        this.$bus.$emit('workbook-list-changed')
+        // 若重命名的是当前激活文件，通知 Edit.vue 更新路径与标题
+        if (id === this.activeWorkbookId) {
+          this.$bus.$emit('workbook-renamed', { id, newPath: finalPath })
+        }
+        this.$message.success('已重命名为：' + newFileName)
+        return
+      }
+
+      // 网页端：无法操作磁盘，仅改显示名
+      apiRenameWorkbook(id, newBaseName)
       this.refreshWorkbooks()
     }
   }

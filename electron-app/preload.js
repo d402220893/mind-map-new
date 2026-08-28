@@ -17,6 +17,9 @@ contextBridge.exposeInMainWorld('smmApi', {
   openWorkbookDialog: () => ipcRenderer.invoke('smm:open-workbook'),
   // 按路径读文件（备用）
   readFile: filePath => ipcRenderer.invoke('smm:read-file', { filePath }),
+  // 重命名本地文件：返回 { ok, newPath, exists, error }
+  renameFile: (oldPath, newPath) =>
+    ipcRenderer.invoke('smm:rename-file', { oldPath, newPath }),
   // 设置窗口标题（用于直观显示当前文件路径）
   setTitle: title => ipcRenderer.invoke('smm:set-title', title),
   // 自定义标题栏窗口控制

@@ -113,6 +113,24 @@ test('applySaveAs 只重定向当前激活 workbook，原文件/其它文件不�
   assert.strictEqual(aNow.name, 'A')
 })
 
+test('renameWorkbook 更新名字；传入 newFilePath 时同步更新 filePath', () => {
+  freshStorage()
+  const a = WB.addWorkbook({ name: 'test6', filePath: 'C:\\folder\\test6.smm' })
+  const r = WB.renameWorkbook(a.id, '123', 'C:\\folder\\123.smm')
+  assert.strictEqual(r.oldName, 'test6')
+  assert.strictEqual(r.oldPath, 'C:\\folder\\test6.smm')
+  assert.strictEqual(r.newPath, 'C:\\folder\\123.smm')
+  let list = WB.getWorkbookList()
+  assert.strictEqual(list.workbooks[0].name, '123')
+  assert.strictEqual(list.workbooks[0].filePath, 'C:\\folder\\123.smm')
+  // 不传 newFilePath 时只改名字，路径不变
+  const r2 = WB.renameWorkbook(a.id, '456')
+  assert.strictEqual(r2.newPath, 'C:\\folder\\123.smm')
+  list = WB.getWorkbookList()
+  assert.strictEqual(list.workbooks[0].filePath, 'C:\\folder\\123.smm')
+  assert.strictEqual(list.workbooks[0].name, '456')
+})
+
 test('removeWorkbook 关闭非激活文件时激活不变；至少保留一个', () => {
   freshStorage()
   const a = WB.addWorkbook({ name: 'A', filePath: 'C:\\a.smm' })

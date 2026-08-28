@@ -113,6 +113,19 @@ ipcMain.handle('smm:write-file', async (e, { filePath, content }) => {
   }
 })
 
+// 重命名本地文件（标签双击重命名用）：oldPath -> newPath
+ipcMain.handle('smm:rename-file', async (e, { oldPath, newPath }) => {
+  try {
+    if (fs.existsSync(newPath)) {
+      return { ok: false, exists: true, error: '目标文件已存在' }
+    }
+    fs.renameSync(oldPath, newPath)
+    return { ok: true, newPath }
+  } catch (err) {
+    return { ok: false, error: err.message }
+  }
+})
+
 // 打开：弹打开对话框并读取内容
 ipcMain.handle('smm:open-workbook', async e => {
   const win = BrowserWindow.getFocusedWindow() || mainWindow

@@ -231,14 +231,21 @@ export function removeWorkbook(id) {
   return { removed: id, newActiveId: s.activeId }
 }
 
-export function renameWorkbook(id, name) {
-  if (!name) return
+// 重命名 workbook。newFilePath 可选；若提供合法绝对路径，则同步更新 filePath
+//（调用方已负责完成磁盘重命名）。返回 { oldName, oldPath, newPath } 供调用方使用。
+export function renameWorkbook(id, name, newFilePath) {
+  if (!name) return null
   const s = loadState()
   const w = s.workbooks.find(w => w.id === id)
-  if (w) {
-    w.name = name
-    persist()
+  if (!w) return null
+  const result = { oldName: w.name, oldPath: w.filePath || '', newPath: w.filePath || '' }
+  w.name = name
+  if (isAbsolutePath(newFilePath)) {
+    w.filePath = newFilePath
+    result.newPath = newFilePath
   }
+  persist()
+  return result
 }
 
 // 去重：同一绝对路径（大小写不敏感）已在其它标签打开则返回该 workbook
