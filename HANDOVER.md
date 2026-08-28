@@ -1001,7 +1001,24 @@ onRemove(w) {
 
 ### 26.4 待用户真机点测
 - 修改节点/新增节点 → 画布背景应保持（本次重点验证项）。
-- 拖拽 .smm 到画布 → 应新建独立文件标签，当前文件不受影响；拖非 .smm 同类行为。
+- 拖拽 .smm 到画布 → 应新建独立文件标签， 当前文件不受影响；拖非 .smm 同类行为。
 - 备注里写代码块 → 语法高亮显示。
+
+---
+
+## 27. v1.0.16（2026-08-28 18:04）— 备注代码高亮真正生效
+
+> 根因：§26.2 曾判定"备注高亮源码已正确"，但实测无效。真正缺失的是 **Prism 主题 CSS**——`@toast-ui/editor-plugin-code-syntax-highlight` 只负责解析 token，语法着色依赖 `prismjs` 的主题样式，插件自身 CSS 不含 `.token` 颜色（实测 grep `.token` = 0）。官方 README 明确要求额外 `import 'prismjs/themes/prism.css'`。
+> 之前"看起来没做"是因为只有代码框、没有颜色。
+
+### 27.1 改动
+- `web/src/pages/Edit/components/NodeNote.vue`：在 import 区补 `import 'prismjs/themes/prism.css'`（置于插件 CSS 之后）。备注弹窗为白底，用默认浅色 prism 主题最稳妥。
+
+### 27.2 出包（2026-08-28 18:04）
+- 安装包：`electron-app/dist-electron/思绪思维导图 Setup.exe`（v1.0.16，102,715,044 字节 ≈ 98 MB）。
+- 校验：包内 `css/chunk-46bd0c49.css` 含 `.token` 着色规则（prism 主题已打包）；版本三处一致 = 1.0.16；`LA.init`=0。
+
+### 27.3 真机点测
+- 打开节点备注 → 写 ```python / ```go / ```js 代码块 → 预览区应显示对应语言语法高亮（彩色）。
 
 ---
