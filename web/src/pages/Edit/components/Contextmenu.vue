@@ -598,55 +598,69 @@ export default {
 <style lang="less" scoped>
 .listBox {
   width: 250px;
-  background: #fff;
-  box-shadow: 0 4px 12px 0 hsla(0, 0%, 69%, 0.5);
-  border-radius: 4px;
-  padding-top: 16px;
-  padding-bottom: 16px;
+  background: var(--macos-bg-glass-strong);
+  backdrop-filter: var(--macos-blur);
+  -webkit-backdrop-filter: var(--macos-blur);
+  border: 1px solid var(--macos-border);
+  box-shadow: var(--macos-shadow-sm);
+  border-radius: var(--macos-radius);
+  padding: 6px;
 
   &.isDark {
-    background: #363b3f;
+    background: var(--macos-bg-glass-strong);
   }
 }
 .contextmenuContainer {
   position: fixed;
-  font-size: 14px;
-  font-family: PingFangSC-Regular, PingFang SC;
+  font-size: 13px;
+  font-family: -apple-system, BlinkMacSystemFont, 'PingFang SC',
+    'Microsoft YaHei', sans-serif;
   font-weight: 400;
-  color: #1a1a1a;
+  color: var(--macos-text);
 
   &.isDark {
-    color: #fff;
+    color: var(--macos-text);
 
-    .item {
-      &:hover {
-        background: hsla(0, 0%, 100%, 0.05);
-      }
+    .item:hover {
+      background: var(--macos-hover);
     }
   }
 
   .splitLine {
-    width: 95%;
+    width: calc(100% - 8px);
     height: 1px;
-    background-color: #e9edf2;
-    margin: 2px auto;
+    background-color: var(--macos-divider);
+    margin: 6px auto;
   }
 
   .item {
     position: relative;
-    height: 28px;
-    padding: 0 16px;
+    height: 32px;
+    padding: 0 10px;
+    margin: 0 4px;
+    border-radius: var(--macos-radius-xs);
     cursor: pointer;
     display: flex;
     justify-content: space-between;
     align-items: center;
 
     &.danger {
-      color: #f56c6c;
+      color: var(--macos-danger);
+
+      &:hover {
+        background: rgba(255, 59, 48, 0.14);
+        color: var(--macos-danger);
+      }
     }
 
     &:hover {
-      background: #f5f5f5;
+      background: var(--macos-accent-soft);
+      color: var(--macos-accent);
+
+      .desc {
+        color: var(--macos-accent);
+        opacity: 0.75;
+      }
 
       .subItems {
         visibility: visible;
@@ -654,12 +668,13 @@ export default {
     }
 
     &.disabled {
-      color: grey;
+      color: var(--macos-text-3);
       cursor: not-allowed;
       pointer-events: none;
 
       &:hover {
-        background: #fff;
+        background: transparent;
+        color: var(--macos-text-3);
       }
     }
 
@@ -670,7 +685,8 @@ export default {
     }
 
     .desc {
-      color: #999;
+      color: var(--macos-text-3);
+      font-size: 12px;
       white-space: nowrap;
       overflow: hidden;
       text-overflow: ellipsis;
@@ -679,12 +695,15 @@ export default {
     .subItems {
       position: absolute;
       left: 100%;
+      margin-left: 6px;
       visibility: hidden;
       width: 150px;
       cursor: auto;
 
       &.showLeft {
         left: -150px;
+        margin-left: 0;
+        margin-right: 6px;
       }
     }
 
@@ -709,9 +728,9 @@ export default {
 
         .iconGroupTitle {
           font-size: 12px;
-          color: #909399;
+          color: var(--macos-text-2);
           margin-bottom: 6px;
-          font-weight: 500;
+          font-weight: 600;
         }
 
         .iconGrid {
@@ -741,11 +760,11 @@ export default {
             }
 
             &:hover {
-              background: #ecf5ff;
+              background: var(--macos-hover-strong);
             }
 
             &.selected {
-              outline: 2px solid #409eff;
+              outline: 2px solid var(--macos-accent);
               outline-offset: -2px;
             }
           }

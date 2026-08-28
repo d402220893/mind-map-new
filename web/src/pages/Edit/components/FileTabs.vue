@@ -27,6 +27,12 @@
         />
         <span v-else class="fileName">{{ w.name }}</span>
         <span
+          v-if="w.dirty"
+          class="dirtyDot"
+          title="未保存"
+          >●</span
+        >
+        <span
           class="fileClose"
           title="关闭文件"
           @click.stop="onRemove(w)"
@@ -299,7 +305,8 @@ export default {
     margin-right: 4px;
     border-radius: 8px;
     cursor: pointer;
-    color: rgba(60, 64, 70, 0.85);
+    color: rgba(26, 26, 26, 0.92);
+    font-weight: 600;
     background: transparent;
     border: 1px solid transparent;
     font-size: 13px;
@@ -328,6 +335,14 @@ export default {
       overflow: hidden;
       text-overflow: ellipsis;
       white-space: nowrap;
+    }
+
+    .dirtyDot {
+      color: #f56c6c;
+      font-size: 10px;
+      margin-left: 2px;
+      line-height: 1;
+      flex-shrink: 0;
     }
 
     .fileNameInput {
@@ -427,7 +442,8 @@ export default {
     }
 
     .fileTab {
-      color: rgba(255, 255, 255, 0.7);
+      color: rgba(255, 255, 255, 0.92);
+      font-weight: 600;
       background: transparent;
 
       &:hover {

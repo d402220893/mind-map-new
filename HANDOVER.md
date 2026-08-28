@@ -760,3 +760,88 @@ onRemove(w) {
 - 出包：`electron-app/dist-electron/思绪思维导图 Setup.exe`（约 102MB）
 - 流程同 §18.4（build → 同步 dist → 剥离 51.la → bump → 同步 win-unpacked → makensis）
 - 提交：待用户验证后补 commit
+
+---
+
+## 21. v1.0.10 — 修复：文件名栏"+"新建被复制成当前文件 / 菜单栏文字加深加粗
+
+### 21.1 问题现象（用户反馈）
+1. 点文件名栏的"＋"新建时，**直接把当前打开的文件复制了一份**（新标签页内容 = 当前文件），应该是真正新建一个空白文件。
+2. 菜单栏（顶部工具栏）的文字偏灰、偏细，把菜单栏透明度调高（更透）时看不清，希望**文字更黑更粗**。
+
+### 21.2 根因
+- **"+"新建复制当前文件**：`Edit.vue` 的 `newWorkbookFromTabs()` 里用 `this.mindMap.getData(true)` 取当前画布数据作为新文件内容，相当于把当前文件克隆了一份。
+- **菜单栏文字看不清**：顶部工具栏 `.toolbarBtn .text`（新建/打开/保存…）标签颜色用的是 CSS 变量 `--macos-text-2`（浅灰 `#6e6e73`），字重 `font-weight: 500`；当菜单栏透明度调高（玻璃更透、画布透出）时，浅灰细字与背景对比不足，难以辨认。
+
+### 21.3 修复
+- `Edit.vue` `newWorkbookFromTabs()`：去掉 `currentData = this.mindMap.getData(true)`，新建文件内容改为默认模板 `JSON.parse(JSON.stringify(exampleData))`（与工具栏"新建文件"按钮 `createNewLocalFile` 行为一致），即**真正新建一个空白文件**，不再复制当前文件。顶部栏 `newWorkbook()`（工具栏"新建"）原本就用 `exampleData`，行为不变。
+- `Toolbar.vue` `.toolbar`：`font-weight` 由 `500` 改为 `600`。
+- `Toolbar.vue` `.toolbarBtn .text`：颜色由 `--macos-text-2`（浅灰）改为 `--macos-text`（近黑 `#1d1d1f`），并加 `font-weight: 600`，暗色模式下同样提升为更亮的 `--macos-text`（白），对比度更清晰。
+- `FileTabs.vue`（文件名栏）`.fileTab`：浅色 `rgba(60,64,70,0.85)` → `rgba(26,26,26,0.92)` 并加 `font-weight: 600`；暗色 `rgba(255,255,255,0.7)` → `rgba(255,255,255,0.92)` 并加 `font-weight: 600`，文件名标签同步加深加粗，与菜单栏一致。
+
+### 21.4 影响范围与回归
+- 文件名栏"＋"：桌面端 → 弹出保存对话框、生成**空白** `.smm` 并设为激活标签（不再克隆当前）；网页端 → 直接新建一个 `exampleData` 内存 workbook。
+- 顶部工具栏与文件名栏文字在透明度任意档位下均更清晰（近黑/加粗）。
+- 透明度、标题栏、拖拽打开、多文件保存等既有功能不受影响。
+
+### 21.5 构建 & 出包
+- 版本：**v1.0.10**（`bump_version.js` 1.0.9 → 1.0.10，已同步 `package.json` 与 `make_installer.nsi`）
+- 出包：`electron-app/dist-electron/思绪思维导图 Setup.exe`（约 103MB）
+- 流程同 §18.4（build → 同步 dist → 剥离 51.la → bump → 同步 win-unpacked → makensis）
+- 提交：`git commit`（web/src 3 文件 + electron-app 2 文件 + HANDOVER.md）
+
+---
+
+## 22. v1.0.11 — 抽离纯多文件状态机 + 单测；根治 3 个串数据/不刷新 bug（本次严格「先测试再出包」）
+
+### 22.1 背景与动机
+用户明确「建议你测试完再出包，不要让我当小白鼠了」。此前多文件相关 bug 反复出现，根因是 `api/index.js` 用**模块级 `sheetState` 共享指针** + 全局 `SIMPLE_MIND_MAP_LAST_FILE` 回退，切换/另存为/加载时指针与数据在不同文件间串来串去，属于结构性缺陷，打补丁修不完。
+
+本轮把多文件状态**彻底抽成纯状态机** `web/src/api/workbookState.js`（不依赖 Vue/DOM/simple-mind-map，可被 Node 直接单测），从结构上消除整类 bug，并配 **9 项单测全过** 作为回归护栏。
+
+### 22.2 三个待根治的遗留 bug（来自上次中断反馈）
+1. **拖拽打开另一文件覆盖了当前文件、且文件名不变** —— 切换文件时共享 `sheetState` 指针把数据串到错误文件。
+2. **另存为后文件名不变** —— 另存为只写了磁盘，没把当前 workbook 重定向到新路径、也没刷新标签名。
+3. **改文件后画布背景实际变了、但选择没变（背景串）** —— 背景随文件自带主题切换，切换文件时背景没被正确重应用。
+
+### 22.3 修复设计
+- **纯状态机 `workbookState.js`**：`state = { activeId, workbooks: [{ id, name, filePath, dirty, sheetState }] }`，每个 workbook **各自持有独立 `sheetState`**，切换只是 `activeId` 改指向，不再有共享指针；所有读写经 `getActiveSheetState/setActiveSheetState` 等，从根上杜绝「切换文件数据串到错误文件」。
+- **`api/index.js` 重写**：workbook 管理全部委托 `import * as WB from './workbookState'`；保留全部原 export 名（`getCurrentFilePath/setCurrentFilePath/getWorkbookList/switchWorkbook/addWorkbook/removeWorkbook/renameWorkbook/setActiveWorkbookSheetState/getActiveWorkbookSheetState/getCurrentSheetState/markDirty/isDirty/applySaveAs/findByPath`）；`loadSheetState()` 改 `return WB.getActiveSheetState()`、`saveSheetState()=WB.persistState()`。
+- **`Edit.vue`**：
+  - `data` 新增 `_isLoading`；`data_change` 监听里 `if (this._isLoading) return;` 再 `markDirty(id,true)` + emit `workbook-list-changed`（加载窗口期产生的变更不误标 dirty）。
+  - `loadSheetData` 首尾包 `_isLoading` 开关（setTimeout 80ms 复位），并在末尾 `applyStoredCanvasBackground()` 重应用**全局**画布背景。
+  - 另存为分支：`applySaveAs(res.filePath)`（只重定向当前激活 workbook，原文件不动）→ `this.currentFilePath = res.filePath` → `updateTitle` → emit `workbook-list-changed`（文件名刷新）。
+  - `doSave` 覆盖分支：`markDirty(id,false)` + emit，去掉 ●。
+- **`FileTabs.vue`**：`getWorkbookList()` 现返回 `dirty` 字段，标签上 `v-if="w.dirty"` 显示红色 `●`（未保存标记）。
+- **`Setting.vue` + `store.js`**：画布背景由「写入 .smm 的 `canvasBackground`」改为**全局 `localConfig.canvasBackground`**（不落文件）；`applyCanvasBackground(bg)` → `setLocalConfig({ canvasBackground: bg })`；每次 `loadSheetData` 后重应用，**覆盖文件自带主题背景**，切换文件不再串。
+
+### 22.4 单测（`workbookState.test.mjs`，Node `--experimental-default-type=module`，无需框架）
+9 项全过，直接验证结构性修复：
+- 空初始化后列表为空；首次 `loadState` 自动建一个默认 workbook
+- `addWorkbook` 新建并切换为激活，原 workbook 数据不受影响
+- `getCurrentFilePath` 仅返回激活 workbook 绝对路径，否则空串
+- `findByPath` 去重（大小写不敏感）
+- `applySaveAs` 只重定向当前激活 workbook，原文件/其它文件不受影响
+- `removeWorkbook` 关闭非激活文件时激活不变；至少保留一个
+- 拖拽场景：先开 A 再开 B，二者独立且 B 激活
+- `markDirty/isDirty` 按 workbook 独立
+- 持久化：reload 后状态保留
+
+### 22.5 验证结论（严格先测后包）
+- 单测：**9/9 通过**。
+- 前端构建：`npm run build`（NODE_OPTIONS=--openssl-legacy-provider --max-old-space-size=4096）成功，产物同步 `electron-app/dist` + 剥离 51.la（校验 0 处残留）。
+- 安装包校验（`win-unpacked/resources/app/dist`）：`workbook-list-changed` emit 存在、`dirtyDot` CSS 存在、`canvasBackground` 存在、版本号 `1.0.11` 一致。
+- 出包：`electron-app/dist-electron/思绪思维导图 Setup.exe`（v1.0.11，约 105MB，MZ 有效）。
+
+### 22.6 构建 & 出包
+- 版本：**v1.0.11**（`bump_version.js` 1.0.10 → 1.0.11，已同步 `package.json` 与 `make_installer.nsi`）
+- 流程同 §18.4（build → 同步 dist → 剥离 51.la → bump → 同步 win-unpacked → makensis）
+- 注：目录内曾出现 `思绪思维导图 Setup_1.0.12.exe` 为一次回退 bump 的孤儿产物（早于本次 1.0.11 重建），现已不在 `dist-electron/`，请勿安装旧/错版本。
+
+### 22.7 真机验证建议（交给用户）
+- 打开 `test3.smm` → 拖拽另一 `.smm` 到画布 → 应**新开标签**且原文件数据/文件名不变。
+- 对当前文件「另存为」→ 标签名与文件名更新、原文件保留。
+- 改画布背景 → 切换文件再切回 → 背景不串、选择正常。
+- 编辑后文件标签出现红色 ●，保存后 ● 消失。
+
+---

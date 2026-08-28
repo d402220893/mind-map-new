@@ -27,7 +27,9 @@ const store = new Vuex.Store({
       // 底部工具栏透明度
       navigatorOpacity: 0.8,
       // 文件名栏（顶部文件标签 + 底部工作表标签）透明度
-      fileTabsOpacity: 1
+      fileTabsOpacity: 1,
+      // 画布背景（全局设置，不写入 .smm 文件）：{ type:'default'|'color'|'image', value }
+      canvasBackground: { type: 'default' }
     },
     activeSidebar: '', // 当前显示的侧边栏
     isOutlineEdit: false, // 是否是大纲编辑模式

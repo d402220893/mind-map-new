@@ -323,23 +323,15 @@ export default {
 
   &.isDark {
     .toolbarBtn {
-      color: hsla(0, 0%, 100%, 0.9);
+      color: var(--macos-text);
 
       .icon {
         background: transparent;
         border-color: transparent;
       }
 
-      &:hover {
-        &:not(.disabled) {
-          .icon {
-            background: hsla(0, 0%, 100%, 0.05);
-          }
-        }
-      }
-
       &.disabled {
-        color: #54595f;
+        color: var(--macos-text-3);
       }
     }
   }
@@ -348,8 +340,15 @@ export default {
     display: flex;
     justify-content: center;
     flex-direction: column;
+    align-items: center;
+    gap: 3px;
     cursor: pointer;
-    margin-right: 20px;
+    margin-right: 2px;
+    min-width: 46px;
+    padding: 7px 6px;
+    border-radius: var(--macos-radius-sm);
+    color: var(--macos-text);
+    transition: background-color 0.18s ease, color 0.18s ease;
 
     &:last-of-type {
       margin-right: 0;
@@ -357,51 +356,51 @@ export default {
 
     &:hover {
       &:not(.disabled) {
-        .icon {
-          background: #f5f5f5;
-        }
+        background-color: var(--macos-hover);
       }
     }
 
     &.active {
+      background-color: var(--macos-accent-soft);
+      color: var(--macos-accent);
+
       .icon {
-        background: #f5f5f5;
+        color: var(--macos-accent);
       }
     }
 
     &.disabled {
-      color: #bcbcbc;
+      color: var(--macos-text-3);
       cursor: not-allowed;
       pointer-events: none;
     }
 
     .icon {
-      display: flex;
-      height: 26px;
-      background: #fff;
-      border-radius: 4px;
-      border: 1px solid #e9e9e9;
-      justify-content: center;
-      flex-direction: column;
-      text-align: center;
-      padding: 0 5px;
+      font-size: 18px;
+      line-height: 1;
+      background: transparent;
+      border: none;
+      padding: 0;
+      height: auto;
     }
 
     .text {
-      margin-top: 3px;
+      font-size: 11px;
+      color: var(--macos-text-2);
+      line-height: 1;
       text-align: center;
     }
   }
 
   &.v {
     display: block;
-    width: 120px;
+    width: 140px;
     flex-wrap: wrap;
 
     .toolbarBtn {
       flex-direction: row;
       justify-content: flex-start;
-      margin-bottom: 10px;
+      margin-bottom: 2px;
       width: 100%;
       margin-right: 0;
 

@@ -124,7 +124,11 @@ import {
   isSheetsFile,
   getCurrentFilePath,
   setCurrentFilePath,
-  getWorkbookList
+  getWorkbookList,
+  markDirty,
+  isDirty,
+  getActiveWorkbookId,
+  applySaveAs
 } from '@/api'
 import Navigator from './Navigator.vue'
 import NodeImgPreview from './NodeImgPreview.vue'
@@ -226,6 +230,8 @@ export default {
         activeSheetId: '',
         // 当前打开/保存的文件路径（空表示尚未保存为文件）
         currentFilePath: '',
+        // 加载文件/切换的短暂窗口：此期间产生的 data_change 不标记为未保存
+        _isLoading: false,
         // 粘贴图片时自动缩放的最长边像素（原图 <= 该值时保持原图大小）
         imgPasteMaxEdge: 600
       }
@@ -401,6 +407,13 @@ export default {
     bindSaveEvent() {
       this.$bus.$on('data_change', data => {
         storeData({ root: data })
+        // 用户编辑：标记当前文件为“未保存”（加载/切换期间不标记，避免误标）
+        if (this._isLoading) return
+        const id = getActiveWorkbookId()
+        if (id && !isDirty(id)) {
+          markDirty(id, true)
+          this.$bus.$emit('workbook-list-changed')
+        }
       })
       this.$bus.$on('view_data_change', data => {
         clearTimeout(this.storeConfigTimer)
@@ -566,6 +579,7 @@ export default {
 
     // 把一份完整数据载入当前思维导图实例
     loadSheetData(data) {
+      this._isLoading = true
       if (data && data.root) {
         this.mindMap.setFullData(data)
       } else {
@@ -573,6 +587,12 @@ export default {
       }
       this.mindMap.view.reset()
       this.mindMapData = data
+      // 每次载入后重应用全局画布背景，覆盖文件自带主题背景（修复“背景色串”）
+      this.applyStoredCanvasBackground()
+      // 加载期间产生的 data_change 不标记为未保存；稍后放开窗口以吸收异步事件
+      setTimeout(() => {
+        this._isLoading = false
+      }, 80)
     },
 
     // 切换工作表：先保存当前，再载入目标
@@ -648,9 +668,13 @@ export default {
           this.$message.error('保存失败：' + res.error)
           return
         }
+        // 另存为语义：把当前激活 workbook 重定向到新路径，文件名随之更新，
+        // 原文件（如有）完全不受影响；同时清除未保存标记。
+        applySaveAs(res.filePath)
         this.currentFilePath = res.filePath
-        setCurrentFilePath(res.filePath)
         this.updateTitle()
+        // 通知 FileTabs 刷新标签名与未保存标记（修复“另存为后文件名不变”）
+        this.$bus.$emit('workbook-list-changed')
         this.$message.success('已保存：' + this.fileName)
       } catch (err) {
         console.error(err)
@@ -722,6 +746,9 @@ export default {
             JSON.stringify(container)
           )
           if (res && res.ok) {
+            const id = getActiveWorkbookId()
+            if (id) markDirty(id, false)
+            this.$bus.$emit('workbook-list-changed')
             this.$message.success('已保存：' + this.fileName)
           } else {
             this.$message.error(
@@ -980,8 +1007,7 @@ export default {
     async newWorkbookFromTabs() {
       // 先把当前 mind map 数据落盘到当前 workbook（保持当前 workbook 完整）
       this.manualSave()
-      // 直接以当前 mind map 数据作为新 workbook 的内容（用户也可以后续编辑）
-      const currentData = this.mindMap ? this.mindMap.getData(true) : null
+      // 新建一个全新的空白文件（使用默认模板），不要复制当前文件内容
       if (!window.smmApi || !window.smmApi.saveWorkbook) {
         // 网页端：直接新建一个内存 workbook 并切换
         const { addWorkbook } = await import('@/api')
@@ -1004,7 +1030,7 @@ export default {
             {
               id: 'sheet_' + Date.now(),
               name: 'Sheet1',
-              data: currentData || {}
+              data: JSON.parse(JSON.stringify(exampleData))
             }
           ]
         }
@@ -1069,11 +1095,13 @@ export default {
       // 切换文件时不弹 toast，保持 UI 静默切换
     },
 
-    // 应用已保存的画布背景到容器（初始化 / 切换文件时调用）
+    // 应用全局画布背景到容器（初始化 / 切换文件 / 每次载入后调用）。
+    // 背景为全局设置，存于 localConfig，不写入 .smm 文件，因此切换/打开不同文件不会串。
     applyStoredCanvasBackground() {
       if (!this.mindMap || !this.mindMap.el) return
       const el = this.mindMap.el
-      const bg = this.mindMapConfig && this.mindMapConfig.canvasBackground
+      const localCfg = this.$store && this.$store.state && this.$store.state.localConfig
+      const bg = localCfg && localCfg.canvasBackground
       if (!bg || bg.type === 'default') {
         el.style.backgroundColor = '#ffffff'
         el.style.backgroundImage = 'none'

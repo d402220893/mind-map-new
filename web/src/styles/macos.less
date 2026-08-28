@@ -1,0 +1,400 @@
+// ============================================================
+//  思绪思维导图 · macOS 视觉风格设计系统
+//  集中管理配色 / 圆角 / 阴影 / 毛玻璃 / 暗色模式，
+//  并对 Element UI 组件做统一的现代化覆盖。
+// ============================================================
+
+// ---------- 设计变量 ----------
+:root {
+  // 强调色（系统蓝）
+  --macos-accent: #0a84ff;
+  --macos-accent-2: #5e5ce6; // 靛蓝（次级强调）
+  --macos-accent-soft: rgba(10, 132, 255, 0.12);
+  --macos-accent-hover: rgba(10, 132, 255, 0.18);
+  --macos-danger: #ff3b30;
+
+  // 圆角
+  --macos-radius-xs: 6px;
+  --macos-radius-sm: 9px;
+  --macos-radius: 12px;
+  --macos-radius-lg: 16px;
+  --macos-radius-xl: 22px;
+
+  // 毛玻璃
+  --macos-blur: saturate(180%) blur(20px);
+  --macos-blur-strong: saturate(200%) blur(30px);
+
+  // 浅色（默认）
+  --macos-bg-glass: rgba(255, 255, 255, 0.72);
+  --macos-bg-glass-strong: rgba(255, 255, 255, 0.86);
+  --macos-bg-glass-soft: rgba(255, 255, 255, 0.55);
+  --macos-surface: #ffffff;
+  --macos-surface-2: #f5f5f7;
+  --macos-surface-3: #ecedef;
+  --macos-border: rgba(0, 0, 0, 0.08);
+  --macos-border-strong: rgba(0, 0, 0, 0.12);
+  --macos-divider: rgba(0, 0, 0, 0.07);
+  --macos-shadow: 0 12px 40px rgba(0, 0, 0, 0.14), 0 2px 8px rgba(0, 0, 0, 0.06);
+  --macos-shadow-sm: 0 6px 20px rgba(0, 0, 0, 0.10);
+  --macos-shadow-xs: 0 2px 8px rgba(0, 0, 0, 0.06);
+  --macos-text: #1d1d1f;
+  --macos-text-2: #6e6e73;
+  --macos-text-3: #8e8e93;
+  --macos-hover: rgba(0, 0, 0, 0.05);
+  --macos-hover-strong: rgba(0, 0, 0, 0.08);
+  --macos-ring: rgba(10, 132, 255, 0.35);
+}
+
+body.isDark {
+  --macos-accent: #0a84ff;
+  --macos-accent-2: #7d7aff;
+  --macos-accent-soft: rgba(10, 132, 255, 0.20);
+  --macos-accent-hover: rgba(10, 132, 255, 0.30);
+  --macos-danger: #ff453a;
+
+  --macos-bg-glass: rgba(38, 38, 42, 0.62);
+  --macos-bg-glass-strong: rgba(30, 30, 34, 0.82);
+  --macos-bg-glass-soft: rgba(48, 48, 54, 0.5);
+  --macos-surface: #26262a;
+  --macos-surface-2: #2c2c30;
+  --macos-surface-3: #34343a;
+  --macos-border: rgba(255, 255, 255, 0.10);
+  --macos-border-strong: rgba(255, 255, 255, 0.16);
+  --macos-divider: rgba(255, 255, 255, 0.10);
+  --macos-shadow: 0 16px 50px rgba(0, 0, 0, 0.50), 0 2px 10px rgba(0, 0, 0, 0.30);
+  --macos-shadow-sm: 0 8px 24px rgba(0, 0, 0, 0.45);
+  --macos-shadow-xs: 0 3px 10px rgba(0, 0, 0, 0.35);
+  --macos-text: #f5f5f7;
+  --macos-text-2: #aeaeb2;
+  --macos-text-3: #8e8e93;
+  --macos-hover: rgba(255, 255, 255, 0.07);
+  --macos-hover-strong: rgba(255, 255, 255, 0.12);
+  --macos-ring: rgba(10, 132, 255, 0.50);
+}
+
+// ---------- 全局排版与滚动条 ----------
+#app {
+  font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Text', 'PingFang SC',
+    'Helvetica Neue', 'Microsoft YaHei', sans-serif;
+  color: var(--macos-text);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+.customScrollbar {
+  &::-webkit-scrollbar {
+    width: 8px;
+    height: 8px;
+  }
+  &::-webkit-scrollbar-thumb {
+    border-radius: 8px;
+    background-color: rgba(128, 128, 128, 0.4);
+    border: 2px solid transparent;
+    background-clip: content-box;
+    cursor: pointer;
+    &:hover {
+      background-color: rgba(128, 128, 128, 0.6);
+    }
+  }
+  &::-webkit-scrollbar-track {
+    background: transparent;
+  }
+}
+
+// ============================================================
+//  Element UI 统一覆盖
+// ============================================================
+
+// ---- 按钮 ----
+.el-button {
+  border-radius: var(--macos-radius-sm);
+  font-weight: 500;
+  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+  & [class*='el-icon-'] {
+    font-size: 15px;
+  }
+}
+.el-button--primary {
+  background-color: var(--macos-accent);
+  border-color: var(--macos-accent);
+  color: #fff;
+  box-shadow: 0 1px 3px var(--macos-ring);
+  &:hover,
+  &:focus {
+    background-color: var(--macos-accent);
+    border-color: var(--macos-accent);
+    filter: brightness(1.08);
+  }
+  &:active {
+    filter: brightness(0.94);
+  }
+}
+.el-button--default,
+.el-button--plain {
+  background-color: var(--macos-surface);
+  border-color: var(--macos-border-strong);
+  color: var(--macos-text);
+  &:hover,
+  &:focus {
+    color: var(--macos-accent);
+    border-color: var(--macos-accent);
+    background-color: var(--macos-surface);
+  }
+}
+.el-button--text {
+  color: var(--macos-accent);
+  &:hover {
+    color: var(--macos-accent);
+    filter: brightness(1.1);
+  }
+}
+
+// ---- 输入框 ----
+.el-input__inner,
+.el-textarea__inner {
+  border-radius: var(--macos-radius-sm);
+  border-color: var(--macos-border-strong);
+  background-color: var(--macos-surface);
+  color: var(--macos-text);
+  transition: border-color 0.2s, box-shadow 0.2s;
+  &::placeholder {
+    color: var(--macos-text-3);
+  }
+}
+.el-input__inner:hover,
+.el-textarea__inner:hover {
+  border-color: var(--macos-accent);
+}
+.el-input.is-focus .el-input__inner,
+.el-input__inner:focus,
+.el-textarea__inner:focus {
+  border-color: var(--macos-accent);
+  box-shadow: 0 0 0 3px var(--macos-accent-soft);
+}
+.el-input.is-disabled .el-input__inner {
+  background-color: var(--macos-surface-2);
+  color: var(--macos-text-3);
+}
+
+// ---- 下拉 / 弹出层 ----
+.el-select-dropdown,
+.el-dropdown-menu,
+.el-picker-panel,
+.el-popover {
+  border-radius: var(--macos-radius);
+  border: 1px solid var(--macos-border);
+  background-color: var(--macos-bg-glass-strong);
+  backdrop-filter: var(--macos-blur);
+  -webkit-backdrop-filter: var(--macos-blur);
+  box-shadow: var(--macos-shadow-sm);
+  color: var(--macos-text);
+  .el-select-dropdown__item {
+    color: var(--macos-text);
+    border-radius: var(--macos-radius-xs);
+    &.hover,
+    &:hover {
+      background-color: var(--macos-hover);
+      color: var(--macos-accent);
+    }
+    &.selected {
+      color: var(--macos-accent);
+      font-weight: 600;
+    }
+  }
+  .popper__arrow {
+    display: none;
+  }
+}
+.el-dropdown-menu__item {
+  color: var(--macos-text);
+  border-radius: var(--macos-radius-xs);
+  &:hover,
+  &:focus {
+    background-color: var(--macos-hover);
+    color: var(--macos-accent);
+  }
+  &.is-disabled {
+    color: var(--macos-text-3);
+  }
+}
+
+// ---- 弹窗 ----
+.el-dialog {
+  border-radius: var(--macos-radius-lg);
+  background-color: var(--macos-bg-glass-strong);
+  backdrop-filter: var(--macos-blur-strong);
+  -webkit-backdrop-filter: var(--macos-blur-strong);
+  border: 1px solid var(--macos-border);
+  box-shadow: var(--macos-shadow);
+  color: var(--macos-text);
+  overflow: hidden;
+  .el-dialog__header {
+    border-bottom: 1px solid var(--macos-divider);
+    padding: 18px 24px;
+  }
+  .el-dialog__title {
+    color: var(--macos-text);
+    font-weight: 600;
+    font-size: 16px;
+  }
+  .el-dialog__headerbtn .el-dialog__close {
+    color: var(--macos-text-3);
+    &:hover {
+      color: var(--macos-danger);
+    }
+  }
+  .el-dialog__body {
+    color: var(--macos-text);
+    padding: 22px 24px;
+  }
+  .el-dialog__footer {
+    border-top: 1px solid var(--macos-divider);
+    padding: 14px 24px;
+  }
+}
+
+// ---- 消息框 / 提示 ----
+.el-message-box {
+  border-radius: var(--macos-radius-lg);
+  border: 1px solid var(--macos-border);
+  background-color: var(--macos-bg-glass-strong);
+  backdrop-filter: var(--macos-blur-strong);
+  -webkit-backdrop-filter: var(--macos-blur-strong);
+  box-shadow: var(--macos-shadow);
+  .el-message-box__title {
+    color: var(--macos-text);
+    font-weight: 600;
+  }
+  .el-message-box__content {
+    color: var(--macos-text-2);
+  }
+}
+.el-message,
+.el-notification {
+  border-radius: var(--macos-radius);
+  border: 1px solid var(--macos-border);
+  background-color: var(--macos-bg-glass-strong);
+  backdrop-filter: var(--macos-blur);
+  -webkit-backdrop-filter: var(--macos-blur);
+  box-shadow: var(--macos-shadow-sm);
+  .el-message__content {
+    color: var(--macos-text);
+  }
+}
+.el-tooltip__popper {
+  border-radius: var(--macos-radius-xs);
+  background-color: var(--macos-bg-glass-strong);
+  backdrop-filter: var(--macos-blur);
+  -webkit-backdrop-filter: var(--macos-blur);
+  color: var(--macos-text);
+  box-shadow: var(--macos-shadow-xs);
+  border: 1px solid var(--macos-border);
+  &.is-dark {
+    background-color: rgba(40, 40, 40, 0.9);
+    color: #fff;
+  }
+  .popper__arrow {
+    display: none;
+  }
+}
+
+// ---- 标签页 ----
+.el-tabs__item {
+  color: var(--macos-text-2);
+  transition: color 0.2s;
+  &.is-active {
+    color: var(--macos-accent);
+    font-weight: 600;
+  }
+  &:hover {
+    color: var(--macos-accent);
+  }
+}
+.el-tabs__active-bar {
+  background-color: var(--macos-accent);
+  border-radius: 2px;
+}
+.el-tabs__nav-wrap::after {
+  background-color: var(--macos-divider);
+}
+
+// ---- 滑块 ----
+.el-slider__runway {
+  background-color: var(--macos-surface-3);
+  border-radius: 4px;
+}
+.el-slider__bar {
+  background-color: var(--macos-accent);
+  border-radius: 4px;
+}
+.el-slider__button {
+  border-color: var(--macos-accent);
+  background-color: #fff;
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.2);
+}
+
+// ---- 单选 / 多选按钮组 ----
+.el-radio-button__inner {
+  color: var(--macos-text);
+  background-color: var(--macos-surface);
+  border-color: var(--macos-border-strong);
+  transition: all 0.2s;
+}
+.el-radio-button__orig-radio:checked + .el-radio-button__inner {
+  background-color: var(--macos-accent);
+  border-color: var(--macos-accent);
+  color: #fff;
+  box-shadow: -1px 0 0 0 var(--macos-accent);
+}
+.el-radio__input.is-checked .el-radio__inner {
+  background-color: var(--macos-accent);
+  border-color: var(--macos-accent);
+}
+.el-checkbox__input.is-checked .el-checkbox__inner,
+.el-checkbox__input.is-indeterminate .el-checkbox__inner {
+  background-color: var(--macos-accent);
+  border-color: var(--macos-accent);
+}
+
+// ---- 开关 ----
+.el-switch.is-checked .el-switch__core {
+  background-color: var(--macos-accent);
+  border-color: var(--macos-accent);
+}
+
+// ---- 标签 ----
+.el-tag {
+  border-radius: var(--macos-radius-xs);
+  border: none;
+}
+
+// ---- 树（本地文件树等） ----
+.el-tree {
+  background: transparent;
+  color: var(--macos-text);
+  .el-tree-node__content:hover,
+  .el-tree-node:focus > .el-tree-node__content {
+    background-color: var(--macos-hover);
+  }
+  &.el-tree--highlight-current
+    .el-tree-node.is-current
+    > .el-tree-node__content {
+    background-color: var(--macos-accent-soft);
+  }
+}
+
+// ---- 表格 ----
+.el-table {
+  background: transparent;
+  color: var(--macos-text);
+  &::before {
+    background-color: var(--macos-divider);
+  }
+  th,
+  tr {
+    background: transparent;
+  }
+  .el-table__row:hover > td {
+    background-color: var(--macos-hover) !important;
+  }
+}

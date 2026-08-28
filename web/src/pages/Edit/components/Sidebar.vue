@@ -73,27 +73,32 @@ export default {
 <style lang="less" scoped>
 .sidebarContainer {
   position: fixed;
-  right: -300px;
+  right: -320px;
   top: 110px;
   bottom: 0;
-  width: 300px;
-  background-color: #fff;
-  border-left: 1px solid #e8e8e8;
+  width: 320px;
+  background-color: var(--macos-bg-glass-strong);
+  backdrop-filter: var(--macos-blur-strong);
+  -webkit-backdrop-filter: var(--macos-blur-strong);
+  border-left: 1px solid var(--macos-border);
+  border-top-left-radius: var(--macos-radius-xl);
+  border-bottom-left-radius: var(--macos-radius-xl);
+  box-shadow: -16px 0 44px rgba(0, 0, 0, 0.16);
   display: flex;
   flex-direction: column;
-  transition: all 0.3s;
+  transition: right 0.32s cubic-bezier(0.32, 0.72, 0, 1);
 
   &.isDark {
-    background-color: #262a2e;
-    border-left-color: hsla(0, 0%, 100%, 0.1);
+    background-color: var(--macos-bg-glass-strong);
+    border-left-color: var(--macos-border);
 
     .sidebarHeader {
-      border-bottom-color: hsla(0, 0%, 100%, 0.1);
-      color: #fff;
+      border-bottom-color: var(--macos-divider);
+      color: var(--macos-text);
     }
 
     .closeBtn {
-      color: #fff;
+      color: var(--macos-text-2);
     }
   }
 
@@ -103,21 +108,38 @@ export default {
 
   .closeBtn {
     position: absolute;
-    right: 20px;
-    top: 12px;
-    font-size: 20px;
+    right: 16px;
+    top: 14px;
+    width: 28px;
+    height: 28px;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 18px;
     cursor: pointer;
+    color: var(--macos-text-2);
+    transition: background-color 0.18s, color 0.18s;
+
+    &:hover {
+      background-color: var(--macos-hover-strong);
+      color: var(--macos-danger);
+    }
   }
 
   .sidebarHeader {
     width: 100%;
-    height: 44px;
-    border-bottom: 1px solid #e8e8e8;
+    height: 56px;
+    padding-right: 44px;
+    border-bottom: 1px solid var(--macos-divider);
     display: flex;
     justify-content: center;
     align-items: center;
     flex-grow: 0;
     flex-shrink: 0;
+    font-weight: 600;
+    font-size: 15px;
+    color: var(--macos-text);
   }
 
   .sidebarContent {

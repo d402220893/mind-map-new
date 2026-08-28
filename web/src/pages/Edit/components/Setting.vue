@@ -701,9 +701,9 @@ export default {
       })
     },
 
-    // 初始化画布背景 UI 状态（从已保存配置回显）
+    // 初始化画布背景 UI 状态（从全局 localConfig 回显，背景为全局设置不写入文件）
     initCanvasBg() {
-      const bg = this.configData && this.configData.canvasBackground
+      const bg = this.localConfig && this.localConfig.canvasBackground
       if (bg && bg.type === 'image') {
         this.canvasBgType = 'image'
       } else if (bg && bg.type === 'color') {
@@ -715,7 +715,7 @@ export default {
       }
     },
 
-    // 统一应用画布背景到容器 + 持久化
+    // 统一应用画布背景到容器 + 持久化到全局 localConfig（不写入 .smm 文件）
     applyCanvasBackground(bg) {
       const el = this.mindMap && this.mindMap.el
       if (el) {
@@ -733,8 +733,7 @@ export default {
           el.style.backgroundImage = 'none'
         }
       }
-      this.configData.canvasBackground = bg
-      storeConfig(this.configData)
+      this.setLocalConfig({ canvasBackground: bg })
     },
 
     selectPreset(color) {

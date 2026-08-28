@@ -614,7 +614,7 @@ export default {
     font-size: 12px;
     font-family: -apple-system, BlinkMacSystemFont, 'PingFang SC',
       'Microsoft YaHei', sans-serif;
-    font-weight: 500;
+    font-weight: 600;
     color: var(--macos-text);
     z-index: 100;
     padding: 8px 10px;
@@ -784,7 +784,8 @@ export default {
 
       .text {
         font-size: 11px;
-        color: var(--macos-text-2);
+        color: var(--macos-text);
+        font-weight: 600;
         line-height: 1;
       }
     }

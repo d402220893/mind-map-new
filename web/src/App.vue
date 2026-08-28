@@ -11,14 +11,15 @@ export default {
 </script>
 
 <style lang="less">
+@import './styles/macos.less';
+
 * {
   margin: 0;
   padding: 0;
   box-sizing: border-box;
 }
 #app {
-  font-family: Avenir, Helvetica, Arial, sans-serif;
-  color: #2c3e50;
+  color: var(--macos-text);
 }
 
 .customScrollbar {
@@ -40,7 +41,4 @@ export default {
   }
 }
 
-.el-dialog{
-  border-radius: 10px;
-}
 </style>
