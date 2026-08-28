@@ -423,6 +423,62 @@ cd /e/03_学习文件/mind-map-main/electron-app
 - **误删依赖回归**：本次 `npm install prismjs` 触发 npm 把 web 下未登记进 package.json 的 `docx / mp4-muxer / pptxgenjs`（exportExtra/exportMedia 运行时动态 import）当作 extraneous 剪除，导致首次 `vue build` 报 "dependencies were not found"。已重新 `npm install docx mp4-muxer pptxgenjs --save` 补回并写入 package.json（docx ^9.7.1 / mp4-muxer ^5.2.2 / pptxgenjs ^4.0.1）——**今后给 web 工程加依赖务必 `--save`，且勿让 npm 修剪掉未登记的重依赖**。
 - `build_now.sh`：删除 `ELECTRON_BUILDER_BINARIES_MIRROR`（npmmirror 该镜像已下架 nsis 返回 404，会让 packaging 卡死）；nsis 等二进制已缓存于 `~/.cache/electron-builder/nsis/`，electron-builder 改用本地缓存 + GitHub 默认。本次 `npm run dist` 退出码 0（无收尾 trash 拦截）。
 
+## 13. 2026-08-28 关闭文件提示 + 保存路径修复（v1.0.6）
+
+### 13.1 关闭文件时无条件提示「未保存的内容将丢失」
+
+**现象**：在 FileTabs 上点 × 关闭文件时，无论文件是否已经保存到磁盘，都弹出确认框「确定关闭文件「test3」吗？未保存的内容将丢失。」。
+
+**根因**：`web/src/pages/Edit/components/FileTabs.vue` 的 `onRemove` 方法无条件调用 `this.$confirm(...)`。
+
+**修复**：
+```javascript
+onRemove(w) {
+  ...
+  // 已保存为真实文件：关闭标签不提示（数据仍保留在工作簿列表中）
+  if (w.filePath) {
+    this.$emit('close', w.id)
+    return
+  }
+  // 未落盘的新建文件：关闭标签才提示可能丢失
+  this.$confirm(...)
+}
+```
+判断依据：workbook 的 `filePath` 为空表示「新建且未落盘」，此时提示；有真实路径表示已保存为文件，关闭标签不再弹窗。
+
+### 13.2 保存/另存为默认跑到安装目录
+
+**现象**：打开 `E:\03_学习文件\test3.smm` 后点保存/另存为，默认路径跑到 `D:\Program Files (x86)\mind-map\test3.smm`（即安装目录）。
+
+**根因**：`window.smmApi.saveWorkbook` 只接收 `defaultName`（如 `test3.smm`），没传当前文件路径；Electron `dialog.showSaveDialog` 在只给文件名、没给目录时，会默认使用当前工作目录——即 app 安装目录。
+
+**修复**（三处联动）：
+1. `web/src/pages/Edit/components/Edit.vue` 的 `saveWorkbookToFile(defaultName)`：
+   ```javascript
+   const defaultPath = this.currentFilePath || defaultName
+   const res = await window.smmApi.saveWorkbook(
+     JSON.stringify(container),
+     defaultPath
+   )
+   ```
+   若当前 workbook 已有 `currentFilePath`（打开的原文件），把完整路径作为默认路径传给保存对话框；否则退化为 `defaultName`。
+2. `electron-app/preload.js`：`saveWorkbook: (content, defaultPath) => ...`，参数语义改为完整默认路径。
+3. `electron-app/main.js`：`smm:save-workbook` 处理 `defaultPath` 并优先传给 `dialog.showSaveDialog`。
+
+### 13.3 bump_version.js 同步 NSIS 版本号
+
+之前 `package.json` 版本 bump 后，`make_installer.nsi` 里的 `!define VERSION "x.x.x"` 仍是旧值。已改为 `bump_version.js` 在写回 `package.json` 后，同步更新 `make_installer.nsi` 的 `!define VERSION`。
+
+### 13.4 打包与交付
+
+- 打包方式按当前方案不变：makensis 手动出包（见 §9.8）。
+- 前端构建加 `NODE_OPTIONS="--openssl-legacy-provider --max-old-space-size=4096"`（Node 22 + 旧 webpack）。
+- 同步产物到 `electron-app/dist` 并 `strip_index.js` 剥离 51.la。
+- 手动补齐 Electron 运行时文件（`icudtl.dat`、`libEGL.dll` 等）到 `win-unpacked/` 根目录。
+- 产物：`electron-app/dist-electron/思绪思维导图 Setup.exe`（v1.0.6，约 98MB，NSIS 手动打包）。
+- 已校验 Setup.exe 内部含：版本号 `1.0.6`、`icudtl.dat` 等运行时、`defaultPath` 逻辑字符串、关闭提示文本。
+- 说明：当前 WorkBuddy 自动化环境无法真正启动安装器 GUI 进程（Setup.exe 在沙箱中立即返回 0、目录不写入），但包内文件完整；请在真实 Windows 桌面双击安装测试。
+
 最终交付：`electron-app/dist-electron/思绪思维导图 Setup.exe`（v1.0.5，含上述三功能）。
 
 ---
