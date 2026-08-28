@@ -479,7 +479,8 @@ function createWindow() {
     show: false,
     backgroundColor: '#ffffff',
     frame: false,
-    thickFrame: true,
+    // 关掉 thickFrame，否则 frame:false 的窗口两侧仍会画一条用于拖拽缩放的深色边框（用户反馈"两头的黑框"就是这个）
+    thickFrame: false,
     webPreferences: {
       preload: path.join(APP_DIR, 'preload.js'),
       contextIsolation: true,
