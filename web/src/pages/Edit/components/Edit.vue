@@ -310,6 +310,8 @@ export default {
     this.$bus.$on('requestSave', this.doSave)
     this.$bus.$on('requestSaveAs', this.doSaveAs)
     this.$bus.$on('requestOpen', this.openWorkbook)
+    // 每次渲染结束兜底重应用画布背景（编辑/切换/改主题后不会丢背景）
+    this.$bus.$on('node_tree_render_end', this.onBgRenderEnd)
     // 工具栏“新建文件”：弹出保存对话框写入并作为单一工作表加载，并记录真实路径
     this.$bus.$on('newWorkbook', this.newWorkbook)
     // FileTabs 上的“+”新建：与工具栏“新建”复用同一弹窗逻辑
@@ -354,10 +356,6 @@ export default {
     window.removeEventListener('beforeunload', this.handleBeforeUnload)
     window.removeEventListener('paste', this.onPaste, true)
     window.removeEventListener('keydown', this.onGlobalKeydown)
-    if (this._bgObserver) {
-      this._bgObserver.disconnect()
-      this._bgObserver = null
-    }
     this.mindMap.destroy()
   },
   methods: {
@@ -1110,20 +1108,12 @@ export default {
       this.updateTitle()
     },
 
-    // 应用全局画布背景到容器（初始化 / 切换文件 / 每次载入后调用）。
+    // 应用全局画布背景到容器（初始化 / 切换文件 / 每次载入 / 每次渲染结束都会调用）。
     // 背景为全局设置，存于 localConfig，不写入 .smm 文件，因此切换/打开不同文件不会串。
-    // 使用 !important 防止 simple-mind-map 在渲染时通过 initTheme/setBackgroundStyle 覆盖。
+    // 使用 !important 防止 simple-mind-map 在渲染时把背景重置为默认色。
+    // 兜底策略：在 node_tree_render_end（每次渲染必触发，含编辑/切换/改主题后）重应用，
+    // 比 MutationObserver 更可靠——不会再出现“编辑节点后背景变回默认色”。
     applyStoredCanvasBackground() {
-      // 临时断开观察器，避免自己写样式又触发观察器造成死循环
-      if (this._bgObserver) this._bgObserver.disconnect()
-      const reconnect = () => {
-        if (this._bgObserver && this.mindMap && this.mindMap.el) {
-          this._bgObserver.observe(this.mindMap.el, {
-            attributes: true,
-            attributeFilter: ['style']
-          })
-        }
-      }
       try {
         if (!this.mindMap || !this.mindMap.el) return
         const el = this.mindMap.el
@@ -1156,32 +1146,15 @@ export default {
         } else {
           el.style.setProperty('background-color', bg.value, 'important')
         }
-      } finally {
-        // 记录实际生效的背景值，供观察器比对（避免平移/缩放时误触发重应用）
-        if (this.mindMap && this.mindMap.el) {
-          this._appliedBg = this.mindMap.el.style.backgroundColor
-          this._appliedImg = this.mindMap.el.style.backgroundImage
-        }
-        reconnect()
+      } catch (e) {
+        console.error('applyStoredCanvasBackground error', e)
       }
     },
 
-    // 监听画布容器 style 变化：simple-mind-map 在 setTheme/渲染时会重置背景，
-    // 用 MutationObserver 兜底重应用全局背景，确保“修改/切换文件”后背景不丢。
-    setupCanvasBackgroundObserver() {
-      if (!this.mindMap || !this.mindMap.el) return
-      this._bgObserver = new MutationObserver(() => {
-        const el = this.mindMap.el
-        const curBg = el.style.backgroundColor
-        const curImg = el.style.backgroundImage
-        // 与已生效的背景一致（如平移/缩放改变了 transform 但背景未变）则不处理
-        if (curBg === this._appliedBg && curImg === this._appliedImg) return
-        this.applyStoredCanvasBackground()
-      })
-      this._bgObserver.observe(this.mindMap.el, {
-        attributes: true,
-        attributeFilter: ['style']
-      })
+    // node_tree_render_end 兜底：每次渲染结束（编辑/切换/改主题）后重应用全局背景，
+    // 防止 simple-mind-map 渲染时把背景重置为默认色。
+    onBgRenderEnd() {
+      this.applyStoredCanvasBackground()
     },
 
     // 更新窗口标题并触发路径显示
@@ -1383,10 +1356,9 @@ export default {
       }
       // 协同测试
       this.cooperateTest()
-      // 应用已保存的画布背景
+      // 应用已保存的画布背景；之后每次渲染结束（编辑/切换/改主题）都会兜底重应用，
+      // 不会再出现“编辑节点后背景变回默认色”的问题。
       this.applyStoredCanvasBackground()
-      // 启动背景观察器，兜底重应用（防止 simple-mind-map 在渲染/改主题时重置背景）
-      this.setupCanvasBackgroundObserver()
     },
 
     // 加载相关插件

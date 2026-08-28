@@ -973,3 +973,35 @@ onRemove(w) {
 - 修复要点：① 工具栏“新建”改走 `newWorkbookFromTabs`（自动开新标签）；② `MutationObserver` 兜底重应用画布背景；③ 备注代码高亮（prismjs 17 语言，HTML 用 `prism-markup`）。
 
 ---
+
+## 26. v1.0.15（2026-08-28）— 背景守护方案替换（待真机验证）
+
+> 用户反馈：① 修改思维导图后背景仍会变成原来的默认色；② 拖拽文件到画布在当前文件打开；③ 备注代码高亮。
+> 本次针对①做了可靠修复；②③经核对源码路径已正确（拖拽 .smm / 非 .smm 均已走 `openContainerAsNewWorkbook`/`importSheets` → 新建独立文件；备注高亮插件 `{ highlighter: Prism }` 已正确接入），主要为重建确认。
+
+### 26.1 背景守护：MutationObserver → node_tree_render_end（核心修复）
+- 旧方案：`applyStoredCanvasBackground()` + `MutationObserver` 监听 `mindMap.el.style`，用 `_appliedBg/_appliedImg` 比对。
+  问题：`simple-mind-map` 在渲染时通过 `el.style.backgroundColor = x`（非 important）会覆盖我们 `setProperty(...,'important')` 的声明；
+  而 `MutationObserver` 比对逻辑在赋值时序上可能漏触发，导致“编辑节点后背景变回默认色”。
+- 新方案（`Edit.vue`）：
+  - 删除 `setupCanvasBackgroundObserver()` 与 `_bgObserver/_appliedBg/_appliedImg` 全部引用；
+  - `applyStoredCanvasBackground()` 简化为只负责按 `localConfig.canvasBackground` 写 `!important` 内联样式（保留 `try/catch`）；
+  - 新增 `onBgRenderEnd()`，在 `mounted` 注册 `this.$bus.$on('node_tree_render_end', this.onBgRenderEnd)`，`beforeDestroy` 解绑；
+    `node_tree_render_end` 在**每次渲染结束必触发**（编辑/切换/改主题后都会 emit），从而无条件兜底重应用背景，比 MutationObserver 可靠。
+- 源码已确认编入包：`chunk-95d2411a.js` 同时存在 `node_tree_render_end` 与 `onBgRenderEnd`。
+
+### 26.2 拖拽打开 & 备注高亮（核对结论：源码已正确，重建确认）
+- 拖拽：画布 `onContainerDrop` 对 `.smm` 走 `loadWorkbookFromRaw → openContainerAsNewWorkbook`（新建独立 workbook + 切换 activeId）；其它格式走 `importFile` → `importSheets → openContainerAsNewWorkbook`，均为“新文件”。`api/index.js` 与 `workbookState.js` 的 `getActiveSheetData/addWorkbook` 同源，新建后读取的是新 workbook 数据，不会写入当前文件。
+- 备注高亮：`NodeNote.vue` 已接入 `@toast-ui/editor-plugin-code-syntax-highlight` + prismjs 17 语言包，插件读取 `options.highlighter`，配置 `{ highlighter: Prism }` 正确；插件 dist 与 CSS 均已就位。
+
+### 26.3 出包（2026-08-28 17:43）
+- 安装包：`electron-app/dist-electron/思绪思维导图 Setup.exe`（v1.0.15，102,711,270 字节 ≈ 98 MB）。
+- 配方：vue build（NODE_OPTIONS=--openssl-legacy-provider --max-old-space-size=4096 + BUILD_LOW_MEM=1）→ 同步 dist → strip_index.js 剥离 51.la（`LA.init`=0）→ bump 1.0.15 → 同步 win-unpacked → makensis。
+- 校验：package.json / make_installer.nsi VERSION / resources/app 版本均为 1.0.15；`chunk-95d2411a.js` 含 `node_tree_render_end`/`onBgRenderEnd`。
+
+### 26.4 待用户真机点测
+- 修改节点/新增节点 → 画布背景应保持（本次重点验证项）。
+- 拖拽 .smm 到画布 → 应新建独立文件标签，当前文件不受影响；拖非 .smm 同类行为。
+- 备注里写代码块 → 语法高亮显示。
+
+---
