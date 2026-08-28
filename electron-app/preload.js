@@ -7,8 +7,9 @@ contextBridge.exposeInMainWorld('__LOCAL_APP__', true)
 // 渲染进程本身 nodeIntegration=false，不能直接访问 fs/dialog）。
 contextBridge.exposeInMainWorld('smmApi', {
   // 另存为：弹出保存对话框并写文件，返回 { canceled, filePath, error }
-  saveWorkbook: (content, defaultName) =>
-    ipcRenderer.invoke('smm:save-workbook', { content, defaultName }),
+  // defaultPath 为完整默认路径（含目录和文件名），优先于 defaultName
+  saveWorkbook: (content, defaultPath) =>
+    ipcRenderer.invoke('smm:save-workbook', { content, defaultPath }),
   // 直接写入已有路径（覆盖保存用）
   writeFile: (filePath, content) =>
     ipcRenderer.invoke('smm:write-file', { filePath, content }),

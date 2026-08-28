@@ -631,9 +631,11 @@ export default {
       try {
         this.manualSave()
         const container = getSheetsContainer()
+        // 若当前 workbook 已有真实文件路径，对话框默认定位到该路径（解决另存为跑到安装目录的问题）
+        const defaultPath = this.currentFilePath || defaultName
         const res = await window.smmApi.saveWorkbook(
           JSON.stringify(container),
-          defaultName
+          defaultPath
         )
         if (res && res.canceled) return
         if (res && res.error) {

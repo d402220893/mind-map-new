@@ -14,3 +14,12 @@ pkg.version = parts.join('.')
 
 fs.writeFileSync(pkgPath, JSON.stringify(pkg, null, 2) + '\n', 'utf8')
 console.log('[bump_version] ' + cur + ' -> ' + pkg.version)
+
+// 同步 NSIS 安装脚本里的版本号（NSIS 脚本里 !define VERSION 硬编码，需保持一致）
+const nsiPath = path.join(__dirname, 'make_installer.nsi')
+let nsi = fs.readFileSync(nsiPath, 'utf8')
+// 读时去掉 UTF-8 BOM（若有），写回时保留
+if (nsi.charCodeAt(0) === 0xFEFF) nsi = nsi.substring(1)
+nsi = nsi.replace(/(!define VERSION ")[^"]+(")/, '$1' + pkg.version + '$2')
+fs.writeFileSync(nsiPath, '\uFEFF' + nsi, 'utf8')
+console.log('[bump_version] NSIS VERSION -> ' + pkg.version)

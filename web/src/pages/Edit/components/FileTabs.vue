@@ -134,6 +134,12 @@ export default {
         this.$message.warning('至少需保留一个文件')
         return
       }
+      // 已保存为真实文件：关闭标签不提示（数据仍保留在工作簿列表中，不会丢失）
+      if (w.filePath) {
+        this.$emit('close', w.id)
+        return
+      }
+      // 未落盘的新建文件：关闭标签才提示可能丢失
       this.$confirm(
         `确定关闭文件「${w.name}」吗？未保存的内容将丢失。`,
         '关闭文件',

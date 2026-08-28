@@ -472,3 +472,116 @@ cd /e/03_学习文件/mind-map-main/electron-app
 ### 14.4 结论
 - 当前有效安装包为 **v1.0.7**（`dist-electron/思绪思维导图 Setup.exe`，18:27 生成，含 §13 全部导入修复）。
 - 若再遇"构建卡在 packaging 之后"，第一反应是查 safe-delete/回收站拦截，而非 nsis 镜像或网络。
+
+---
+
+## 15. v1.0.8 —— 提交导入修复 + 出包（含第二处构建卡死根因）
+
+### 15.1 本轮动作
+- 提交 `226530d`：导入/拖拽/打开改为创建同名新文件、build_now.sh safe-delete 修复、同步构建产物。
+- 备注代码高亮（prismjs：python/C#/c/C++/go/verilog）已在 v1.0.5（3833657）提交，本轮无改动、功能完好。
+- 出包 **v1.0.8**（19:00 生成，73.4MB，MZ 有效）。
+
+### 15.2 第二处构建卡死根因（safe-delete 之外的坑）
+- 关掉 safe-delete（`NODE_OPTIONS=""`）后，electron-builder 仍会在 `packaging` 阶段**挂起 8 分钟被 timeout 杀掉**（app-builder.exe 收 SIGTERM/143）。
+- 真因：`dist-electron/` 残留了**上次被杀构建的陈旧产物**（旧 `win-unpacked` 目录、旧的 `Setup.exe.blockmap`），导致新一次 packaging 阶段文件冲突/锁，app-builder 卡死。
+- 验证：清空 `dist-electron`（仅留空目录）→ 重跑 electron-builder，`unpack-electron → 7za 压缩 → makensis → blockmap` 全链路秒过（debug_rc=0）。
+- 结论：**构建前务必先 `rm -rf dist-electron/win-unpacked "思绪思维导图 Setup.exe" "*.blockmap" builder-debug.yml`**，否则易在 packaging 卡死。沙箱与此无关（关不关沙箱都同样卡，根因是残留产物）。
+
+### 15.3 当前有效安装包
+- **v1.0.8**：`electron-app/dist-electron/思绪思维导图 Setup.exe`（19:00 生成，含 §13 导入修复 + 代码高亮 + 画布背景 + 品牌固定/拖拽打开）。
+- 已清理目录内 v1.0.7 残留 `Setup_0827.exe`。
+
+---
+
+## 16. 2026-08-27 21:03 当前进展：macOS 风格全局视觉重构（未提交 / 未出包）
+
+### 16.1 已发布基线（截至本稿）
+- 当前有效安装包 **v1.0.9**（`electron-app/dist-electron/思绪思维导图 Setup.exe`，21:11:26 生成，73.4MB，MZ 有效），在 v1.0.8 基础上新增 §16.2 的 macOS 毛玻璃风格全局视觉重构。
+- 最新提交仍为 `226530d`（v1.0.8 源码 + safe-delete 致构建退出1 修复）。本轮 macos 风格源码改动**尚未 git 提交**，`package.json` 版本已 bump 至 `1.0.9`（未提交）。
+
+### 16.2 已出包：macOS 毛玻璃风格全局视觉重构（源码已改，未提交、已构建出包 v1.0.9）
+✅ 已于 2026-08-27 21:11 构建出包 **v1.0.9**（`electron-app/dist-electron/思绪思维导图 Setup.exe`，73.4MB，MZ 有效）；`electron-app/dist/css/app.css` 已确认含 `--macos-bg-glass` 设计令牌，验证 macos 风格进入安装包。
+
+一轮把侧边栏 / 右键菜单 / 工具栏统一为 macOS 玻璃拟态（圆角 + 毛玻璃模糊 + 柔和阴影 + accent 高亮）的改造。所有源码改动均为 uncommitted 工作区状态，尚未 `git commit`。
+
+改动文件清单（均 `git status -s` 标记 M / ??）：
+- `web/src/styles/macos.less`（**新文件**，20:05，约 10KB）：定义全套设计令牌 `--macos-bg-glass(-strong)` / `--macos-blur(-strong)` / `--macos-border` / `--macos-radius(-xs/-sm/-lg/-xl)` / `--macos-shadow-sm` / `--macos-text(-2/-3)` / `--macos-divider` / `--macos-hover(-strong)` / `--macos-accent(-soft)` / `--macos-danger`。
+- `web/src/App.vue`：`@import './styles/macos.less'`；`#app` 颜色改 `var(--macos-text)`；删除旧的 `.el-dialog{border-radius:10px}`。
+- `web/src/pages/Edit/components/Sidebar.vue`：侧边栏换 macOS 玻璃（300→320px，`backdrop-filter` 强模糊、圆角、阴影、hover 动效；`.isDark` 同步变量化）。
+- `web/src/pages/Edit/components/Contextmenu.vue`：右键菜单换玻璃拟态（250px、blur、圆角、accent hover、danger 红、分隔线/子菜单间距调整）。
+- `web/src/pages/Edit/components/Toolbar.vue`：工具栏整体换 macos 玻璃风格（圆角/模糊/边框/阴影变量化，165 行改动）。
+- `web/src/pages/Edit/components/ToolbarNodeBtnList.vue`：节点按钮列表同步风格化（55 行改动）。
+- `web/src/pages/Edit/Index.vue`：精简 144 行（内联样式/逻辑迁移）。
+- `index.html`：simple-mind-map 主题 `template` 由 `avocado` 改回 `default`（与统一风格一致）。
+
+### 16.3 下一步（出包前待做）
+1. **构建 + 升版出包**：按 §9.3 / §9.8 流程 `vue build` → 同步 `electron-app/dist` → `bump_version.js`（→ v1.0.9）→ makensis 出包。⚠️ 构建前先清空 `dist-electron` 残留（§15.2），并 `export NODE_OPTIONS=""` 关 safe-delete（§14.3）。
+2. **实测风险点**：
+   - `backdrop-filter` 在 Windows 部分场景（旧 GPU / 远程桌面 / 某些虚拟机）可能不生效，需确认有非模糊降级配色兜底，避免背景全透明看不清文字。
+   - 深色模式：`Sidebar`/`Contextmenu` 已用 `--macos-*` 变量但仍依赖 `isDark` 类，需确认 App 正确切换深浅色并定义对应变量值。
+   - 工具栏换肤后是否仍与画布 / 底部 SheetTabs 无遮挡重叠（vertical 间距回归验证）。
+3. **提交**：本轮 macos 风格改动 + 本 HANDOVER.md 一并 `git commit`。
+
+---
+
+## 17. v1.0.10 —— Ctrl+S 修复 + 保存按钮 + 顶部/底部去黑框 + 常用快捷键补全（提交 9e4a388）
+
+### 17.1 问题与根因
+
+| # | 现象 | 根因 |
+|---|------|------|
+| 1 | Ctrl+S 保存无效 | `Edit.vue` 的 `onGlobalKeydown` 方法**只声明但从未注册到 `window.keydown`**；且其内部 desktop 端走"交给主进程菜单"早返回路径——但 `main.js` 已 `Menu.setApplicationMenu(null)`，根本没菜单可触发。`Ctrl+S` 完全无响应。 |
+| 2 | 工具栏缺少保存按钮 | 工具栏只有"另存为"，没有"保存"。 |
+| 3 | "两头黑框"（dark mode 顶部/底部） | `FileTabs.vue`（顶部 34px）和 `SheetTabs.vue`（底部 40px）在 dark mode 下用深色渐变 + `backdrop-filter`，与画布对比明显，看起来像两道黑框。**之前的 thickFrame 修复（v1.0.10 之前）只动了窗口边框，与此处无关**。 |
+| 4 | 缺少常用快捷键 | 工具栏的"打开 / 另存为 / 搜索"等都没有键盘快捷键。 |
+
+### 17.2 修复
+
+**1. `web/src/pages/Edit/components/Edit.vue`** —— 修复 Ctrl+S 并补全快捷键：
+- `mounted()` 注册 `window.addEventListener('keydown', this.onGlobalKeydown)`，`beforeDestroy()` 对称解绑。
+- 重写 `onGlobalKeydown(e)`：去掉"desktop 走主进程菜单"的早返回；新增 4 个快捷键：
+  - `Ctrl+S` / `Cmd+S` → `doSave()`
+  - `Ctrl+Shift+S` / `Cmd+Shift+S` → `doSaveAs()`
+  - `Ctrl+O` / `Cmd+O` → `openWorkbook()`
+  - `F2` → `handleStartTextEdit()`（库内同名快捷键只在画布内有效，这里做全局兜底）
+- 4 个快捷键全部 `e.preventDefault()` + `stopPropagation()`，避免抢走浏览器/Electron 默认行为。
+
+**2. `web/src/pages/Edit/components/Toolbar.vue`** —— 在"另存为"前加"保存"按钮，`@click="$bus.$emit('requestSave')"`。`Edit.vue` 已监听 `requestSave` → `doSave`，无需新增 IPC。i18n 4 语言（zh_cn/zh_tw/en_us/vi_vn）`toolbar.save` 已加。
+
+**3. `web/src/pages/Edit/components/FileTabs.vue` + `SheetTabs.vue`** —— 去"两头黑框"：
+- 浅色与深色模式都改为 `background: transparent`（去掉原 `linear-gradient` + `backdrop-filter`）。
+- 仅保留 `border-bottom`（FileTabs）/ `border-top`（SheetTabs）做视觉分隔。
+- 画布现在从顶到底延伸到窗口边缘，无暗色边框感。
+
+**4. 常用快捷键清单（§17.2 修复后已支持）**：
+
+| 快捷键 | 功能 | 来源 |
+|--------|------|------|
+| Ctrl+S / Cmd+S | 保存到当前文件（无路径则另存为） | ✅ 本轮新增 |
+| Ctrl+Shift+S | 另存为 | ✅ 本轮新增 |
+| Ctrl+O / Cmd+O | 打开 | ✅ 本轮新增 |
+| F2 | 编辑当前激活节点 | ✅ 本轮新增（库内仅画布内有效，全局兜底） |
+| Ctrl+F | 搜索 | 已有（`Search.vue` 注册 `mindMap.keyCommand.addShortcut('Control+f', ...)`） |
+| Ctrl+Z / Ctrl+Y | 撤销/重做 | 库默认 |
+| Ctrl+A | 全选 | 库默认 |
+| Ctrl+C / Ctrl+X / Ctrl+V | 复制/剪切/粘贴节点 | 库默认 |
+| Tab / Insert | 插入子节点 | 库默认 |
+| Enter | 插入同级节点 | 库默认 |
+| Shift+Tab | 插入父节点 | 库默认 |
+| Ctrl+G | 插入概要 | 库默认 |
+| / | 展开/收起节点 | 库默认 |
+| Ctrl+↑ / Ctrl+↓ | 上移/下移节点 | 库默认 |
+| Ctrl+L | 整理节点 | 库默认 |
+| Ctrl+Enter | 进入/退出演示 | 库默认 |
+| Delete / Backspace | 删除节点 | 库默认 |
+| Shift+Backspace | 仅删除当前节点 | 库默认 |
+
+### 17.3 影响范围与回归
+- Ctrl+S 全局生效（含输入框聚焦态），不影响节点文本编辑（不会与库内快捷键冲突，库内未注册 Ctrl+S）。
+- FileTabs/SheetTabs 改为透明后，画布延伸到边缘；如果用户的画布背景设为白色或图片，可见效果就是"画布贯穿整个窗口"。
+- 其他用户的改动（App.vue / Contextmenu.vue / Sidebar.vue / ToolbarNodeBtnList.vue / Index.vue / index.html / electron-app/* / web/src/styles/）**未动**，保持其工作区状态。
+
+### 17.4 提交 & 出包
+- 提交：`9e4a388`（仅 8 个我改的文件）
+- 出包：**v1.0.11**（`electron-app/dist-electron/思绪思维导图 Setup.exe`，73.4MB，09:52:17 生成，MZ 校验有效）

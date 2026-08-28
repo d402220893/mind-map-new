@@ -79,13 +79,21 @@ const SMM_FILTERS = [
 ]
 
 // 另存为：弹保存对话框并写文件
-ipcMain.handle('smm:save-workbook', async (e, { content, defaultName }) => {
+ipcMain.handle('smm:save-workbook', async (e, { content, defaultPath, defaultName }) => {
   const win = BrowserWindow.getFocusedWindow() || mainWindow
-  const result = await dialog.showSaveDialog(win, {
+  const dlg = {
     title: '保存思维导图',
-    defaultPath: defaultName || '思维导图.smm',
     filters: SMM_FILTERS
-  })
+  }
+  // defaultPath 是完整路径（优先）；兼容旧调用仍支持 defaultName
+  if (defaultPath) {
+    dlg.defaultPath = defaultPath
+  } else if (defaultName) {
+    dlg.defaultPath = defaultName
+  } else {
+    dlg.defaultPath = '思维导图.smm'
+  }
+  const result = await dialog.showSaveDialog(win, dlg)
   if (result.canceled || !result.filePath) return { canceled: true }
   try {
     fs.writeFileSync(result.filePath, content, 'utf8')
