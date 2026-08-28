@@ -729,3 +729,34 @@ onRemove(w) {
 - 版本：**v1.0.8**（`bump_version.js` 1.0.7 → 1.0.8，已同步 `package.json` 与 `make_installer.nsi`）
 - 出包：`electron-app/dist-electron/思绪思维导图 Setup.exe`（约 101MB）
 - 流程同 §18.4（build → 同步 dist → 剥离 51.la → bump → 同步 win-unpacked → makensis）
+
+---
+
+## 20. v1.0.9 — 修复：拖拽打开 .smm 直接可保存 / 多文件互相串数据
+
+### 20.1 问题现象（用户反馈）
+1. 通过**拖拽**打开 `test3.smm`，文件名栏显示"未命名"，按 Ctrl+S 仍弹出"另存为"选择位置；期望能直接 Ctrl+S 覆盖原文件。
+2. 有时候保存过某个文件后，**其它已经打开的文件也会出问题**（数据串、写到错误文件）。
+
+### 20.2 根因
+- **拖拽打开无法保存**：`Edit.vue` 的 `onContainerDrop` 在处理 `.smm` 时把 `filePath` 写死为 `''`，理由误以为是"浏览器拖拽 API 拿不到真实路径"。但本应用是 **Electron 桌面端**，从操作系统拖入的文件在渲染进程里 `file.path` 就是真实绝对路径（`E:\03_学习文件\test3.smm`）。因为 `filePath` 为空 → `currentFilePath=''` → 文件名栏显示"未命名" + Ctrl+S 走"另存为"。
+- **多文件互相串数据**：① 同一文件可能通过"打开对话框"和"拖拽"各建一个独立 workbook（都无/有路径），形成重复标签页，各自内存状态不同、保存时互相覆盖；② 切换文件后 `Edit.vue.currentFilePath` 是组件局部变量，可能滞后于 workbook 实际状态，导致保存定位到旧路径。
+
+### 20.3 修复
+- `Edit.vue` `onContainerDrop`：拖入 `.smm` 时读取 `file.path`，用绝对路径正则 `/^[a-zA-Z]:[\\/]/` 判定；命中则把真实路径作为 `filePath` 传入 `loadWorkbookFromRaw`。浏览器环境 `file.path` 为 `undefined`，自动退化为空（无回归）。
+  - 效果：拖拽 `test3.smm` → 文件名栏显示 `test3` + `currentFilePath` 为绝对路径 → Ctrl+S 直接 `writeFile` 覆盖原文件，不再弹对话框。
+- `Edit.vue` `loadWorkbookFromRaw`：**防重复打开**——若同一绝对路径的文件已在其它标签页打开，则 `manualSave()` 后调用 `switchToWorkbook()` 直接切到那个标签页，不再新建第二个互相独立的工作簿（消除"其它已打开文件出问题"的主因）。
+- `Edit.vue` `switchToWorkbook()`（新增）：复用 `Index.vue` 的切换流程（`before-workbook-switch` → `api.switchWorkbook` → `workbook-switched`），保证先写回当前再载入目标，与标签页点击切换完全一致。
+- `Edit.vue` `doSave()` / `saveWorkbookToFile()`：**保存前重同步** `this.currentFilePath = getCurrentFilePath()`，确保始终以"当前激活 workbook"记录的真实路径为准，杜绝局部变量滞后写到错误文件。
+
+### 20.4 影响范围与回归
+- 拖拽 / 打开对话框 / 新建文件，三种入口的保存行为一致：有真实路径 → Ctrl+S 直接覆盖；无路径 → 另存为（默认名取标签名）。
+- 同一文件无论用哪种方式打开，只保留一个标签页，重复打开自动切换，不再产生互相串数据的副本。
+- 多文件来回切换保存，目标路径始终等于当前激活文件，不再误伤其它文件。
+- 透明度、标题栏等上版功能不受影响。
+
+### 20.5 构建 & 出包
+- 版本：**v1.0.9**（`bump_version.js` 1.0.8 → 1.0.9，已同步 `package.json` 与 `make_installer.nsi`）
+- 出包：`electron-app/dist-electron/思绪思维导图 Setup.exe`（约 102MB）
+- 流程同 §18.4（build → 同步 dist → 剥离 51.la → bump → 同步 win-unpacked → makensis）
+- 提交：待用户验证后补 commit

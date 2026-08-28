@@ -624,6 +624,8 @@ export default {
 
     // 通过主进程保存对话框把当前多工作表容器写入文件，并记录路径
     async saveWorkbookToFile(defaultName) {
+      // 重新同步为当前激活 workbook 的真实路径（多文件切换后可能滞后）
+      this.currentFilePath = getCurrentFilePath()
       if (!window.smmApi || !window.smmApi.saveWorkbook) {
         // 网页端无文件对话框，退化为浏览器下载
         this.exportSheetsBlob(defaultName)
@@ -704,6 +706,9 @@ export default {
 
     // 保存：若已有绝对文件路径则覆盖写入，否则等同于另存为
     async doSave() {
+      // 多文件场景：每次保存都以“当前激活 workbook”记录的真实路径为准，
+      // 避免 this.currentFilePath 与 workbook 状态不同步时把内容写到错误的文件。
+      this.currentFilePath = getCurrentFilePath()
       if (
         this.isAbsolutePath(this.currentFilePath) &&
         window.smmApi &&
@@ -779,6 +784,15 @@ export default {
       return true
     },
 
+    // 切换到指定 workbook（复用 Index.vue 的切换流程：先写回当前、再载入目标）
+    async switchToWorkbook(id) {
+      const { switchWorkbook: apiSwitch } = await import('@/api')
+      this.$bus.$emit('before-workbook-switch', id)
+      if (apiSwitch(id)) {
+        this.$bus.$emit('workbook-switched', id)
+      }
+    },
+
     // 从原始文件内容（JSON 字符串）打开为新的 workbook（打开对话框 / 拖拽 .smm）
     async loadWorkbookFromRaw(raw, filePath) {
       const trimmed = (raw || '').trim()
@@ -792,6 +806,21 @@ export default {
       } catch (e) {
         this.$message.error('文件解析失败：内容不是合法的 JSON')
         return false
+      }
+      // 防重复打开：同一绝对路径的文件已在其它标签页打开过，则直接切到那个标签页，
+      // 避免同一文件出现多个互相独立、数据会串的工作簿（“其他已打开文件出问题”）。
+      if (filePath && this.isAbsolutePath(filePath)) {
+        const list = getWorkbookList()
+        const existed = list.workbooks.find(
+          w =>
+            this.isAbsolutePath(w.filePath) &&
+            w.filePath.toLowerCase() === filePath.toLowerCase()
+        )
+        if (existed) {
+          this.manualSave()
+          this.switchToWorkbook(existed.id)
+          return true
+        }
       }
       // 归一化为多工作表容器（单图文件包成单个 Sheet1）
       const container = isSheetsFile(data)
@@ -863,14 +892,18 @@ export default {
       if (!file) return
       const name = file.name || ''
       const ext = (name.split('.').pop() || '').toLowerCase()
+      // Electron 桌面端：从操作系统拖入的文件可拿到真实绝对路径 file.path；
+      // 浏览器环境 file.path 为 undefined（用绝对路径正则判定，避免把裸文件名当路径）。
+      // 拿到真实路径后：① 文件名栏直接显示 test3（而非“未命名”）；
+      // ② Ctrl+S 可直接覆盖原文件，无需再弹“另存为”选位置。
+      const realPath =
+        file.path && /^[a-zA-Z]:[\\/]/.test(file.path) ? file.path : ''
       if (ext === 'smm') {
         // 读取文件内容并打开为新 workbook（不覆盖当前正在编辑的文件）
-        // 注：浏览器拖拽 API 无法拿到真实绝对路径，故 filePath 传空，
-        // 避免把裸文件名当作路径写入安装目录。
         const reader = new FileReader()
         reader.onload = () => {
           this.manualSave()
-          this.loadWorkbookFromRaw(reader.result, '')
+          this.loadWorkbookFromRaw(reader.result, realPath)
         }
         reader.onerror = () => {
           this.$message.error('读取文件失败')
