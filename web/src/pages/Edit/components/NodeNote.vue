@@ -27,6 +27,27 @@
 <script>
 import Editor from '@toast-ui/editor'
 import '@toast-ui/editor/dist/toastui-editor.css' // Editor's Style
+import codeSyntaxHighlight from '@toast-ui/editor-plugin-code-syntax-highlight'
+import '@toast-ui/editor-plugin-code-syntax-highlight/dist/toastui-editor-plugin-code-syntax-highlight.css'
+import Prism from 'prismjs'
+import 'prismjs/components/prism-javascript'
+import 'prismjs/components/prism-typescript'
+import 'prismjs/components/prism-python'
+import 'prismjs/components/prism-java'
+import 'prismjs/components/prism-c'
+import 'prismjs/components/prism-cpp'
+import 'prismjs/components/prism-csharp'
+import 'prismjs/components/prism-go'
+import 'prismjs/components/prism-rust'
+import 'prismjs/components/prism-markup'
+import 'prismjs/components/prism-markup-templating'
+import 'prismjs/components/prism-css'
+import 'prismjs/components/prism-json'
+import 'prismjs/components/prism-bash'
+import 'prismjs/components/prism-sql'
+import 'prismjs/components/prism-yaml'
+import 'prismjs/components/prism-markdown'
+import 'prismjs/components/prism-xml-doc'
 import { isMobile } from 'simple-mind-map/src/utils/index'
 
 // 节点备注内容设置
@@ -90,7 +111,9 @@ export default {
           el: this.$refs.noteEditor,
           height: '500px',
           initialEditType: 'markdown',
-          previewStyle: 'vertical'
+          previewStyle: 'vertical',
+          // 代码块语法高亮：支持多种编程语言（prismjs 已按需加载语言包）
+          plugins: [[codeSyntaxHighlight, { highlighter: Prism }]]
         })
       }
       this.editor.setMarkdown(this.note)

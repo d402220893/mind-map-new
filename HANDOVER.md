@@ -918,3 +918,58 @@ onRemove(w) {
 - 两次改名后保存 → 提示「已保存：456.smm」；原 `test6.smm` 不应被重新创建或写入。
 
 ---
+
+## 25. v1.0.14（已完成并出包 2026-08-28）— 三处反馈：新建后未打开、修改后背景丢失、备注多语言高亮
+
+> 状态：已出包。安装包 `electron-app/dist-electron/思绪思维导图 Setup.exe`（v1.0.14，约 98 MB，17:12 生成）。
+> 三项修复均已落地：Toolbar 新建走 `newWorkbookFromTabs` 自动开标签；Edit.vue `MutationObserver` 守护画布背景；NodeNote.vue 接入 ToastUI 代码高亮（prismjs 17 语言）。设计与出包流程见 §9 / §18.4。
+
+### 25.1 用户反馈（来自 v1.0.13 实机）
+1. 新建文件后提示「已创建」但当前标签没有切到新文件（之前同类 bug 复发）。
+2. 修改节点后画布背景会丢失（被 simple-mind-map 的 setTheme 重置）。
+3. 节点备注里希望支持 different programming language 代码高亮。
+
+### 25.2 已落地的代码改动（working tree，未提交）
+
+**① 新建文件未自动打开** — `web/src/pages/Edit/components/Toolbar.vue`
+- `createNewLocalFile()`（工具栏"新建"按钮）改为 `this.$bus.$emit('newWorkbookFromTabs')`（原 v1.0.13 走 `newWorkbook` 旧处理器，只替换当前 tab 内容、不新增 tab，故"没打开"）。
+- 详情：Edit.vue 的 `newWorkbookFromTabs` 处理器（约 line 1014）会 `addWorkbook({...})` 新建独立 workbook 并切换 `activeId`，再 `loadSheetData` + emit `workbook-list-changed` → FileTabs 刷新激活态。**另存为**路径 `saveLocalFile → createLocalFile` 仍走 `newWorkbook` 处理器（约 line 955），保持原行为，无回归。
+
+**② 修改后背景丢失** — `web/src/pages/Edit/components/Edit.vue`
+- `applyStoredCanvasBackground()` 改为用 `el.style.setProperty(..., 'important')` 防止被库覆盖；并在 `finally` 中记录 `_appliedBg/_appliedImg` 作为比对基准。
+- 新增 `setupCanvasBackgroundObserver()`：`MutationObserver` 监听 `mindMap.el` 的 `style` 属性，一旦库把背景重置为与 `_appliedBg` 不一致的值，立即 `applyStoredCanvasBackground()` 兜底重应用。
+- 在 `init()` 末尾（约 line 1387/1389）先 `applyStoredCanvasBackground()` 再 `setupCanvasBackgroundObserver()`；`beforeDestroy`（约 line 357）断开 observer。
+- `Setting.vue` 的 `applyCanvasBackground(bg)` 维持写全局 `localConfig.canvasBackground`（不写 .smm），与 §22 设计一致。
+
+**③ 备注多语言高亮** — `web/src/pages/Edit/components/NodeNote.vue` + 依赖
+- 安装依赖：`@toast-ui/editor-plugin-code-syntax-highlight@^3.1.0`（v3.1.0 已装，与 `@toast-ui/editor@^3.1.5` 匹配）、`prismjs`（已装）。
+- `NodeNote.vue` 顶部 import 插件 + 17 个 prism 语言包（js/ts/python/java/c/cpp/csharp/go/rust/html(即 prism-markup)/css/json/bash/sql/yaml/markdown/xml-doc）。注意 prismjs 没有 `prism-html`，HTML 语言组件名为 `prism-markup`，导入错误会导致 build 失败。
+- `initEditor()` 的 `new Editor({...})` 增加 `plugins: [[codeSyntaxHighlight, { highlighter: Prism }]]`。
+- 已核对插件源码：其读取 `options.highlighter`，故 `{ highlighter: Prism }` 配置正确（v3 不再用 `prism` 键名）。
+
+### 25.3 已做的验证
+- `git status`：6 个文件改动 —— `web/package.json`、`web/package-lock.json`、`Edit.vue`、`NodeNote.vue`、`Setting.vue`、`Toolbar.vue`。
+- 插件包已实体安装（`node_modules/@toast-ui/editor-plugin-code-syntax-highlight/dist/` 存在，v3.1.0）。
+- 静态核对：observer 在 init 注册、beforeDestroy 断开；`newWorkbookFromTabs` 处理器确实 `addWorkbook` + 切换；插件 option key = `highlighter` 正确。
+- **已完成**：前端 build（prismjs 高亮打包进 `chunk-7c6e27e7.js`）、bump 到 1.0.14、同步 win-unpacked、剥离 51.la（计数=0）、makensis 出包（Setup.exe 17:12）、包内校验通过（版本三处一致、newWorkbookFromTabs/observer 均在包内）。
+- **仍未做**：桌面端真机点测（见 §25.5）。
+
+### 25.4 待办（出包前）
+1. `cd web && export NODE_OPTIONS='--openssl-legacy-provider --max-old-space-size=4096' && npm run build`
+2. `rm -rf electron-app/dist && cp -rf dist electron-app/dist`，并剥离 `electron-app/dist/index.html` 里的 `51.la` 脚本。
+3. `bump_version.js` → v1.0.14；同步 `win-unpacked`；`makensis.exe make_installer.nsi`。
+4. 包内校验：`renameFile`/`newWorkbookFromTabs` 逻辑存在、`51.la=0`、版本三处一致。
+5. `git commit`（含 §25 改动 + 本段 HANDOVER 补充）。
+6. `present_files` 交付安装包 + 真机点测建议（新建→自动打开新标签；改节点后背景不丢；备注里写 ```js/python/...``` 代码块有高亮）。
+
+### 25.5 真机点测建议（出包后）
+- 点工具栏"新建" → 应弹出保存框、生成新文件并在新标签中打开，原文件标签 / 内容不受影响。
+- 设一个画布背景（纯色或图片）→ 编辑/新增节点 → 背景应保持不丢失。
+- 打开节点备注 → 插入 ```python``` / ```go``` 等代码块 → 应显示对应语言语法高亮。
+
+### 25.6 出包结果（2026-08-28 17:12）
+- 安装包：`electron-app/dist-electron/思绪思维导图 Setup.exe`（v1.0.14，102,695,872 字节 ≈ 98 MB）。
+- 校验：package.json / make_installer.nsi 的 VERSION / resources/app 版本均为 1.0.14；`resources/app/index.html` 中 `LA.init` 计数 = 0（51.la 剥离干净）；`chunk-7c6e27e7.js` 含 Prism（高亮已打包）。
+- 修复要点：① 工具栏“新建”改走 `newWorkbookFromTabs`（自动开新标签）；② `MutationObserver` 兜底重应用画布背景；③ 备注代码高亮（prismjs 17 语言，HTML 用 `prism-markup`）。
+
+---

@@ -496,9 +496,9 @@ export default {
       this.waitingWriteToLocalFile = false
     },
 
-    // 创建本地文件
-    async createNewLocalFile() {
-      await this.createLocalFile(exampleData)
+    // 创建本地文件：新建一个空白 workbook 并切换到新标签（不影响当前文件）
+    createNewLocalFile() {
+      this.$bus.$emit('newWorkbookFromTabs')
     },
 
     // 另存为

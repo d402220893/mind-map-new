@@ -716,21 +716,25 @@ export default {
     },
 
     // 统一应用画布背景到容器 + 持久化到全局 localConfig（不写入 .smm 文件）
+    // 使用 !important 防止 simple-mind-map 渲染时覆盖。
     applyCanvasBackground(bg) {
       const el = this.mindMap && this.mindMap.el
       if (el) {
+        el.style.removeProperty('background-color')
+        el.style.removeProperty('background-image')
+        el.style.removeProperty('background-size')
+        el.style.removeProperty('background-repeat')
+        el.style.removeProperty('background-position')
         if (bg.type === 'image') {
-          el.style.backgroundColor = '#ffffff'
-          el.style.backgroundImage = `url(${bg.value})`
-          el.style.backgroundSize = 'cover'
-          el.style.backgroundRepeat = 'no-repeat'
-          el.style.backgroundPosition = 'center'
+          el.style.setProperty('background-color', '#ffffff', 'important')
+          el.style.setProperty('background-image', `url(${bg.value})`, 'important')
+          el.style.setProperty('background-size', 'cover', 'important')
+          el.style.setProperty('background-repeat', 'no-repeat', 'important')
+          el.style.setProperty('background-position', 'center', 'important')
         } else if (bg.type === 'color') {
-          el.style.backgroundColor = bg.value
-          el.style.backgroundImage = 'none'
+          el.style.setProperty('background-color', bg.value, 'important')
         } else {
-          el.style.backgroundColor = '#ffffff'
-          el.style.backgroundImage = 'none'
+          el.style.setProperty('background-color', '#ffffff', 'important')
         }
       }
       this.setLocalConfig({ canvasBackground: bg })
