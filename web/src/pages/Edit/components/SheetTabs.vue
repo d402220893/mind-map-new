@@ -176,18 +176,16 @@ export default {
   right: 0;
   bottom: 0;
   height: 40px;
-  background: linear-gradient(0deg, rgba(244,246,250,0.96), rgba(255,255,255,0.92));
-  backdrop-filter: saturate(180%) blur(12px);
-  -webkit-backdrop-filter: saturate(180%) blur(12px);
+  // 透明背景，让画布延伸到底部，告别"黑框"；边框做视觉分隔
+  background: transparent;
   border-top: 1px solid rgba(0, 0, 0, 0.06);
-  box-shadow: 0 -1px 2px rgba(0, 0, 0, 0.04);
   z-index: 2000;
   display: flex;
   align-items: center;
   user-select: none;
 
   &.isDark {
-    background: linear-gradient(0deg, rgba(28,32,36,0.96), rgba(36,40,44,0.92));
+    background: transparent;
     border-top-color: rgba(255, 255, 255, 0.08);
   }
 

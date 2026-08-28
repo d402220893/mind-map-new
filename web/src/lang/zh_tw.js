@@ -330,6 +330,7 @@ export default {
     strusture: '結構',
     newFile: '新增檔案',
     openFile: '開啟檔案',
+    save: '儲存',
     saveAs: '另存新檔',
     import: '匯入',
     export: '匯出',

@@ -52,6 +52,10 @@
             <span class="text">{{ $t('toolbar.openFile') }}</span>
           </div>
         </el-tooltip>
+        <div class="toolbarBtn" @click="$bus.$emit('requestSave')" v-if="!isMobile">
+          <span class="icon iconfont iconwenjian"></span>
+          <span class="text">{{ $t('toolbar.save') }}</span>
+        </div>
         <div class="toolbarBtn" @click="$bus.$emit('requestSaveAs')" v-if="!isMobile">
           <span class="icon iconfont iconlingcunwei"></span>
           <span class="text">{{ $t('toolbar.saveAs') }}</span>
@@ -555,42 +559,31 @@ export default {
 .toolbarContainer {
   &.isDark {
     .toolbar {
-      color: hsla(0, 0%, 100%, 0.9);
+      color: var(--macos-text);
+
       .toolbarBlock {
-        background-color: #262a2e;
+        background-color: transparent;
 
         .fileTreeBox {
-          background-color: #262a2e;
+          background-color: var(--macos-bg-glass-strong);
+          backdrop-filter: var(--macos-blur);
+          -webkit-backdrop-filter: var(--macos-blur);
+          border: 1px solid var(--macos-border);
+          box-shadow: var(--macos-shadow-sm);
+          color: var(--macos-text);
 
           /deep/ .el-tree {
-            background-color: #262a2e;
+            background-color: transparent;
 
-            &.el-tree--highlight-current {
-              .el-tree-node.is-current > .el-tree-node__content {
-                background-color: hsla(0, 0%, 100%, 0.05) !important;
-              }
-            }
-
-            .el-tree-node:focus > .el-tree-node__content {
-              background-color: hsla(0, 0%, 100%, 0.05) !important;
-            }
-
-            .el-tree-node__content:hover,
-            .el-upload-list__item:hover {
-              background-color: hsla(0, 0%, 100%, 0.02) !important;
+            .el-tree-node__content:hover {
+              background-color: var(--macos-hover) !important;
             }
           }
 
           .fileTreeWrap {
             .customTreeNode {
               .treeNodeInfo {
-                color: #fff;
-              }
-
-              .treeNodeBtnList {
-                .el-button {
-                  padding: 7px 5px;
-                }
+                color: var(--macos-text);
               }
             }
           }
@@ -598,84 +591,81 @@ export default {
       }
 
       .toolbarBtn {
-        .icon {
-          background: transparent;
-          border-color: transparent;
-        }
-
-        &:hover {
-          &:not(.disabled) {
-            .icon {
-              background: hsla(0, 0%, 100%, 0.05);
-            }
-          }
-        }
+        color: var(--macos-text);
 
         &.disabled {
-          color: #54595f;
+          color: var(--macos-text-3);
         }
       }
     }
   }
+
   .toolbar {
     position: fixed;
     left: 50%;
     transform: translateX(-50%);
-    top: 34px;
+    top: 18px;
     width: max-content;
     max-width: calc(100vw - 32px);
     display: flex;
+    align-items: center;
+    gap: 4px;
     font-size: 12px;
-    font-family: PingFangSC-Regular, PingFang SC;
-    font-weight: 400;
-    color: rgba(26, 26, 26, 0.8);
+    font-family: -apple-system, BlinkMacSystemFont, 'PingFang SC',
+      'Microsoft YaHei', sans-serif;
+    font-weight: 500;
+    color: var(--macos-text);
     z-index: 100;
+    padding: 8px 10px;
+    background-color: var(--macos-bg-glass);
+    backdrop-filter: var(--macos-blur);
+    -webkit-backdrop-filter: var(--macos-blur);
+    border: 1px solid var(--macos-border);
+    border-radius: var(--macos-radius-lg);
+    box-shadow: var(--macos-shadow-sm);
     overflow-x: auto;
     overflow-y: hidden;
     white-space: nowrap;
-    padding: 0 8px;
 
     &::-webkit-scrollbar {
-      height: 6px;
-    }
-    &::-webkit-scrollbar-thumb {
-      background: rgba(0, 0, 0, 0.18);
-      border-radius: 3px;
+      height: 0;
     }
 
     .toolbarBlock {
       display: flex;
-      background-color: #fff;
-      padding: 10px 20px;
-      border-radius: 6px;
-      box-shadow: 0 2px 16px 0 rgba(0, 0, 0, 0.06);
-      border: 1px solid rgba(0, 0, 0, 0.06);
-      margin-right: 20px;
-      flex-shrink: 0;
+      align-items: center;
+      gap: 2px;
+      background-color: transparent;
+      padding: 0 10px;
+      border-radius: var(--macos-radius);
       position: relative;
+      flex-shrink: 0;
 
-      &:last-of-type {
-        margin-right: 0;
+      &:not(:last-of-type) {
+        border-right: 1px solid var(--macos-divider);
       }
 
       .fileTreeBox {
         position: absolute;
         left: 0;
-        top: 68px;
+        top: calc(100% + 10px);
         width: 100%;
+        min-width: 220px;
         height: 30px;
-        background-color: #fff;
+        background-color: var(--macos-bg-glass-strong);
+        backdrop-filter: var(--macos-blur);
+        -webkit-backdrop-filter: var(--macos-blur);
+        border: 1px solid var(--macos-border);
+        box-shadow: var(--macos-shadow-sm);
         padding: 12px 5px;
         padding-top: 0;
         display: flex;
         flex-direction: column;
         overflow: hidden;
-        border-radius: 5px;
-        min-width: 200px;
-        box-shadow: 0 2px 16px 0 rgba(0, 0, 0, 0.06);
+        border-radius: var(--macos-radius);
 
         &.expand {
-          height: 300px;
+          height: 320px;
 
           .fileTreeWrap {
             visibility: visible;
@@ -689,18 +679,20 @@ export default {
           display: flex;
           align-items: center;
           justify-content: space-between;
-          border-bottom: 1px solid #e9e9e9;
+          border-bottom: 1px solid var(--macos-divider);
           margin-bottom: 12px;
           padding-left: 12px;
-
-          .fileTreeName {
-          }
 
           .fileTreeActionList {
             .btn {
               font-size: 18px;
               margin-left: 12px;
               cursor: pointer;
+              color: var(--macos-text-2);
+
+              &:hover {
+                color: var(--macos-accent);
+              }
             }
           }
         }
@@ -747,49 +739,52 @@ export default {
 
     .toolbarBtn {
       display: flex;
-      justify-content: center;
       flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: 3px;
+      min-width: 46px;
+      padding: 7px 6px;
+      border-radius: var(--macos-radius-sm);
       cursor: pointer;
-      margin-right: 20px;
-
-      &:last-of-type {
-        margin-right: 0;
-      }
+      color: var(--macos-text);
+      transition: background-color 0.18s ease, color 0.18s ease;
 
       &:hover {
         &:not(.disabled) {
-          .icon {
-            background: #f5f5f5;
-          }
+          background-color: var(--macos-hover);
         }
       }
 
       &.active {
+        background-color: var(--macos-accent-soft);
+        color: var(--macos-accent);
+
         .icon {
-          background: #f5f5f5;
+          color: var(--macos-accent);
         }
       }
 
       &.disabled {
-        color: #bcbcbc;
+        color: var(--macos-text-3);
         cursor: not-allowed;
         pointer-events: none;
       }
 
       .icon {
-        display: flex;
-        height: 26px;
-        background: #fff;
-        border-radius: 4px;
-        border: 1px solid #e9e9e9;
-        justify-content: center;
-        flex-direction: column;
-        text-align: center;
-        padding: 0 5px;
+        font-size: 18px;
+        line-height: 1;
+        background: transparent;
+        border: none;
+        padding: 0;
+        height: auto;
+        margin: 0;
       }
 
       .text {
-        margin-top: 3px;
+        font-size: 11px;
+        color: var(--macos-text-2);
+        line-height: 1;
       }
     }
   }

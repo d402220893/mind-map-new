@@ -334,6 +334,7 @@ export default {
     strusture: 'Cấu trúc',
     newFile: 'Tệp mới',
     openFile: 'Mở tệp',
+    save: 'Lưu',
     saveAs: 'Lưu thành',
     import: 'Nhập',
     export: 'Xuất',

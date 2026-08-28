@@ -336,6 +336,7 @@ export default {
     strusture: 'Strusture',
     newFile: 'New file',
     openFile: 'Open file',
+    save: 'Save',
     saveAs: 'Save as',
     import: 'Import',
     export: 'Export',

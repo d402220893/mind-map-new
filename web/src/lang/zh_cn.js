@@ -329,6 +329,7 @@ export default {
     strusture: '结构',
     newFile: '新建',
     openFile: '打开',
+    save: '保存',
     saveAs: '另存为',
     import: '导入',
     export: '导出',

@@ -235,11 +235,9 @@ export default {
   right: 0;
   top: 0;
   height: 34px;
-  background: linear-gradient(180deg, rgba(255,255,255,0.92), rgba(244,246,250,0.96));
-  backdrop-filter: saturate(180%) blur(12px);
-  -webkit-backdrop-filter: saturate(180%) blur(12px);
+  // 透明背景，让画布延伸到顶部，告别"黑框"；边框做视觉分隔
+  background: transparent;
   border-bottom: 1px solid rgba(0, 0, 0, 0.06);
-  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.04);
   z-index: 2001;
   display: flex;
   align-items: center;
@@ -248,7 +246,7 @@ export default {
   -webkit-app-region: drag;
 
   &.isDark {
-    background: linear-gradient(180deg, rgba(36,40,44,0.92), rgba(28,32,36,0.96));
+    background: transparent;
     border-bottom-color: rgba(255, 255, 255, 0.08);
   }
 

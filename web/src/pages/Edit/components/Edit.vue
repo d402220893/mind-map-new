@@ -313,6 +313,9 @@ export default {
     // 全局监听剪贴板图片粘贴：仅当剪贴板包含 image 文件时拦截并预览插入，
     // 纯文本仍交给库默认 paste 行为处理
     window.addEventListener('paste', this.onPaste, true)
+    // 全局快捷键：Ctrl+S 保存 / Ctrl+Shift+S 另存为 / Ctrl+O 打开 / F2 编辑当前节点
+    // 原代码 onGlobalKeydown 声明了但未注册到 window keydown，导致快捷键全部无效
+    window.addEventListener('keydown', this.onGlobalKeydown)
     this.webTip()
   },
   beforeDestroy() {
@@ -340,6 +343,7 @@ export default {
     this.$bus.$off('workbook-switched', this.onWorkbookSwitched)
     window.removeEventListener('beforeunload', this.handleBeforeUnload)
     window.removeEventListener('paste', this.onPaste, true)
+    window.removeEventListener('keydown', this.onGlobalKeydown)
     this.mindMap.destroy()
   },
   methods: {
@@ -508,24 +512,46 @@ export default {
       return [Math.round(w * scale), Math.round(h * scale)]
     },
 
-    // 全局拦截 Ctrl/Cmd+S：桌面端交给主进程菜单命令（Ctrl+S -> 'save'）处理，
-    // 网页端则直接保存到 localStorage 并提示
+    // 全局拦截 Ctrl/Cmd+S / Ctrl+Shift+S / Ctrl+O / F2：
+    // 原 onGlobalKeydown 仅声明但从未注册到 window keydown，导致 Ctrl+S 完全无效。
+    // 这里在 mounted 注册、beforeDestroy 解绑。Ctrl+S 统一调 doSave()，
+    // 而不再用"desktop 端交给主进程菜单"的早返回路径——主进程没有菜单
+    // （Menu.setApplicationMenu(null)），那条路径永远不会触发。
     onGlobalKeydown(e) {
-      const isSave =
-        (e.ctrlKey || e.metaKey) &&
-        (e.key === 's' || e.key === 'S')
-      if (!isSave) return
-      // 阻止浏览器“保存网页”和 Electron 默认菜单“保存”抢走组合键
-      e.preventDefault()
-      if (e.stopPropagation) e.stopPropagation()
-      // 桌面端由主进程菜单命令接管，避免重复弹窗
-      if (window.smmApi && window.smmApi.saveWorkbook) return
-      try {
-        this.manualSave()
-        this.$message.success('已保存当前工作表')
-      } catch (err) {
-        console.error('手动保存失败', err)
-        this.$message.error('保存失败，请查看控制台')
+      const ctrl = e.ctrlKey || e.metaKey
+      const shift = e.shiftKey
+      const key = e.key
+
+      // Ctrl+S / Cmd+S：保存
+      if (ctrl && !shift && (key === 's' || key === 'S')) {
+        e.preventDefault()
+        if (e.stopPropagation) e.stopPropagation()
+        this.doSave()
+        return
+      }
+
+      // Ctrl+Shift+S / Cmd+Shift+S：另存为
+      if (ctrl && shift && (key === 's' || key === 'S')) {
+        e.preventDefault()
+        if (e.stopPropagation) e.stopPropagation()
+        this.doSaveAs()
+        return
+      }
+
+      // Ctrl+O / Cmd+O：打开
+      if (ctrl && !shift && (key === 'o' || key === 'O')) {
+        e.preventDefault()
+        if (e.stopPropagation) e.stopPropagation()
+        this.openWorkbook()
+        return
+      }
+
+      // F2：编辑当前激活节点文本（库内同名快捷键只在画布内有效，这里兜底）
+      if (key === 'F2') {
+        e.preventDefault()
+        if (e.stopPropagation) e.stopPropagation()
+        this.handleStartTextEdit()
+        return
       }
     },
 
