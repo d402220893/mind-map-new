@@ -70,6 +70,7 @@ function normalize(w) {
   if (typeof w.name !== 'string' || !w.name) w.name = '未命名'
   if (typeof w.filePath !== 'string') w.filePath = ''
   if (typeof w.dirty !== 'boolean') w.dirty = false
+  if (typeof w.lastAutosavedAt !== 'number') w.lastAutosavedAt = 0
   if (!w.sheetState || !Array.isArray(w.sheetState.sheets)) {
     w.sheetState = createDefaultSheetState(w.name)
   }
@@ -142,16 +143,22 @@ export function getCurrentFilePath() {
 export function setCurrentFilePath(p) {
   const s = loadState()
   const wb = s.workbooks.find(w => w.id === s.activeId)
-  const safe = isAbsolutePath(p) ? p : ''
-  if (wb) wb.filePath = safe
-  if (safe) {
-    try {
-      storage.setItem(LAST_FILE_KEY, safe)
-    } catch (e) {}
-  } else {
+  if (!wb) return
+  // 空串 / null / undefined => 显式置为未保存路径（新建空白文件）
+  if (p === '' || p === null || p === undefined) {
+    wb.filePath = ''
     try {
       storage.removeItem(LAST_FILE_KEY)
     } catch (e) {}
+  } else if (isAbsolutePath(p)) {
+    // 合法绝对路径 => 设置并记忆
+    wb.filePath = p
+    try {
+      storage.setItem(LAST_FILE_KEY, p)
+    } catch (e) {}
+  } else {
+    // 相对/非法路径：保留原有 filePath，不覆盖（避免误清已打开文件的路径）
+    return
   }
   persist()
 }
@@ -274,6 +281,22 @@ export function isDirty(id) {
   const s = loadState()
   const w = s.workbooks.find(w => w.id === id)
   return !!(w && w.dirty)
+}
+
+// 自动保存时间戳（供状态栏显示“已自动保存 HH:MM” / 崩溃恢复判断）
+export function markAutosaved(id, ts) {
+  const s = loadState()
+  const w = s.workbooks.find(w => w.id === id)
+  if (w) {
+    w.lastAutosavedAt = typeof ts === 'number' ? ts : Date.now()
+    persist()
+  }
+}
+
+export function getLastAutosavedAt(id) {
+  const s = loadState()
+  const w = s.workbooks.find(w => w.id === id)
+  return w && typeof w.lastAutosavedAt === 'number' ? w.lastAutosavedAt : 0
 }
 
 // 另存为：把当前激活 workbook 重定向到新路径（文件名随之更新），

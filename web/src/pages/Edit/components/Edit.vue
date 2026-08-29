@@ -96,6 +96,8 @@ import OuterFrame from 'simple-mind-map/src/plugins/OuterFrame.js'
 import MindMapLayoutPro from 'simple-mind-map/src/plugins/MindMapLayoutPro.js'
 import NodeBase64ImageStorage from 'simple-mind-map/src/plugins/NodeBase64ImageStorage.js'
 import Themes from 'simple-mind-map-plugin-themes'
+import { shouldFireGlobalShortcut } from '@/utils/shortcutGuard'
+import { createAutosaveScheduler, resolveAutosaveTarget } from '@/utils/autosave'
 // 协同编辑插件
 import SheetTabs from './SheetTabs.vue'
 import OutlineSidebar from './OutlineSidebar.vue'
@@ -128,7 +130,9 @@ import {
   markDirty,
   isDirty,
   getActiveWorkbookId,
-  applySaveAs
+  applySaveAs,
+  markAutosaved,
+  getLastAutosavedAt
 } from '@/api'
 import Navigator from './Navigator.vue'
 import NodeImgPreview from './NodeImgPreview.vue'
@@ -233,7 +237,13 @@ export default {
         // 加载文件/切换的短暂窗口：此期间产生的 data_change 不标记为未保存
         _isLoading: false,
         // 粘贴图片时自动缩放的最长边像素（原图 <= 该值时保持原图大小）
-        imgPasteMaxEdge: 600
+        imgPasteMaxEdge: 600,
+        // 自动保存：防抖调度器实例（null 表示尚未初始化）
+        autosaveScheduler: null,
+        // 最近一次自动保存时间戳（0 表示从未自动保存）
+        lastAutosavedAt: 0,
+        // 自动保存 watch 句柄（避免重复注册）
+        _autosaveWatcher: null
       }
     },
   computed: {
@@ -246,7 +256,13 @@ export default {
         state.localConfig.useLeftKeySelectionRightKeyDrag,
       extraTextOnExport: state => state.extraTextOnExport,
       isDragOutlineTreeNode: state => state.isDragOutlineTreeNode,
-      enableAi: state => state.localConfig.enableAi
+      enableAi: state => state.localConfig.enableAi,
+      // 自动保存开关（默认开）；间隔秒数（默认 30）
+      autosave: state => state.localConfig.autosave !== false,
+      autosaveDelay: state => {
+        const v = state.localConfig.autosaveDelay
+        return typeof v === 'number' && v > 0 ? v : 30
+      }
     }),
     isDarkMode() {
       return this.$store.state.localConfig.isDark
@@ -328,6 +344,8 @@ export default {
     // 原代码 onGlobalKeydown 声明了但未注册到 window keydown，导致快捷键全部无效
     window.addEventListener('keydown', this.onGlobalKeydown)
     this.webTip()
+    // 自动保存：在 bindSaveEvent 注册之后初始化调度器
+    this.initAutosave()
   },
   beforeDestroy() {
     this.$bus.$off('execCommand', this.execCommand)
@@ -356,6 +374,10 @@ export default {
     window.removeEventListener('beforeunload', this.handleBeforeUnload)
     window.removeEventListener('paste', this.onPaste, true)
     window.removeEventListener('keydown', this.onGlobalKeydown)
+    if (this.autosaveScheduler) {
+      this.autosaveScheduler.cancel()
+      this.autosaveScheduler = null
+    }
     this.mindMap.destroy()
   },
   methods: {
@@ -419,6 +441,10 @@ export default {
           markDirty(id, true)
           this.$bus.$emit('workbook-list-changed')
         }
+        // 自动保存：编辑变更后触发防抖（已保存文件静默写盘；未保存仅留草稿）
+        if (this.autosaveScheduler) {
+          this.autosaveScheduler.trigger()
+        }
       })
       this.$bus.$on('view_data_change', data => {
         clearTimeout(this.storeConfigTimer)
@@ -434,6 +460,71 @@ export default {
     manualSave() {
       storeData(this.mindMap.getData(true))
     },
+
+    // 初始化自动保存调度器（读取设置：开关 / 间隔秒）。仅在挂载时注册一次 watch。
+    initAutosave() {
+      if (this.autosaveScheduler) {
+        this.autosaveScheduler.cancel()
+      }
+      const delay = (this.autosaveDelay || 30) * 1000
+      this.autosaveScheduler = createAutosaveScheduler({
+        delay,
+        onSave: () => this.autoSave()
+      })
+      if (!this._autosaveWatcher) {
+        this._autosaveWatcher = this.$watch(
+          () => this.autosaveDelay,
+          () => this.initAutosave()
+        )
+      }
+    },
+
+    // 自动保存执行点：已保存文件静默写盘，未保存文件仅确保草稿
+    autoSave() {
+      if (this._isLoading) return
+      if (!this.autosave) return
+      this.currentFilePath = getCurrentFilePath()
+      const target = resolveAutosaveTarget(this.currentFilePath)
+      if (target === 'file') {
+        this.silentSaveToFile()
+      } else {
+        // 未保存文件：草稿已由 storeData 实时持久化到 localStorage，保留未保存标记
+        this.manualSave()
+      }
+    },
+
+    // 对已保存文件静默覆盖写盘（不弹成功提示，避免自动保存频繁打扰）
+    async silentSaveToFile() {
+      try {
+        this.manualSave()
+        const container = getSheetsContainer()
+        if (
+          !window.smmApi ||
+          !window.smmApi.writeFile ||
+          !this.isAbsolutePath(this.currentFilePath)
+        ) {
+          return
+        }
+        const res = await window.smmApi.writeFile(
+          this.currentFilePath,
+          JSON.stringify(container)
+        )
+        if (res && res.ok) {
+          const id = getActiveWorkbookId()
+          if (id) {
+            markDirty(id, false)
+            markAutosaved(id, Date.now())
+          }
+          this.lastAutosavedAt = getLastAutosavedAt(getActiveWorkbookId())
+          this.$bus.$emit('workbook-list-changed')
+          // 低调反馈：仅通知状态栏更新“已自动保存”，不弹消息
+          this.$bus.$emit('autosaved', this.lastAutosavedAt)
+        }
+      } catch (e) {
+        // 静默失败：下次编辑变更会重新触发自动保存
+        console.error('自动保存失败', e)
+      }
+    }
 
     // ===== 剪贴板粘贴图片到激活节点 =====
     // 在捕获阶段监听 paste：仅当剪贴板包含 image 文件时拦截，
@@ -540,6 +631,11 @@ export default {
       const ctrl = e.ctrlKey || e.metaKey
       const shift = e.shiftKey
       const key = e.key
+
+      // 焦点在输入框/文本域时不拦截全局快捷键，避免误触发（F2/Ctrl+O）
+      if (!shouldFireGlobalShortcut(document.activeElement)) {
+        return
+      }
 
       // Ctrl+S / Cmd+S：保存
       if (ctrl && !shift && (key === 's' || key === 'S')) {
@@ -1188,6 +1284,10 @@ export default {
     handleBeforeUnload() {
       if (this.mindMap) {
         this.manualSave()
+      }
+      // 退出前把待保存内容立即落盘（已保存文件静默写回；未保存草稿已持久化）
+      if (this.autosaveScheduler) {
+        this.autosaveScheduler.flush()
       }
     },
 

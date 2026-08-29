@@ -372,6 +372,14 @@ function parsePageBin(bytes) {
   return { tree, depth: depthOf(tree), broken, count: items.length }
 }
 
+// 判断 zip 内某条目路径是否为「页面二进制」(.bin)。
+// 修正前正则 /^mmpage\/page.*\.bin$/ 与 /^page.*\.bin$/ 只匹配根目录或
+// mmpage/ 直接子级，漏掉 Document/page.bin、content/page.bin 等嵌套目录
+// （导致 import 残缺）。修正后：任意层级、以 /page*.bin 结尾均匹配。
+export function isPageBinEntry(name) {
+  return /(^|\/)page.*\.bin$/i.test(name || '')
+}
+
 // ---------- 对外接口 ----------
 // buffer: ArrayBuffer / Uint8Array
 // fileName: 可选。提供时用于工作表命名
@@ -406,9 +414,7 @@ export async function parseEmmx(buffer, fileName) {
   }
 
   // ② 私有二进制变体（亿图脑图 / MindManager 兼容版）：遍历所有 mmpage/page*.bin
-  const binFiles = zip.filter(
-    p => /^mmpage\/page.*\.bin$/.test(p) || /^page.*\.bin$/.test(p)
-  )
+  const binFiles = zip.filter(p => isPageBinEntry(p))
   // 排序：主页 page.bin 在前，其余 page-1/page-2… 按序号升序，保证工作表顺序符合直觉
   const pageIndexOf = name => {
     const m = /page(?:-(\d+))?\.bin$/.exec(name || '')

@@ -3,6 +3,7 @@ import { simpleDeepClone } from 'simple-mind-map/src/utils/index'
 import Vue from 'vue'
 import vuexStore from '@/store'
 import * as WB from './workbookState'
+import { isQuotaExceededError } from './storageErrors'
 
 const SIMPLE_MIND_MAP_DATA = 'SIMPLE_MIND_MAP_DATA'
 const SIMPLE_MIND_MAP_CONFIG = 'SIMPLE_MIND_MAP_CONFIG'
@@ -92,7 +93,7 @@ export const storeData = data => {
     localStorage.setItem(SIMPLE_MIND_MAP_DATA, JSON.stringify(originData))
   } catch (error) {
     console.log(error)
-    if ('exceeded') {
+    if (isQuotaExceededError(error)) {
       Vue.prototype.$bus.$emit('localStorageExceeded')
     }
   }
@@ -333,6 +334,8 @@ export const getCurrentSheetState = () => WB.getActiveSheetState()
 // 未保存标记
 export const markDirty = (id, value) => WB.markDirty(id, value)
 export const isDirty = id => WB.isDirty(id)
+export const markAutosaved = (id, ts) => WB.markAutosaved(id, ts)
+export const getLastAutosavedAt = id => WB.getLastAutosavedAt(id)
 
 // 另存为：把当前激活 workbook 重定向到新路径，原文件不受影响
 export const applySaveAs = newPath => WB.applySaveAs(newPath)

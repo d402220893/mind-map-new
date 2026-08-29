@@ -15,6 +15,14 @@
     </el-input> -->
     <div class="noteEditor" ref="noteEditor" @keyup.stop @keydown.stop></div>
     <!-- <div class="tip">换行请使用：Enter+Shift</div> -->
+    <div class="noteCodeBar" v-if="!isMobile">
+      <span class="label">语言</span>
+      <select v-model="codeLang" class="codeLangSelect">
+        <option v-for="l in codeLangs" :key="l" :value="l">{{ l }}</option>
+      </select>
+      <el-button size="mini" type="primary" @click="insertCodeBlock">插入代码块</el-button>
+      <span class="tip">选择语言后点击「插入代码块」，在光标处插入对应 ```xxx 代码块，预览区自动高亮</span>
+    </div>
     <span slot="footer" class="dialog-footer">
       <el-button @click="cancel">{{ $t('dialog.cancel') }}</el-button>
       <el-button type="primary" @click="confirm">{{
@@ -62,7 +70,26 @@ export default {
       activeNodes: [],
       editor: null,
       isMobile: isMobile(),
-      appointNode: null
+      appointNode: null,
+      codeLang: 'python',
+      codeLangs: [
+        'javascript',
+        'typescript',
+        'python',
+        'java',
+        'c',
+        'cpp',
+        'csharp',
+        'go',
+        'rust',
+        'css',
+        'json',
+        'bash',
+        'sql',
+        'yaml',
+        'markdown',
+        'xml'
+      ]
     }
   },
   watch: {
@@ -121,6 +148,20 @@ export default {
       this.editor.setMarkdown(this.note)
     },
 
+    // 在光标处插入「```lang 代码块」并触发语法高亮（预览区实时渲染）
+    insertCodeBlock() {
+      if (!this.editor) return
+      const lang = this.codeLang || 'text'
+      const snippet = '```' + lang + '\n\n```'
+      const md = this.editor.mdEditor
+      if (md && typeof md.replaceSelection === 'function') {
+        md.replaceSelection(snippet)
+      } else {
+        const cur = this.editor.getMarkdown() || ''
+        this.editor.setMarkdown((cur ? cur + '\n\n' : '') + snippet)
+      }
+    },
+
     cancel() {
       this.dialogVisible = false
       if (this.appointNode) {
@@ -147,6 +188,28 @@ export default {
 
 <style lang="less" scoped>
 .nodeNoteDialog {
+  .noteCodeBar {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 6px 0 10px;
+    color: #333;
+    .label {
+      font-size: 13px;
+    }
+    .codeLangSelect {
+      height: 28px;
+      border: 1px solid #dcdfe6;
+      border-radius: 4px;
+      padding: 0 6px;
+      background: #fff;
+      color: #333;
+    }
+    .tip {
+      font-size: 12px;
+      color: #909399;
+    }
+  }
   .tip {
     margin-top: 5px;
     color: #dcdfe6;

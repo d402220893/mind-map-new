@@ -4,6 +4,7 @@ const fs = require('fs')
 const path = require('path')
 const { execFile, spawn } = require('child_process')
 const os = require('os')
+const { getAppExeName } = require('./install-meta')
 
 const APP_DIR = __dirname
 // 本地静态服务器端口（仅监听 127.0.0.1，安全）
@@ -207,9 +208,10 @@ ipcMain.handle('smm:window-state', () => {
 // 安装向导（--install 模式）：自带的 GUI 安装器
 // 由 WinRAR SFX 的 Setup=MindMap.exe --install 拉起。
 // =====================================================================
-const APP_ROOT = path.resolve(APP_DIR, '..', '..') // .../resources/app -> 应用根目录(含 MindMap.exe)
+const APP_ROOT = path.resolve(APP_DIR, '..', '..') // .../resources/app -> 应用根目录
 const APP_NAME = 'MindMap'
-const APP_EXE = 'MindMap.exe'
+// 快捷方式/卸载图标指向的 exe 名，必须与 package.json 的 productName 一致
+const APP_EXE = getAppExeName(app.getName())
 // 安装时不需要拷贝进目标的文件（vc_redist 单独静默安装；配置文件仅 SFX 用）
 const INSTALL_EXCLUDE = new Set([
   'vc_redist.x64.exe',

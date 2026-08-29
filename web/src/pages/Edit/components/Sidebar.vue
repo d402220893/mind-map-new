@@ -3,7 +3,7 @@
     class="sidebarContainer"
     @click.stop
     :class="{ show: show, isDark: isDark }"
-    :style="{ zIndex: zIndex }"
+    :style="{ zIndex: zIndex, opacity: sidebarOpacity != null ? sidebarOpacity : 1 }"
   >
     <span class="closeBtn el-icon-close" @click="close"></span>
     <div class="sidebarHeader" v-if="title">
@@ -35,7 +35,8 @@ export default {
   },
   computed: {
     ...mapState({
-      isDark: state => state.localConfig.isDark
+      isDark: state => state.localConfig.isDark,
+      sidebarOpacity: state => state.localConfig.sidebarOpacity
     })
   },
   watch: {

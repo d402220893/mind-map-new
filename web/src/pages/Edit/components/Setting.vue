@@ -256,6 +256,30 @@
           >
         </div>
       </div>
+      <!-- 自动保存 -->
+      <div class="row">
+        <div class="rowItem">
+          <el-checkbox
+            v-model="localConfigs.autosave"
+            @change="updateLocalConfig('autosave', $event)"
+            >自动保存（编辑后自动留存，已保存文件静默写盘）</el-checkbox
+          >
+        </div>
+      </div>
+      <div class="row">
+        <div class="rowItem">
+          <span class="name">自动保存间隔</span>
+          <el-slider
+            v-model="localConfigs.autosaveDelay"
+            style="width: 150px"
+            :min="5"
+            :max="300"
+            :step="5"
+            @change="updateLocalConfig('autosaveDelay', $event)"
+          ></el-slider>
+          <span class="unit">秒</span>
+        </div>
+      </div>
       <!-- 顶部工具栏透明度 -->
       <div class="row">
         <div class="rowItem">
@@ -531,6 +555,8 @@ export default {
         isShowScrollbar: false,
         enableDragImport: false,
         enableAi: false,
+        autosave: true,
+        autosaveDelay: 30,
         toolbarOpacity: 0.95,
         sidebarOpacity: 0.95,
         navigatorOpacity: 0.8,

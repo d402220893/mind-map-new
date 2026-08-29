@@ -1,6 +1,6 @@
 {
   "name": "mind-map",
-  "version": "1.0.16",
+  "version": "1.0.17",
   "description": "思绪思维导图（多工作表离线版）",
   "main": "main.js",
   "author": "Jia Hao",
@@ -24,7 +24,12 @@
       "!node_modules/**",
       "!node_modules/*/{CHANGELOG.md,README.md,README,readme.md,readme,test,tests,docs,doc}",
       "!node_modules/.bin",
-      "!**/*.{iml,o,hprof,orig,pyc,pyo,rbc,swp,csproj,sln,xproj}"
+      "!**/*.{iml,o,hprof,orig,pyc,pyo,rbc,swp,csproj,sln,xproj}",
+      "!tests/**",
+      "!test/**",
+      "!**/tests/**",
+      "!**/*.test.*",
+      "!**/*.spec.*"
     ],
     "directories": {
       "output": "dist-electron",
