@@ -99,3 +99,53 @@ test('[存储三写] api/index.js 移除冗余的 SIMPLE_MIND_MAP_DATA / SHEETS 
   )
   assert.ok(/WB\.persistState\(\)/.test(src), '应保留 workbookState.persistState() 单一权威写入')
 })
+
+// ===== 修复：切换文件误标 dirty（MED）=====
+// simple-mind-map 的 data_change 是渲染后触发的异步事件，原 setTimeout(80)
+// 经常在事件到达前就放行，导致切换文件后被错误地标 dirty。
+// 现改为监听 node_tree_render_end 兜底（一次完整渲染结束才放行）。
+test('[dirty 误报] Edit.vue loadSheetData 用 node_tree_render_end 兜底，不用 setTimeout(80)', () => {
+  const vue = read(new URL('pages/Edit/components/Edit.vue', SRC))
+  // 一次性注册 on/off 模式
+  assert.ok(
+    /mindMap\.on\(['"]node_tree_render_end['"]/.test(vue),
+    'loadSheetData 应 mindMap.on(node_tree_render_end) 监听渲染结束'
+  )
+  assert.ok(
+    /mindMap\.off\(['"]node_tree_render_end['"]/.test(vue),
+    'loadSheetData 应 mindMap.off(node_tree_render_end) 一次性解绑'
+  )
+  // 旧的 80ms setTimeout 不应再出现
+  assert.ok(
+    !/setTimeout\(\(\)\s*=>\s*\{[\s\S]*?_isLoading\s*=\s*false[\s\S]*?\}\s*,\s*80\s*\)/.test(vue),
+    'loadSheetData 不应再用 setTimeout(80) 放行 dirty 守卫'
+  )
+  // bindSaveEvent 中 dirty 守卫仍以 _isLoading 为准
+  assert.ok(/if\s*\(this\._isLoading\)\s*return/.test(vue), 'bindSaveEvent 仍应保留 _isLoading 守卫')
+})
+
+// ===== 修复：右侧 SidebarTrigger 上下黑框（MED）=====
+// 容器原来用 `position:fixed; top:110px; bottom:80px` 撑满中部，但 trigger 卡片
+// 高度只够 6*60=360px，容器多出的 75px 透明空白在深色画布下显示为黑框。
+// 现删除 bottom，trigger 自身用 max-height: calc(100vh - 190px) 防溢出。
+test('[trigger 黑框] SidebarTrigger.vue 删除 bottom:80px，让容器高度 = 内容高度', () => {
+  const vue = read(new URL('pages/Edit/components/SidebarTrigger.vue', SRC))
+  // 容器不再 fixed bottom
+  assert.ok(
+    !/position:\s*fixed;[\s\S]{0,200}bottom:\s*80px/.test(vue),
+    '容器不应再同时固定 top 与 bottom（会撑出上下空白）'
+  )
+  // trigger 自身 max-height 用 calc(100vh - 190px) 防溢出
+  assert.ok(
+    /max-height:\s*calc\(100vh\s*-\s*190px\)/.test(vue),
+    'trigger 应使用 max-height: calc(100vh - 190px) 防溢出'
+  )
+})
+
+test('[trigger 黑框] SidebarTrigger.vue 模板不再把 maxHeight 绑到容器 inline style', () => {
+  const vue = read(new URL('pages/Edit/components/SidebarTrigger.vue', SRC))
+  assert.ok(
+    !/maxHeight:\s*maxHeight\s*\+\s*'px'/.test(vue),
+    '模板里不应再将 maxHeight 数据绑到 sidebarTriggerContainer 容器 style'
+  )
+})

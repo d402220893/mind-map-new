@@ -3,7 +3,7 @@
     class="sidebarTriggerContainer "
     @click.stop
     :class="{ hasActive: show && activeSidebar, show: show, isDark: isDark }"
-    :style="{ maxHeight: maxHeight + 'px', opacity: sidebarOpacity != null ? sidebarOpacity : 1 }"
+    :style="{ opacity: sidebarOpacity != null ? sidebarOpacity : 1 }"
   >
     <div class="toggleShowBtn" :class="{ hide: !show }" @click="show = !show">
       <span class="iconfont iconjiantouyou"></span>
@@ -97,12 +97,15 @@ export default {
 .sidebarTriggerContainer {
   position: fixed;
   top: 110px;
-  bottom: 80px;
+  // 不再设底边距：让容器高度由 trigger 卡片自然撑开，避免上下透明空白露出画布。
+  // 原来用 fixed top+bottom 撑满中部，但 trigger 卡片只有 6*60=360px 高，
+  // 上下各 75px 透明空白会露出画布背景，深色画布下显示为黑框。
   right: -60px;
   transition: all 0.3s;
   display: flex;
   flex-direction: column;
-  justify-content: center;
+  // 容器高度 = trigger 高度，不需要居中 trigger（它是容器唯一子元素）
+  justify-content: flex-start;
 
   &.isDark {
     .trigger {
@@ -168,7 +171,9 @@ export default {
     background-color: #fff;
     box-shadow: 0 2px 16px 0 rgba(0, 0, 0, 0.06);
     border-radius: 6px;
-    max-height: 100%;
+    // 容器不再 fixed bottom，max-height 改用 calc(100vh - 190px) 防溢出
+    // 190px = top:110px + 底部 SheetTabs 80px；超长侧边栏内滚动
+    max-height: calc(100vh - 190px);
     overflow-y: auto;
     overflow-x: hidden;
 

@@ -678,7 +678,10 @@ export default {
       this.activeSheetId = list.activeId
     },
 
-    // 把一份完整数据载入当前思维导图实例
+    // 把一份完整数据载入当前思维导图实例。
+    // _isLoading 持续到 node_tree_render_end（一次完整渲染结束）才清掉：
+    // simple-mind-map 的 data_change 事件是在渲染后才触发的异步事件，
+    // 用 setTimeout(80) 经常在事件到达前就放行，导致切换文件后被误标 dirty。
     loadSheetData(data) {
       this._isLoading = true
       if (data && data.root) {
@@ -688,12 +691,27 @@ export default {
       }
       this.mindMap.view.reset()
       this.mindMapData = data
-      // 每次载入后重应用全局画布背景，覆盖文件自带主题背景（修复“背景色串”）
+      // 每次载入后重应用全局画布背景，覆盖文件自带主题背景（修复"背景色串"）
       this.applyStoredCanvasBackground()
-      // 加载期间产生的 data_change 不标记为未保存；稍后放开窗口以吸收异步事件
-      setTimeout(() => {
+      // 监听本轮渲染结束，放开 dirty 守卫；用一次性 off 避免泄漏。
+      const onRenderEnd = () => {
         this._isLoading = false
-      }, 80)
+        if (this.mindMap && typeof this.mindMap.off === 'function') {
+          this.mindMap.off('node_tree_render_end', onRenderEnd)
+        }
+      }
+      if (this.mindMap && typeof this.mindMap.on === 'function') {
+        this.mindMap.on('node_tree_render_end', onRenderEnd)
+      }
+      // 兜底：1.5s 内若未触发渲染结束（极端情况下）也强制放行，避免脏标记窗口死锁。
+      setTimeout(() => {
+        if (this._isLoading) {
+          this._isLoading = false
+          if (this.mindMap && typeof this.mindMap.off === 'function') {
+            this.mindMap.off('node_tree_render_end', onRenderEnd)
+          }
+        }
+      }, 1500)
     },
 
     // 切换工作表：先保存当前，再载入目标
