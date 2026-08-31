@@ -10,9 +10,13 @@ contextBridge.exposeInMainWorld('smmApi', {
   // defaultPath 为完整默认路径（含目录和文件名），优先于 defaultName
   saveWorkbook: (content, defaultPath) =>
     ipcRenderer.invoke('smm:save-workbook', { content, defaultPath }),
-  // 直接写入已有路径（覆盖保存用）
+  // 直接写入已有路径（覆盖保存用，异步）
   writeFile: (filePath, content) =>
     ipcRenderer.invoke('smm:write-file', { filePath, content }),
+  // 同步覆盖写入（供渲染进程 beforeunload 在同步上下文中落盘；
+  // 异步 invoke 在窗口关闭前往往来不及完成导致丢文件，故此处用 sendSync）
+  writeFileSync: (filePath, content) =>
+    ipcRenderer.sendSync('smm:write-file-sync', { filePath, content }),
   // 打开：弹出打开对话框并读内容，返回 { canceled, filePath, content, error }
   openWorkbookDialog: () => ipcRenderer.invoke('smm:open-workbook'),
   // 按路径读文件（备用）

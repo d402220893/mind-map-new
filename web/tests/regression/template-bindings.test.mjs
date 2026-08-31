@@ -53,3 +53,49 @@ test('[自动保存] Setting.vue 暴露 autosave 开关与间隔', () => {
   assert.ok(/updateLocalConfig\('autosave'/.test(vue), 'Setting.vue 应绑定 autosave 开关')
   assert.ok(/updateLocalConfig\('autosaveDelay'/.test(vue), 'Setting.vue 应绑定 autosaveDelay 间隔')
 })
+
+// ===== 修复：退出前丢盘（HIGH）=====
+// beforeunload 是同步上下文，异步 ipcRenderer.invoke 写盘来不及完成会丢文件，
+// 必须改用同步 IPC（sendSync）在窗口关闭前完成落盘。
+test('[退出丢盘] preload 暴露同步写盘 writeFileSync（sendSync）', () => {
+  const pre = read(new URL('preload.js', APP))
+  assert.ok(/writeFileSync:/.test(pre), 'preload.js 应暴露 writeFileSync')
+  assert.ok(
+    /ipcRenderer\.sendSync\('smm:write-file-sync'/.test(pre),
+    'writeFileSync 应走 ipcRenderer.sendSync（同步）而非 invoke'
+  )
+})
+
+test('[退出丢盘] main.js 注册 smm:write-file-sync 同步处理器（fs.writeFileSync + returnValue）', () => {
+  const main = read(new URL('main.js', APP))
+  assert.ok(/smm:write-file-sync/.test(main), 'main.js 应注册 smm:write-file-sync 处理器')
+  assert.ok(/fs\.writeFileSync/.test(main), '同步处理器应使用 fs.writeFileSync')
+  assert.ok(/event\.returnValue/.test(main), 'sendSync 处理器必须用 event.returnValue 返回结果')
+})
+
+test('[退出丢盘] Edit.vue 在 beforeunload 走同步落盘 syncSaveOnExit（不再依赖异步 flush）', () => {
+  const vue = read(new URL('pages/Edit/components/Edit.vue', SRC))
+  assert.ok(/syncSaveOnExit/.test(vue), 'Edit.vue 应实现 syncSaveOnExit 同步落盘方法')
+  assert.ok(
+    /handleBeforeUnload\(\)\s*\{[\s\S]*?syncSaveOnExit\(\)/.test(vue),
+    'handleBeforeUnload 应调用 syncSaveOnExit 同步落盘'
+  )
+  assert.ok(/window\.smmApi\.writeFileSync/.test(vue), 'syncSaveOnExit 应调用 window.smmApi.writeFileSync')
+})
+
+// ===== 修复：storeData 三写放大（MED）=====
+// 历史冗余键 SIMPLE_MIND_MAP_DATA / SIMPLE_MIND_MAP_SHEETS 在 web/src 无任何读取方，
+// 每次编辑却要重复序列化写 localStorage 三次，大图下放大配额压力。现仅保留
+// workbookState.persistState() 写入 SIMPLE_MIND_MAP_WORKBOOKS 单一权威来源。
+test('[存储三写] api/index.js 移除冗余的 SIMPLE_MIND_MAP_DATA / SHEETS 写入', () => {
+  const src = read(new URL('api/index.js', SRC))
+  assert.ok(
+    !/localStorage\.setItem\(SIMPLE_MIND_MAP_DATA/.test(src),
+    '不得再写 SIMPLE_MIND_MAP_DATA 兼容键'
+  )
+  assert.ok(
+    !/localStorage\.setItem\(SIMPLE_MIND_MAP_SHEETS/.test(src),
+    '不得再写 SIMPLE_MIND_MAP_SHEETS 兼容键'
+  )
+  assert.ok(/WB\.persistState\(\)/.test(src), '应保留 workbookState.persistState() 单一权威写入')
+})

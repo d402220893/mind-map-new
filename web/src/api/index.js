@@ -5,12 +5,9 @@ import vuexStore from '@/store'
 import * as WB from './workbookState'
 import { isQuotaExceededError } from './storageErrors'
 
-const SIMPLE_MIND_MAP_DATA = 'SIMPLE_MIND_MAP_DATA'
 const SIMPLE_MIND_MAP_CONFIG = 'SIMPLE_MIND_MAP_CONFIG'
 const SIMPLE_MIND_MAP_LANG = 'SIMPLE_MIND_MAP_LANG'
 const SIMPLE_MIND_MAP_LOCAL_CONFIG = 'SIMPLE_MIND_MAP_LOCAL_CONFIG'
-// 兼容旧版本的 legacy 键（仅保留写入，避免破坏旧数据读取）
-const SIMPLE_MIND_MAP_SHEETS = 'SIMPLE_MIND_MAP_SHEETS'
 
 // 初始化纯状态机：用浏览器 localStorage 作为存储，并用真实模板作为空白页数据
 WB.initWorkbookStorage(localStorage)
@@ -25,13 +22,11 @@ function loadSheetState() {
 }
 
 function saveSheetState() {
-  const st = loadSheetState()
-  // 持久化整个 workbook 状态（含当前激活 workbook 的 sheetState）
+  // 单一权威写入：整个 workbook 状态（含当前激活 workbook 的 sheetState）由
+  // workbookState.persistState() 写入 SIMPLE_MIND_MAP_WORKBOOKS。
+  // 历史上的 SIMPLE_MIND_MAP_SHEETS / SIMPLE_MIND_MAP_DATA 冗余键在 web/src 中
+  // 已无任何读取方，移除后每次编辑减少 2 次重复序列化与写入，降低大图撞配额风险。
   WB.persistState()
-  // 兼容旧版本：单独写一份 sheetState
-  try {
-    localStorage.setItem(SIMPLE_MIND_MAP_SHEETS, JSON.stringify(st))
-  } catch (e) {}
 }
 
 function getActiveSheet() {
@@ -89,8 +84,8 @@ export const storeData = data => {
     if (vuexStore.state.isHandleLocalFile) {
       return
     }
-    // 兼容：同时保留单条数据键，便于其它工具读取最新内容
-    localStorage.setItem(SIMPLE_MIND_MAP_DATA, JSON.stringify(originData))
+    // 注：不再单独写 SIMPLE_MIND_MAP_DATA 兼容键——web/src 中无读取方，
+    // 全部状态已通过 workbookState.persistState() 写入 SIMPLE_MIND_MAP_WORKBOOKS。
   } catch (error) {
     console.log(error)
     if (isQuotaExceededError(error)) {

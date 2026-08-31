@@ -72,7 +72,8 @@ function parseXmlTopics(xmlStr) {
 const TOPIC_TERM = [0x00, 0x00, 0x00, 0x0a, 0x7f]
 // 对象尾部结束串（父指针/子列表所在 tag 流之前）
 const OBJ_TERM = [0x00, 0x00, 0x00, 0x0b, 0x7f]
-const MAX_TEXT_BYTES = 4096 // 单个话题文本最大字节数（防跑飞）
+const MAX_TEXT_BYTES = 200000 // 单个话题文本最大字节数（匹配阶段即以此截断，仅作防跑飞；
+// 远超正常笔记长度，既不误删长文本话题，也避免病态数据无限膨胀）
 const MAX_ID_LOOKBACK = 160 // 向前回溯查找对象 id 的最大字节数
 
 // 读 varint（LEB128，小端 7bit）。返回 [值, 占用字节数]；失败返回 [null, 0]
@@ -208,7 +209,9 @@ function extractTopicObjects(bytes) {
     }
     // 含替换字符说明不是合法 UTF-8 文本，判为误匹配
     if (text.indexOf('\ufffd') !== -1) continue
-    if (text.length > 1000) continue
+    // 防跑飞上限（匹配阶段已按 MAX_TEXT_BYTES 截断，正常长文本笔记不会触达，
+    // 仅用于拦截病态超长数据），不再用原先 1000 字符的小阈值误删长文本话题
+    if (text.length > MAX_TEXT_BYTES) continue
     const id = findOwnId(bytes, i)
     const tail = parseObjectTail(bytes, m.end)
     if (id != null && byId.has(id)) {
@@ -335,7 +338,8 @@ function isPlaceholderPage(items) {
 }
 
 // 解析单个 page*.bin → { tree, depth, broken, count } 或 null
-function parsePageBin(bytes) {
+// 导出供单测（验证长文本话题不再被丢弃等回归点）
+export function parsePageBin(bytes) {
   const { items, byId } = extractTopicObjects(bytes)
   if (!items.length) return null
   if (isPlaceholderPage(items)) return null

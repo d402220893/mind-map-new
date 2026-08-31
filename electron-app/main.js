@@ -7,6 +7,16 @@ const os = require('os')
 const { getAppExeName } = require('./install-meta')
 
 const APP_DIR = __dirname
+// === 启动性能埋点（由环境变量 STARTUP_LOG 控制；为空则不写，不影响正常功能）===
+const STARTUP_LOG = process.env.STARTUP_LOG || ''
+const _bootT0 = Date.now()
+if (STARTUP_LOG) {
+  try { fs.writeFileSync(STARTUP_LOG, 'process_start ' + _bootT0 + '\n') } catch (e) {}
+}
+function bootMark(label) {
+  if (!STARTUP_LOG) return
+  try { fs.appendFileSync(STARTUP_LOG, label + ' ' + (Date.now() - _bootT0) + '\n') } catch (e) {}
+}
 // 本地静态服务器端口（仅监听 127.0.0.1，安全）
 const PORT = 51888
 // 实际监听端口（端口回退后会变，给 mainWindow.loadURL 用）
@@ -111,6 +121,17 @@ ipcMain.handle('smm:write-file', async (e, { filePath, content }) => {
     return { ok: true }
   } catch (err) {
     return { ok: false, error: err.message }
+  }
+})
+
+// 同步覆盖写入（渲染进程 beforeunload 同步落盘用；sendSync 调用，
+// 必须用 event.returnValue 返回结果，确保窗口关闭前写盘已完成）
+ipcMain.on('smm:write-file-sync', (event, { filePath, content }) => {
+  try {
+    fs.writeFileSync(filePath, content, 'utf8')
+    event.returnValue = { ok: true }
+  } catch (err) {
+    event.returnValue = { ok: false, error: err.message }
   }
 })
 
@@ -556,8 +577,14 @@ function createWindow() {
   })
 
   mainWindow.loadURL('http://127.0.0.1:' + ACTIVE_PORT + '/index.html')
+  bootMark('loadurl_called')
+
+  mainWindow.webContents.on('did-finish-load', () => {
+    bootMark('did_finish_load')
+  })
 
   mainWindow.once('ready-to-show', () => {
+    bootMark('ready_to_show')
     mainWindow.show()
   })
 
@@ -603,6 +630,7 @@ function tryListen(startPort, cb, attempt) {
   })
   server.listen(tryPort, '127.0.0.1', () => {
     ACTIVE_PORT = tryPort
+    bootMark('server_listening')
     cb()
   })
 }
@@ -613,6 +641,7 @@ const IS_INSTALL_MODE = process.argv.includes('--install') || process.env.MINDMA
 // 从根本上解决"安装器自己 listen 51888 → spawn 出去的 MindMap.exe 撞端口"的问题。
 // 正常模式走 tryListen 做端口回退，避免本机 51888 被其他程序占用时启动失败。
 app.whenReady().then(() => {
+  bootMark('app_ready')
   if (IS_INSTALL_MODE) {
     startInstaller()
   } else {

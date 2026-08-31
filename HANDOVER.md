@@ -1022,3 +1022,43 @@ onRemove(w) {
 - 打开节点备注 → 写 ```python / ```go / ```js 代码块 → 预览区应显示对应语言语法高亮（彩色）。
 
 ---
+
+## 28. v1.0.17（2026-08-31 09:11）— 自动保存/退出落盘/emmx 修复 + asar 打包陷阱修复
+
+### 28.1 【重要】asar 优先加载 — 此前“同步 app 目录”可能全部无效
+- **根因**：Electron 资源加载顺序为 `resources/app.asar` **优先于** `resources/app` 目录。项目 `electron-app/package.json` 配了 `asar: true`，`win-unpacked/resources/` 下同时存在 `app.asar`（旧）与新同步的 `app/` 目录时，Electron 只加载**旧的 app.asar**。
+- **影响**：此前 v1.0.14～v1.0.16 采用“同步 app 目录 → makensis”的配方，若 `app.asar` 为旧包，则**改动根本没进最终安装包**——这是背景丢失/备注高亮“改了却一直不生效”的高嫌疑根因。
+- **修正后的出包配方（必须遵守）**：
+  1. `vue build` → 同步 `dist/` → `strip_index.js` 剥离 51.la（`LA.init`=0）。
+  2. 重建干净的 `resources/app/`：只放 `package.json / main.js / preload.js / index.html / install.html / install-meta.js / appicon.ico / dist/`（**不要**复制 `*.log`、`*.sh`、`make_installer.nsi`、`tests/`、`node_modules/`）。
+  3. **必须重新打 asar** 覆盖旧的：
+     ```bash
+     cd electron-app/dist-electron/win-unpacked/resources
+     node "E:/03_学习文件/mind-map-main/electron-app/node_modules/@electron/asar/bin/asar.js" pack app app.asar
+     ```
+  4. 打完 asar 后**移除临时 `app/` 目录**（否则安装包体积翻倍）。
+  5. `makensis electron-app/make_installer.nsi`。
+- **注意**：`/e/...` 这种 Git Bash 路径 Node 不识别（会解析成 `E:\e\...`），asar 命令必须用 `E:/...` Windows 风格路径。
+
+### 28.2 本次修复的语法错误（构建阻塞）
+- `web/src/pages/Edit/components/Edit.vue`：`silentSaveToFile()` 方法结尾少了逗号（`}` → `},`），babel 报 `Unexpected token, expected ","`，构建失败。已修复。
+
+### 28.3 本次纳入的功能与修复（工作树既有改动）
+- 自动保存（autosave 纯函数 + 调度器 + `silentSaveToFile` 静默写盘）。
+- 退出前同步落盘（preload `writeFileSync` + main `smm:write-file-sync` + Edit.vue `syncSaveOnExit`）。
+- emmx 长文本不再被静默丢弃（`MAX_TEXT_BYTES=200000`）。
+- storeData 单一权威写入（去除冗余三写）。
+- 备注代码高亮：补 `prismjs/themes/prism.css` + 语言选择下拉 + 插入代码块按钮。
+
+### 28.4 出包结果（2026-08-31 09:11）
+- 安装包：`electron-app/dist-electron/思绪思维导图 Setup.exe`（v1.0.17，102,622,742 字节 ≈ 98 MB）。
+- 校验：版本三处一致 = 1.0.17；`app.asar` 重新打包（09:10，9,132,319 字节，300 文件）；包内 `chunk-4b21249a.js` 同时含 `silentSaveToFile`（自动保存）与 `onBgRenderEnd`（背景守护）；安装包 MZ 头有效。
+- 测试：前端 83 例全绿、主进程 2 例全绿（主进程用 `node --test tests/install-meta.test.mjs`，**不能直接传目录**，Node 22 会报 `Cannot find module`）。
+
+### 28.5 待真机点测
+- 自动保存：编辑后等待间隔，状态栏应显示“已自动保存”，文件静默覆盖写盘。
+- 退出落盘：编辑后直接关闭窗口，重开应保留改动（不再丢文件）。
+- 背景守护：设置画布背景后编辑节点，背景不丢（本次 asar 修复后应真正生效）。
+- 备注高亮：选语言 → 插入代码块 → 输入代码 → 预览区应有彩色高亮。
+
+---

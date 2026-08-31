@@ -524,7 +524,7 @@ export default {
         // 静默失败：下次编辑变更会重新触发自动保存
         console.error('自动保存失败', e)
       }
-    }
+    },
 
     // ===== 剪贴板粘贴图片到激活节点 =====
     // 在捕获阶段监听 paste：仅当剪贴板包含 image 文件时拦截，
@@ -1285,9 +1285,41 @@ export default {
       if (this.mindMap) {
         this.manualSave()
       }
-      // 退出前把待保存内容立即落盘（已保存文件静默写回；未保存草稿已持久化）
-      if (this.autosaveScheduler) {
-        this.autosaveScheduler.flush()
+      // 退出前同步落盘：beforeunload 是同步上下文，异步 IPC（ipcRenderer.invoke）
+      // 在窗口关闭前往往来不及完成，会导致 .smm 文件丢失本次编辑内容；故改用
+      // 同步 IPC（sendSync）直接写盘，确保窗口关闭前已落盘。
+      this.syncSaveOnExit()
+    },
+
+    // 退出前同步写盘：已落盘（有绝对路径）的当前激活 workbook 静默覆盖写回文件；
+    // 未保存文件靠 localStorage 草稿兜底，此处不处理。多文件场景下仅保存激活文件
+    // （与自动保存仅保存激活文件的语义一致）。
+    syncSaveOnExit() {
+      if (!this.autosave || this._isLoading) return
+      this.currentFilePath = getCurrentFilePath()
+      if (!this.isAbsolutePath(this.currentFilePath)) return
+      if (!window.smmApi || typeof window.smmApi.writeFileSync !== 'function') {
+        return
+      }
+      try {
+        const container = getSheetsContainer()
+        const res = window.smmApi.writeFileSync(
+          this.currentFilePath,
+          JSON.stringify(container)
+        )
+        if (res && res.ok) {
+          const id = getActiveWorkbookId()
+          if (id) {
+            markDirty(id, false)
+            markAutosaved(id, Date.now())
+          }
+          this.lastAutosavedAt = getLastAutosavedAt(getActiveWorkbookId())
+          this.$bus.$emit('workbook-list-changed')
+          this.$bus.$emit('autosaved', this.lastAutosavedAt)
+        }
+      } catch (e) {
+        // 同步写盘失败：下次启动仍可依赖 localStorage 草稿恢复，避免阻塞退出
+        console.error('退出前同步保存失败', e)
       }
     },
 
