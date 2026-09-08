@@ -196,3 +196,33 @@ test('[dirty 节流竞态] Edit.vue loadSheetData 用 originAddHistory 同步落
     'originAddHistory 调用应在 loadSheetData 内（onRenderEnd 闭包中）'
   )
 })
+
+// ===== 修复：修改备注对话框弹出时不应同时显示右侧备注侧栏（MED）=====
+// 复现：触发"修改备注"（右键节点 → 备注，或节点选中工具条 → 📝 图标）后，左侧
+// NodeNote 对话框（toastui Editor）会与右侧 NodeNoteSidebar 同步显示，两份完全
+// 相同的备注内容叠加，挤占画布视野。
+// 修复：在 handleShowNodeNote 内（设置 dialogVisible=true 之前）emit
+// 'closeSideBar'，所有 <Sidebar> 实例响应并 setActiveSidebar(null)，右侧栏即
+// 时收回。语义上"修改备注"是模态编辑，与 Search.vue:156 emit closeSideBar
+// 保持一致。
+test('[sidebar 重复弹出] NodeNote.vue handleShowNodeNote 触发时 emit closeSideBar', () => {
+  const vue = read(new URL('pages/Edit/components/NodeNote.vue', SRC))
+  // 1) 应有 handleShowNodeNote 方法体
+  const handler = /handleShowNodeNote\s*\(\s*node\s*\)\s*\{[\s\S]*?\n\s\s\s\s\},/.exec(vue)
+  assert.ok(handler, '应能找到 handleShowNodeNote 方法体')
+  // 2) 在该方法体内必须 emit closeSideBar
+  assert.ok(
+    /\$bus\.\$emit\(\s*['"]closeSideBar['"]\s*\)/.test(handler[0]),
+    'handleShowNodeNote 内必须 emit closeSideBar，防止右侧备注侧栏与对话框同时显示'
+  )
+  // 3) emit 必须在 dialogVisible = true 之前（先关 sidebar 再显示对话框）
+  const emitIdx = handler[0].indexOf("$bus.$emit('closeSideBar')")
+  const dialogIdx = handler[0].indexOf('dialogVisible = true')
+  assert.ok(emitIdx > -1 && dialogIdx > -1, '应能找到 emit 与 dialogVisible 赋值')
+  assert.ok(emitIdx < dialogIdx, 'emit closeSideBar 必须先于 dialogVisible=true')
+  // 4) startTextEdit 应仍然在 handleShowNodeNote 触发（保持画布文本编辑撤销）
+  assert.ok(
+    /\$bus\.\$emit\(\s*['"]startTextEdit['"]\s*\)/.test(handler[0]),
+    'handleShowNodeNote 仍应 emit startTextEdit（不破坏现有画布编辑衔接）'
+  )
+})
