@@ -1,8 +1,11 @@
 {
   "name": "mind-map",
-  "version": "1.0.18",
+  "version": "1.0.19",
   "description": "思绪思维导图（多工作表离线版）",
   "main": "main.js",
   "author": "Jia Hao",
-  "license": "MIT"
+  "license": "MIT",
+  "build": {
+    "productName": "思绪思维导图"
+  }
 }
