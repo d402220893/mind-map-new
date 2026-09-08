@@ -98,6 +98,7 @@ import NodeBase64ImageStorage from 'simple-mind-map/src/plugins/NodeBase64ImageS
 import Themes from 'simple-mind-map-plugin-themes'
 import { shouldFireGlobalShortcut } from '@/utils/shortcutGuard'
 import { createAutosaveScheduler, resolveAutosaveTarget } from '@/utils/autosave'
+import { reduceDragMask } from '@/utils/dragMaskController'
 // 协同编辑插件
 import SheetTabs from './SheetTabs.vue'
 import OutlineSidebar from './OutlineSidebar.vue'
@@ -1033,6 +1034,13 @@ export default {
 
     // 拖拽文件到画布：.smm 打开为新文件；其它类型走原拖入导入逻辑
     onContainerDrop(e) {
+      // 即刻关闭遮罩 —— drop 后绝对不能留在原地的修复。
+      // 这是 v1.0.x 历史 bug 的核心路径：
+      //   原版 onContainerDrop 从未把 showDragMask 复位为 false，
+      //   而 .dragMask 自身的 dragleave 仅在用户继续拖出时才触发；
+      //   如果用户直接在遮罩上 drop（这是设计内的合法路径），
+      //   dragleave 永远不会发生，遮罩会卡死直到刷新页面。
+      this.showDragMask = reduceDragMask(this.showDragMask, 'drop')
       const dt = e.dataTransfer
       const file = dt && dt.files && dt.files[0]
       if (!file) return
@@ -1643,12 +1651,14 @@ export default {
 
     // 拖拽文件到页面导入
     onDragenter() {
-      if (!this.enableDragImport || this.isDragOutlineTreeNode) return
-      this.showDragMask = true
+      this.showDragMask = reduceDragMask(this.showDragMask, 'enter', {
+        enableDragImport: this.enableDragImport,
+        isDragOutlineTreeNode: this.isDragOutlineTreeNode
+      })
     },
 
     onDragleave() {
-      this.showDragMask = false
+      this.showDragMask = reduceDragMask(this.showDragMask, 'leave')
     },
 
     // 网页版试用提示（本地客户端模式下不显示）
