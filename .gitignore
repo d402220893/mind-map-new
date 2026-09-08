@@ -26,3 +26,14 @@ web/src/pages/Edit/components/_probe_import.py
 
 # ===== WorkBuddy local memory / skills (project-local, not shippable) =====
 .workbuddy/
+
+# ===== Build staging / throwaway snapshots from build_now.sh pipeline =====
+# root dist-electron/ (electron-builder 全量输出，未被上面的 electron-app/dist-electron/ 覆盖)
+dist-electron/
+# asar 打包暂存与历史快照（build_now.sh 产生，含 _appstage / dist_old_* / _dist_old）
+electron-app/_appstage/
+electron-app/_appstage.asar
+electron-app/_dist_old/
+electron-app/dist_old_*/
+# 根目录偶发生成的 build-info.json（gen-build-info.js 主写 dist/ 与 electron-app/dist/，已被上面忽略）
+/build-info.json

@@ -6,15 +6,15 @@ export ELECTRON_MIRROR=https://npmmirror.com/mirrors/electron/
 # 会导致 packaging 阶段卡死。nsis 等二进制已缓存到 ~/.cache/electron-builder，
 # 故不再设置 ELECTRON_BUILDER_BINARIES_MIRROR，让 electron-builder 用本地缓存 + GitHub 默认。
 export CSC_IDENTITY_AUTO_DISCOVERY=false
-export PATH="/c/Users/d36847/.workbuddy/binaries/node/versions/22.22.2:$PATH"
-NODE=/c/Users/d36847/.workbuddy/binaries/node/versions/22.22.2/node.exe
+export PATH="/c/Users/d36847/.workbuddy/binaries/node/versions/22.22.2-2:$PATH"
+NODE=/c/Users/d36847/.workbuddy/binaries/node/versions/22.22.2-2/node.exe
 LOG=/e/03_学习文件/mind-map-main/build_now.log
 : > "$LOG"
 echo "START $(date +%T)" | tee -a "$LOG"
 pkill -9 -f vue-cli-service.js 2>/dev/null || true
 pkill -9 -f app-builder 2>/dev/null || true
 sleep 1
-echo "=== [1/4] vue build ===" | tee -a "$LOG"
+echo "=== [1/5] vue build ===" | tee -a "$LOG"
 cd /e/03_学习文件/mind-map-main/web
 BUILD_LOW_MEM=1 NODE_OPTIONS="--openssl-legacy-provider --max-old-space-size=4096" timeout 480 "$NODE" node_modules/@vue/cli-service/bin/vue-cli-service.js build >> "$LOG" 2>&1
 RC=$?
@@ -23,28 +23,53 @@ if [ $RC -ne 0 ] || [ ! -f /e/03_学习文件/mind-map-main/dist/index.html ]; t
   echo "VUE BUILD FAILED" | tee -a "$LOG"
   exit 1
 fi
-echo "=== [2/4] sync dist + strip ===" | tee -a "$LOG"
+echo "=== [2/5] sync dist + strip + 构建指纹 ===" | tee -a "$LOG"
 cd /e/03_学习文件/mind-map-main
 mkdir -p _trash
 mv electron-app/dist "_trash/eapp_$(date +%H%M%S)" 2>/dev/null || true
 cp -rf dist/. electron-app/dist/
 "$NODE" strip_index.js 2>&1 | tee -a "$LOG"
+# 写入构建指纹（version/buildTime/gitHash）：运行实例启动后在控制台打印，
+# 用于核对"改了是否真的发上去了"。
+"$NODE" gen-build-info.js 2>&1 | tee -a "$LOG"
 echo "fix strings:" | tee -a "$LOG"
 grep -a -l "workbook-list-changed" electron-app/dist/js/*.js 2>&1 | tee -a "$LOG"
 grep -a -l "fileBrand" electron-app/dist/js/*.js 2>&1 | tee -a "$LOG" || echo "fileBrand removed (expected)" | tee -a "$LOG"
-echo "=== [3/4] bump version ===" | tee -a "$LOG"
+echo "=== [3/5] bump version ===" | tee -a "$LOG"
 cd /e/03_学习文件/mind-map-main/electron-app
-"$NODE" bump_version.js 2>&1 | tee -a "$LOG"
+if [ -z "$SKIP_BUMP" ]; then
+  "$NODE" bump_version.js 2>&1 | tee -a "$LOG"
+else
+  echo "SKIP_BUMP 已设置，保持当前版本号" | tee -a "$LOG"
+fi
 grep '"version"' package.json | tee -a "$LOG"
-echo "=== [4/4] electron-builder ===" | tee -a "$LOG"
+echo "=== [4/5] electron-builder (NSIS 安装包，可选) ===" | tee -a "$LOG"
 # 关闭 WorkBuddy 注入的 safe-delete 钩子（NODE_OPTIONS --require genie-safe-delete.cjs）。
 # 否则 electron-builder 收尾删除中间文件 mind-map-*.nsis.7z 时，unlink 被拦截转去
 # genie-trash 回收站，而该操作会失败/挂起，导致构建退出 1（Setup.exe 实际已生成）。
 # 构建只删除 dist-electron 自身的临时产物，清空 NODE_OPTIONS 不影响用户数据安全。
 export NODE_OPTIONS=""
-timeout 600 npm run dist >> "$LOG" 2>&1
-RC=$?
-echo "builder rc=$RC at $(date +%T)" | tee -a "$LOG"
+if [ -z "$SKIP_NSIS" ]; then
+  timeout 600 npm run dist >> "$LOG" 2>&1
+  echo "builder rc=$? at $(date +%T)" | tee -a "$LOG"
+else
+  echo "SKIP_NSIS 已设置，跳过 NSIS 安装包构建（仅在 [5/5] 部署到运行真源）" | tee -a "$LOG"
+fi
+echo "=== [5/5] 打包并部署到运行真源 D:\Program Files (x86)\思绪思维导图\resources\app.asar ===" | tee -a "$LOG"
+cd /e/03_学习文件/mind-map-main/electron-app
+rm -rf _appstage 2>/dev/null || true
+mkdir -p _appstage/dist
+cp package.json main.js preload.js index.html install.html install-meta.js appicon.ico _appstage/ 2>/dev/null
+# 关键：先建好 _appstage/dist，再用 "dist/." 把内容平铺进去；
+# 严禁 "cp -r dist _appstage/dist"（若 _appstage/dist 已存在会生成 dist/dist 双层嵌套，致白屏/资源 404）
+cp -rf dist/. _appstage/dist/
+"$NODE" node_modules/@electron/asar/bin/asar.js pack _appstage _appstage.asar >> "$LOG" 2>&1
+SRC_ASAR="E:/03_学习文件/mind-map-main/electron-app/_appstage.asar"
+cd /e/03_学习文件/mind-map-main
+DST="D:/Program Files (x86)/思绪思维导图/resources/app.asar"
+powershell -NoProfile -ExecutionPolicy Bypass -File "E:/03_学习文件/mind-map-main/deploy_running.ps1" "$SRC_ASAR" "$DST" "思绪思维导图" | tee -a "$LOG" || echo "DEPLOY 步骤返回非0，请检查日志" | tee -a "$LOG"
+echo "--- 校验已部署 asar 的构建指纹 ---" | tee -a "$LOG"
+"$NODE" "E:/03_学习文件/mind-map-main/electron-app/node_modules/@electron/asar/bin/asar.js" ef "$DST" dist/build-info.json 2>/dev/null | tee -a "$LOG" || echo "(build-info 提取失败，可忽略)" | tee -a "$LOG"
 echo "=== RESULT ===" | tee -a "$LOG"
 ls -la --time-style=+%H:%M:%S "dist-electron/思绪思维导图 Setup.exe" 2>&1 | tee -a "$LOG"
 echo "END $(date +%T)" | tee -a "$LOG"

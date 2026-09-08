@@ -1158,3 +1158,38 @@ onRemove(w) {
 - 打开"修改备注"：右侧"备注"侧栏不重复弹出；点遮罩/画布等空白区域**不**关闭（只有取消/确定/叉号能关），未保存备注不丢。
 
 ---
+
+## 31. 2026-09-08（续2）：收紧部署真源 + 启动构建指纹
+
+### 31.1 用户原问
+"之前每次代码修改都会引入新问题或解决不了问题，是不是代码架构有问题？"
+诊断：问题不全在架构，而是 **部署真源分裂 + 构建脚本失效** 放大了每一次改动的代价：
+- 真架构债：全局 `$bus` 字符串事件总线（~176 处/38 文件，Edit.vue 单文件 44 处）、`barHover[key]` 共享可变状态、重度 patch 第三方 simple-mind-map、全局 `isZenMode` 驱动 `v-if` 整栏卸载。
+- 最大放大器：构建/部署链路脆弱 → "改动没生效" 看起来像"没修好"，实则是没部署到运行真源。
+
+### 31.2 真源分裂的物证
+- `build_now.sh` 终点停在 `npm run dist`（NSIS 安装包），发到 `$LOCALAPPDATA\Programs\思绪思维导图`（用户从不启动）。
+- 用户真正跑的是 `D:\Program Files (x86)\思绪思维导图\resources\app.asar`（Nativefier/51888）。`build_now.sh` 从未部署到它 → 每次"改了没生效"。
+- 根目录散落 39 个 `_trash`/`app_stage_*`/`verify_*` 快照目录 = "到底发没发上去"不确定性的痕迹。
+
+### 31.3 两个真 bug（本次顺手修）
+1. **`build_now.sh` 写死 node 路径 `22.22.2`（本机实际 `22.22.2-2`）** → vue build 第一步 `No such file` 静默失败，整个构建根本没跑。已改 `22.22.2-2`。
+2. **`cp -r dist _appstage/dist` 目标已存在时生成 `dist/dist` 双层嵌套** → 资源 404/白屏。已改为 `mkdir -p _appstage/dist && cp -rf dist/. _appstage/dist/`。
+
+### 31.4 交付（收紧部署真源）
+- `build_now.sh` 重写为单一命令：`[1/5]vue build → [2/5]cp+剥51.la+写指纹 → [3/5]bump → [4/5]NSIS(可 SKIP_NSIS=1) → [5/5]打包并部署到 D:\ 运行真源 app.asar`（杀进程+时间戳备份+Copy-Item+校验 build-info）。`SKIP_BUMP=1` 保持版本。
+- 新增 `gen-build-info.js`：写 `dist/build-info.json` + `electron-app/dist/build-info.json`（version/buildTime/gitHash）。
+- 新增 `web/src/main.js` 启动指纹：fetch `/dist/build-info.json` → console 打印 `[思绪思维导图] v1.0.21 · <buildTime> · <gitHash>`。
+- 新增 `deploy_running.ps1`：杀运行进程→时间戳备份→Copy-Item 覆盖 D:\ app.asar→校验。
+
+### 31.5 验证
+- 整包解压运行真源 asar 确认：`dist/build-info.json` 存在（v1.0.21 / 2026-09-08T11:42:58Z / ca3ef19）、`dist/js/app.js` 含指纹 fetch、`dist/dist` 嵌套条目=0、结构扁平。
+- 部署后 app.asar = 9,133,964 字节（覆盖旧的 9,133,083），已就地生效。
+- 注意：**部署会杀运行中的 思绪思维导图.exe**，用户需重开 app；F12 控制台可见构建指纹。
+
+### 31.6 当前状态
+- 版本仍 1.0.21（SKIP_BUMP，仅加指纹特征，无功能变更）。
+- D:\ `app.asar` 已覆盖；保留 `app.asar.bak_20260908_194117/194228/194306` 时间戳备份（其中 `194306` 为本次发现的一版 `dist/dist` 嵌套坏包，17MB，已被正确扁平版覆盖，可删）。
+- 备份分支 `backup/pre-rollback-20260908` 零改动。
+- 下一步（用户选）：先收紧部署真源（已完成）；后续治本架构 → 把 Sidebar/auto-hide/zen 等视图态收进 Vuex store，消灭 `$bus` 字符串事件与 `barHover` 裸字典。
+
