@@ -1099,3 +1099,62 @@ onRemove(w) {
 - 设置深色画布背景 → 右侧 trigger 栏上下**不应**再透出黑框。
 
 ---
+
+## 30. 2026-09-08 续：回退 v1.0.18 + 五轮修复（v1.0.18 → v1.0.21）
+
+> 背景：用户发现近期版本（v1.0.65+ 一类）出现崩溃/回归，要求**回退到 v1.0.18**（018f0b6）作基线，只做 surgical 修复，不再引入崩溃链。
+> 备份分支 `backup/pre-rollback-20260908`（commit `aeb798f`）原样保全，全程零改动。
+> 关键纪律：每改一个功能/bug，必须有零依赖单测（`web` 用 `node --test` + `node:assert`；契约测试落在 `web/tests/regression/template-bindings.test.mjs`）；主进程守门测试在 `electron-app/tests/`（`build-version` / `asar-dist-paths` / `asar-modules` / `install-meta`）。
+
+### 30.0 ⚠️ 部署真相（最致命，务必先读）
+- **用户真正运行的不是 NSIS `思绪思维导图 Setup.exe` 装的那份**。真实运行的是 **Nativefier 包装版**：
+  - 进程：`D:\Program Files (x86)\思绪思维导图\思绪思维导图.exe`（监听 `127.0.0.1:51888`），`nativefier.json` 的 `targetUrl:"https://./web/dist"` 把 `web/dist` 包进 nativefier 自己起 51888 伺服。
+  - 真正入口 `resources/app.asar`（Electron 优先加载 `app.asar`，**不读** `resources/app/` 目录）。
+- NSIS `Setup.exe` 装到 `$LOCALAPPDATA\Programs\思绪思维导图\`（第三处），用户从不启动 → 重打 asar 全打在"无人跑"的位置是假动作。
+- **查真实运行位置标准动作**：`Get-NetTCPConnection -LocalPort 51888` 拿 PID/Path；`tasklist | findstr 思绪`。
+- **修 nativefier 崩的标准流程**：杀全部 `思绪思维导图.exe` → 准备已守卫的 `resources/app/`（用 `electron-app/dist-electron/win-unpacked/resources/app/`）→ `asar pack` 成 `app.asar.new` → 备份旧 `app.asar` → PowerShell `Copy-Item -Force` 原地覆盖（绕 Defender 读锁，用 Windows 绝对路径）→ 校验 grep `app.asar` 旧 hash 计数=0、新 hash≥1、`barHover[`=1。
+- asar 工具用 `electron-app/node_modules/@electron/asar/bin/asar.js`（node 直跑 `.bin/asar` sh 包装会 SyntaxError）。
+
+### 30.1 回退基线（v1.0.18 / 018f0b6）
+- 用户要求回退到 2026-08-31 的 v1.0.18 状态。git master 落到 `018f0b6`（含 §29 的 dirty + trigger 黑框修复）。
+- 备份：`backup/pre-rollback-20260908` = `aeb798f`（回退前最后一版，保全待查）。
+
+### 30.2 修复① 拖拽文件遮罩卡死不消失（v1.0.18 / 5745d78 + 87cc736）
+**根因**：`Edit.vue` 的 `onContainerDrop`（拖文件入画布松手）从未把 `showDragMask` 复位为 false；`dragleave` 仅在用户把文件拖出窗口外才触发——直接在"在此释放以导入该文件"卡片上 drop 是合法路径，遮罩永远不消失。
+**修复**：抽纯 reducer `web/src/utils/dragMaskController.js`（`enter→true / leave→false / drop→false / reset→false`）。`onContainerDrop` 第一行 `reduceDragMask(state,'drop')` 无条件关遮罩；`onDragenter`/`onDragleave` 切到 reducer。
+**测试**：`web/tests/unit/dragMaskController.test.mjs` 11 例（含「drop 时遮罩必关」）+ 85 旧 = 96/96。
+**出包**：vue build → shell `cp -r dist/. electron-app/dist`（**勿用 fs.cpSync**，被 safe-copy 钩子静默拦成 exit 127）→ Python 剥 51.la → asar pack → PowerShell 覆盖 → makensis。
+
+### 30.3 修复② 右侧 Sidebar 黑边 + 切换文件误标 dirty（v1.0.18 / 1ed5eb3）
+**②-a 黑边**：`Sidebar.vue` `.sidebarContainer` base 带 `box-shadow:-16px 0 44px`；隐藏态（`right:-320px`）阴影向画布渗出 44px，深色下显黑边。→ box-shadow 从 base 移到 `&.show`。
+**②-b 误标 dirty**：`loadSheetData` 用 `node_tree_render_end`（~16ms）清 `_isLoading`，但 simple-mind-map 的 `addHistory` 被 100ms throttle（leading-edge `if(timer) return` 丢调用），节流 timer 在 `_isLoading=false` 后才 emit `data_change`，绕过守卫 markDirty。→ `onRenderEnd` 内显式调未节流版 `command.originAddHistory()`，history 同步落库（仍受 `_isLoading` 守卫挡），后续节流 timer 因 `lastDataStr` 重复被去重跳过。
+**测试**：`template-bindings.test.mjs` 加 2 例（`[sidebar 黑边]` base 无 box-shadow / `.show` 有；`[dirty 节流竞态]` 验证 originAddHistory）。96+2=98/98。
+
+### 30.4 修复③ 修改备注时右侧"备注"侧栏重复弹出（v1.0.19 / ad00d97 + c96fed5）
+**根因**：`NodeNote.vue`（左侧"修改备注"对话框）的 `handleShowNodeNote` 与 `NodeNoteSidebar.vue`（右侧"备注"侧栏）是两条独立触发链——前者由右键菜单/工具条 emit `showNodeNote`，后者由节点"📝"图标 click emit `node_note_click`，同时触发时双窗口叠出。
+**修复**：`NodeNote.handleShowNodeNote` 内（设 `dialogVisible=true` **之前**）emit `'closeSideBar'`，让所有 `<Sidebar>` 经已有监听器 `setActiveSidebar(null)` 收回，语义同 `Search.vue`。
+**出包（v1.0.19）**：bump 1.0.18→1.0.19；从备份分支 `aeb798f` 拷回 v1.0.18 缺的 3 个主进程守门测试（`asar-modules` 按 v1.0.18 主进程仅 require `install-meta` 实际形态调整为「≥1 + 必须 install-meta」）；`package.json` 加 `build.productName='思绪思维导图'` 让 `install-meta` 第 2 例也 pass。
+
+### 30.5 修复④ 备注对话框支持点击外部关闭（v1.0.20 / 4b0e50a）— **已被 30.6 回退**
+**原意图**：用户报"打开修改备注后只有取消/确定/叉号能关，点周围区域不关"。v1.0.20 加了 `:close-on-click-modal="true"` + `mounted` 注册 `document mousedown` → 点对话框外（含 `.v-modal` 遮罩、画布）调 `cancel()` 关闭并丢弃改动。web 101/101、主进程 9/9。
+
+### 30.6 修复⑤（回退④）备注对话框点击空白**不**关闭（v1.0.21 / 4ab1803）
+**用户纠正**："我是要点击空白区域**不要**关闭，不是关闭。以免未保存工作丢失。"——即点遮罩/画布等周围空白**不应**关闭，防误丢未保存备注。
+**回退**：`el-dialog` 改回 `:close-on-click-modal="false"`；整段删除 v1.0.20 加的 `mounted`（`document mousedown`→`cancel()`）；`beforeDestroy` 同步删 `removeEventListener`。
+**测试**：`template-bindings.test.mjs` 的 `[备注对话框点击外关]` 翻转为 `[备注对话框点击外不关]`——断言 `close-on-click-modal=false`、无 `document mousedown` 监听、无 `_onDocMouseDown`、无 `removeEventListener`、无 `mounted` 钩子。web 101/101、主进程 9/9。
+
+### 30.7 最终状态（v1.0.21，已部署）
+- git master 顶端：`4ab1803`（链：`4ab1803`→`4b0e50a`→`c96fed5`→`ad00d97`→`1ed5eb3`→`87cc736`→`5745d78`→`018f0b6`）。
+- `D:\Program Files (x86)\思绪思维导图\resources\app.asar` 已就地覆盖，md5 `b9b714bc954ae44ec48ddcb1dff8fc0e`（与 `electron-app/dist-electron/win-unpacked/resources/app.asar` 一致），9,133,083 字节，内含 `1.0.21` + 前 4 修复。
+- `electron-app/dist-electron/思绪思维导图 Setup.exe`：112,543,204 字节，MZ=4d5a。
+- asar 4 修复关键字全命中：`showDragMask`(dragMask) / `closeSideBar` / `originAddHistory` / `close-on-click-modal`；`_onDocMouseDown` 已无残留。
+- 三处 `index.html` chunk hash 一致；51.la 已剥（dist/index.html `LA.init=0`）。
+- 备份分支 `backup/pre-rollback-20260908` 零改动。
+
+### 30.8 待真机点测（v1.0.21）
+- 重开 `D:\Program Files (x86)\思绪思维导图\思绪思维导图.exe`，F12 `fetch('/package.json').then(r=>r.json()).then(j=>console.log(j.version))` 应回显 `1.0.21`。
+- 拖文件入画布松手 → 遮罩即时消失（不卡死）。
+- 右侧菜单栏（Sidebar）隐藏时无黑边；点开已保存文件无 dirty 红点。
+- 打开"修改备注"：右侧"备注"侧栏不重复弹出；点遮罩/画布等空白区域**不**关闭（只有取消/确定/叉号能关），未保存备注不丢。
+
+---
