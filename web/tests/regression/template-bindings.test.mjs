@@ -227,36 +227,38 @@ test('[sidebar 重复弹出] NodeNote.vue handleShowNodeNote 触发时 emit clos
   )
 })
 
-// ===== 修复：备注对话框点击周围区域不关闭（MEDIUM）=====
-// 复现：打开「修改备注」对话框后，只有取消/确定/叉号能关，点遮罩或画布等
-// 周围区域关不掉。Element 默认 close-on-click-modal 在本工程某些全局样式下
-// 失效，故改为 document mousedown 兜底：点击落在对话框之外即关闭（丢弃改动）。
-test('[备注对话框点击外关] NodeNote.vue 支持点击外部区域关闭', () => {
+// ===== 修复：备注对话框点击周围区域「不」关闭（MEDIUM）=====
+// 诉求：打开「修改备注」对话框后，只有取消/确定/叉号能关；点遮罩或画布等
+// 周围空白区域「不应」关闭，以免误点导致未保存的备注内容丢失。
+// 实现：el-dialog 显式 :close-on-click-modal="false"，且不要任何
+// document mousedown 兜底关闭逻辑（v1.0.20 曾错误地加了「点外面关闭」，
+// 与用户诉求相反，本次回退）。
+test('[备注对话框点击外不关] NodeNote.vue 点击外部区域不应关闭', () => {
   const vue = read(new URL('pages/Edit/components/NodeNote.vue', SRC))
-  // 1) 防御性：el-dialog 显式开启 close-on-click-modal
+  // 1) el-dialog 必须显式声明 close-on-click-modal=false（防止点遮罩误关）
   assert.ok(
-    /close-on-click-modal/.test(vue),
-    'el-dialog 应显式声明 :close-on-click-modal（兜底开启 Element 默认行为）'
+    /:close-on-click-modal="false"/.test(vue),
+    'el-dialog 必须显式 :close-on-click-modal="false"，点遮罩/画布不关闭对话框'
   )
-  // 2) 必须有 document mousedown 监听（点击外部关闭的核心机制）
+  // 2) 绝不能有 document mousedown 监听去「点外面关闭」（这是 v1.0.20 的错误实现）
   assert.ok(
-    /document\.addEventListener\(\s*['"]mousedown['"]/.test(vue),
-    'NodeNote 应在 mounted 注册 document mousedown 监听用于「点击外部关闭」'
+    !/document\.addEventListener\(\s*['"]mousedown['"]/.test(vue),
+    'NodeNote 不应注册 document mousedown 监听——点外部关闭会与「防误丢」诉求冲突'
   )
-  // 3) 监听回调逻辑：dialogVisible 打开时，若点击目标不在 this.$el 内则调用 cancel 关闭
-  const mounted = /mounted\s*\(\)\s*\{([\s\S]*?)\n\s\s\s\s\},/.exec(vue)
-  assert.ok(mounted, '应能找到 mounted 方法体')
-  const body = mounted[1]
-  assert.ok(/this\.dialogVisible/.test(body), '监听回调应读取 this.dialogVisible 守卫')
-  assert.ok(/this\.\$el/.test(body), '监听回调应读取 this.$el（对话框根节点）')
-  assert.ok(/\.contains\(/.test(body), '监听回调应用 $el.contains(target) 判断点击是否在对话框内')
-  assert.ok(/!.*\.contains\(/.test(body) || /contains\([^)]*\)\s*===?\s*false/.test(body),
-    '监听回调应在「点击落在对话框外」时进入关闭分支')
-  assert.ok(/this\.cancel\(\)/.test(body), '监听回调在对话框外点击时应调用 cancel() 关闭并丢弃改动')
-  // 4) 卸载时移除监听，避免内存泄漏 / 误操作其它对话框
+  // 3) 不应存在 _onDocMouseDown 兜底关闭回调
   assert.ok(
-    /removeEventListener\(\s*['"]mousedown['"]/.test(vue),
-    'beforeDestroy 应 removeEventListener 注销 mousedown 监听'
+    !/_onDocMouseDown/.test(vue),
+    '不应存在 _onDocMouseDown（点外部关闭的兜底回调）'
+  )
+  // 4) 也不应挂载时注册、卸载时注销此类监听
+  assert.ok(
+    !/removeEventListener\(\s*['"]mousedown['"]/.test(vue),
+    'beforeDestroy 不应残留 mousedown 监听注销逻辑'
+  )
+  // 5) mounted 钩子不应再存在（v1.0.20 的关闭逻辑挂在 mounted 里）
+  assert.ok(
+    !/mounted\s*\(\)\s*\{/.test(vue),
+    'NodeNote 不应再有 mounted 钩子（点外部关闭逻辑已整体移除）'
   )
 })
 
