@@ -5,6 +5,7 @@
     :visible.sync="dialogVisible"
     :width="isMobile ? '90%' : '50%'"
     :top="isMobile ? '20px' : '15vh'"
+    :close-on-click-modal="true"
   >
     <!-- <el-input
       type="textarea"
@@ -103,9 +104,28 @@ export default {
     this.$bus.$on('node_active', this.handleNodeActive)
     this.$bus.$on('showNodeNote', this.handleShowNodeNote)
   },
+  mounted() {
+    // 点击对话框外部区域（遮罩 / 画布 / 其它 UI）即关闭，等价于「取消」。
+    // 不依赖 Element 默认 close-on-click-modal：本工程历史版本该默认行为在
+    // 某些全局样式下失效（点遮罩不关），这里用 document mousedown 兜底，
+    // 保证「点周围区域也能关」这一用户诉求稳定生效。
+    this._onDocMouseDown = (e) => {
+      if (!this.dialogVisible) return
+      const root = this.$el
+      // 点击落在对话框之外（含 .v-modal 遮罩、画布等）-> 关闭并丢弃改动
+      if (root && !root.contains(e.target)) {
+        this.cancel()
+      }
+    }
+    document.addEventListener('mousedown', this._onDocMouseDown)
+  },
   beforeDestroy() {
     this.$bus.$off('node_active', this.handleNodeActive)
     this.$bus.$off('showNodeNote', this.handleShowNodeNote)
+    if (this._onDocMouseDown) {
+      document.removeEventListener('mousedown', this._onDocMouseDown)
+      this._onDocMouseDown = null
+    }
   },
   methods: {
     handleNodeActive(...args) {
