@@ -592,14 +592,20 @@ function createWindow() {
     mainWindow = null
   })
 
-  // Ctrl+Shift+I 打开 DevTools
+  // Ctrl+Shift+I 或 F12 打开/关闭 DevTools
   mainWindow.webContents.on('before-input-event', (event, input) => {
-    if (input.control && input.shift && input.key && input.key.toLowerCase() === 'i') {
-      if (mainWindow.webContents.isDevToolsOpened()) {
-        mainWindow.webContents.closeDevTools()
-      } else {
-        mainWindow.webContents.openDevTools()
-      }
+    // 只在按键「按下」时响应：before-input-event 对 keyDown 与 keyUp 各触发一次，
+    // 若不判断 input.type，同一次按键会先 openDevTools 再 closeDevTools，
+    // 表现为「按了快捷键毫无反应」（开了又关）。
+    if (input.type !== 'keyDown') return
+    const isToggle =
+      (input.control && input.shift && input.key && input.key.toLowerCase() === 'i') ||
+      input.key === 'F12'
+    if (!isToggle) return
+    if (mainWindow.webContents.isDevToolsOpened()) {
+      mainWindow.webContents.closeDevTools()
+    } else {
+      mainWindow.webContents.openDevTools()
     }
   })
 }
