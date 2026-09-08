@@ -149,3 +149,50 @@ test('[trigger 黑框] SidebarTrigger.vue 模板不再把 maxHeight 绑到容器
     '模板里不应再将 maxHeight 数据绑到 sidebarTriggerContainer 容器 style'
   )
 })
+
+// ===== 修复：右边菜单栏黑边（Sidebar 阴影泄漏）（MED）=====
+// 复现：侧栏未弹出时（right:-320px 隐藏态），box-shadow:-16px 0 44px rgba(0,0,0,0.16)
+// 仍在容器左侧画阴影，阴影向画布渗出 44px → 深色画布下显示为右边黑边。
+// 修复：box-shadow 移到 .sidebarContainer.show 内，仅展开时生效。
+test('[sidebar 黑边] Sidebar.vue 把 box-shadow 从容器 base 移到 .show', () => {
+  const vue = read(new URL('pages/Edit/components/Sidebar.vue', SRC))
+  // base 容器不应再带 box-shadow
+  const baseMatch = /\.sidebarContainer\s*\{[^}]*\}/.exec(vue)
+  assert.ok(baseMatch, '应能找到 .sidebarContainer base rule')
+  const baseBlock = baseMatch[0]
+  assert.ok(
+    !/box-shadow:\s*-16px 0 44px/.test(baseBlock),
+    'base .sidebarContainer 不应带 box-shadow（防隐藏态阴影泄漏）'
+  )
+  // .show rule 内应有 box-shadow（LESS 嵌套写法：&.show { ... }）
+  const showMatch = /&\.show\s*\{[^}]*\}/.exec(vue)
+  assert.ok(showMatch, '应能找到 &.show 嵌套 rule（LESS 编译后 = .sidebarContainer.show）')
+  const showBlock = showMatch[0]
+  assert.ok(
+    /box-shadow:\s*-16px 0 44px/.test(showBlock),
+    'show rule 应带 box-shadow（仅展开态生效）'
+  )
+})
+
+// ===== 修复：throttled addHistory 绕过 dirty 守卫（HIGH）=====
+// 复现：切换/打开文件时，simple-mind-map 的 addHistory 被 throttle 100ms，
+// 但 node_tree_render_end 在 reRender 后 ~16ms 就触发；v1.0.18 仅以
+// node_tree_render_end 为 _isLoading 清零信号，导致 100ms 后节流 timer 落地、
+// emit data_change 时 _isLoading 已为 false → 新载入文件被误标 dirty。
+// 修复：在 onRenderEnd 内显式调一次 originAddHistory()（未节流），让 history 快照
+// 同步落库并被 _isLoading 守卫挡住；后续节流 timer 的 addHistory 走 lastDataStr
+// 去重逻辑、不再 emit data_change。
+test('[dirty 节流竞态] Edit.vue loadSheetData 用 originAddHistory 同步落库', () => {
+  const vue = read(new URL('pages/Edit/components/Edit.vue', SRC))
+  assert.ok(
+    /command\.originAddHistory\s*\(\s*\)/.test(vue),
+    '应在 onRenderEnd 调一次 originAddHistory()，防节流 addHistory 绕过 _isLoading 守卫'
+  )
+  // originAddHistory 调用必须在 loadSheetData / onRenderEnd 上下文里（不在其他全局位置）
+  const loadSheet = /loadSheetData\(data\)\s*\{[\s\S]*?\}\s*,/.exec(vue)
+  assert.ok(loadSheet, '应能找到 loadSheetData 函数体')
+  assert.ok(
+    /command\.originAddHistory/.test(loadSheet[0]),
+    'originAddHistory 调用应在 loadSheetData 内（onRenderEnd 闭包中）'
+  )
+})

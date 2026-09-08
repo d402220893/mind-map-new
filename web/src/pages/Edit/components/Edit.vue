@@ -695,7 +695,26 @@ export default {
       // 每次载入后重应用全局画布背景，覆盖文件自带主题背景（修复"背景色串"）
       this.applyStoredCanvasBackground()
       // 监听本轮渲染结束，放开 dirty 守卫；用一次性 off 避免泄漏。
+      // 注：simple-mind-map 的 addHistory 被节流 100ms（参见 Command.js + utils throttle），
+      //   而 node_tree_render_end 通常在 reRender 后 ~16ms 就触发。
+      //   若仅在此时清 _isLoading，节流中的 addHistory 会在 100ms 后才 emit data_change，
+      //   此时 _isLoading 已为 false，新载入的文件会被错误标 dirty。
+      // 解法：在 onRenderEnd 显式调一次未节流的 originAddHistory()，让当前 history 快照
+      //   同步落库（仍受 _isLoading 守卫保护）；后续节流 timer 触发时由于 lastDataStr
+      //   重复会被 addHistory 自带的去重逻辑跳过、不会再 emit data_change。
       const onRenderEnd = () => {
+        try {
+          if (
+            this.mindMap &&
+            this.mindMap.command &&
+            typeof this.mindMap.command.originAddHistory === 'function'
+          ) {
+            this.mindMap.command.originAddHistory()
+          }
+        } catch (e) {
+          // originAddHistory 异常不影响主流程，最坏情况是节流 timer 后仍有 1 次误发；
+          // 这种情况已被底下的 setTimeout(250) 兜底覆盖（>100ms 节流窗）
+        }
         this._isLoading = false
         if (this.mindMap && typeof this.mindMap.off === 'function') {
           this.mindMap.off('node_tree_render_end', onRenderEnd)

@@ -84,7 +84,8 @@ export default {
   border-left: 1px solid var(--macos-border);
   border-top-left-radius: var(--macos-radius-xl);
   border-bottom-left-radius: var(--macos-radius-xl);
-  box-shadow: -16px 0 44px rgba(0, 0, 0, 0.16);
+  // box-shadow 仅在展开时生效：隐藏态（right:-320px）若保留阴影，
+  // 阴影会从容器左侧向画布渗出 44px，在深色画布下显示为右边黑边。
   display: flex;
   flex-direction: column;
   transition: right 0.32s cubic-bezier(0.32, 0.72, 0, 1);
@@ -105,6 +106,8 @@ export default {
 
   &.show {
     right: 0;
+    // 仅在展开时向左画阴影，避免隐藏态阴影泄漏到画布（右边黑边根因）
+    box-shadow: -16px 0 44px rgba(0, 0, 0, 0.16);
   }
 
   .closeBtn {
