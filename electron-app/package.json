@@ -5,7 +5,65 @@
   "main": "main.js",
   "author": "Jia Hao",
   "license": "MIT",
+  "scripts": {
+    "dist": "electron-builder --win --x64"
+  },
+  "devDependencies": {
+    "electron-builder": "^24.13.3"
+  },
   "build": {
-    "productName": "思绪思维导图"
+    "appId": "com.mindmap.app",
+    "productName": "思绪思维导图",
+    "copyright": "Copyright © 2026",
+    "electronVersion": "25.7.0",
+    "asar": false,
+    "compression": "normal",
+    "icon": "appicon.ico",
+    "files": [
+      "**/*",
+      "!node_modules/**",
+      "!node_modules/*/{CHANGELOG.md,README.md,README,readme.md,readme,test,tests,docs,doc}",
+      "!node_modules/.bin",
+      "!**/*.{iml,o,hprof,orig,pyc,pyo,rbc,swp,csproj,sln,xproj}",
+      "!tests/**",
+      "!test/**",
+      "!**/tests/**",
+      "!**/*.test.*",
+      "!**/*.spec.*",
+      "!_appstage*",
+      "!_dist_old*",
+      "!dist_old*",
+      "!dist-electron/**",
+      "!**/*.sh",
+      "!bump_version.js",
+      "!make_installer.nsi"
+    ],
+    "directories": {
+      "output": "dist-electron",
+      "buildResources": "."
+    },
+    "win": {
+      "target": [
+        {
+          "target": "nsis",
+          "arch": "x64"
+        }
+      ],
+      "icon": "appicon.ico",
+      "artifactName": "${productName} Setup.${ext}",
+      "publisherName": "思绪思维导图",
+      "signAndEditExecutable": false
+    },
+    "nsis": {
+      "oneClick": false,
+      "perMachine": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "思绪思维导图",
+      "deleteAppDataOnUninstall": false,
+      "installerIcon": "appicon.ico",
+      "installerHeaderIcon": "appicon.ico"
+    }
   }
 }
