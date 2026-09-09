@@ -533,6 +533,14 @@ export default {
     // 纯文本粘贴仍走库默认行为，不影响日常文本输入。
     async onPaste(e) {
       if (!this.mindMap) return
+      // 「修改备注」对话框（Toast UI Editor，el-dialog 根类名 .nodeNoteDialog）
+      // 内部粘贴图片时：让编辑器自己处理（转 base64 插入备注），
+      // 不要被本拦截器抢到节点上 —— 否则图片会同时出现在节点和备注，
+      // 造成重复/数据污染。早期让出是修这个双重插入的唯一可靠位置
+      // （本监听是 window 捕获阶段，NodeNote 内部的 stopPropagation 救不回）。
+      if (e.target && e.target.closest && e.target.closest('.nodeNoteDialog')) {
+        return
+      }
       const cd =
         e.clipboardData ||
         (e.originalEvent && e.originalEvent.clipboardData) ||
