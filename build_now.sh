@@ -47,6 +47,13 @@ if ! grep -a -q "closest('.nodeNoteDialog')\|closest(\".nodeNoteDialog\")" elect
   exit 1
 fi
 echo "guard-assert OK: nodeNoteDialog 守卫已编译进 bundle" | tee -a "$LOG"
+echo "--- 守卫断言：asar 内 dist/index.html 不得含 51.la 跟踪脚本 ---" | tee -a "$LOG"
+# strip_index.js 现已同步剥离 electron-app/dist/index.html；若仍残留说明剥离失败。
+if grep -a -q "51.la\|LA_COLLECT\|LA.init" electron-app/dist/index.html; then
+  echo "BUILD ASSERT FAILED: electron-app/dist/index.html 仍含 51.la 跟踪脚本，strip_index.js 剥离失败" | tee -a "$LOG"
+  exit 1
+fi
+echo "51la-strip-assert OK: dist/index.html 已无 51.la" | tee -a "$LOG"
 echo "=== [3/5] bump version ===" | tee -a "$LOG"
 cd /e/03_学习文件/mind-map-main/electron-app
 if [ -z "$SKIP_BUMP" ]; then
