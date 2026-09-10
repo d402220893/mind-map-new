@@ -10,7 +10,7 @@ RequestExecutionLevel user
 SetCompressor /SOLID zlib
 
 !define APPID "com.mindmap.app"
-!define VERSION "1.0.22"
+!define VERSION "1.0.23"
 !define UNINST "Uninstall 思绪思维导图.exe"
 
 ; ---------- MUI 页面（安装页须先于语言宏） ----------
