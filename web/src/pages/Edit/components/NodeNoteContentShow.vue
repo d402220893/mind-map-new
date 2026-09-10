@@ -13,33 +13,12 @@
     @mouseup.stop
     @wheel.stop
   >
-    <div class="noteContentWrap customScrollbar" ref="noteContentWrap" @dblclick="onDblClick"></div>
-    <!-- 双击图片缩放查看器：挂载到 body，避免被画布容器裁剪；z-index 高于所有弹窗 -->
-    <div
-      class="noteImgLightbox"
-      ref="lightbox"
-      v-show="lightboxVisible"
-      @click.self="closeLightbox"
-      @wheel.prevent="onWheel"
-    >
-      <img
-        class="noteImgLightboxImg"
-        :src="lightboxSrc"
-        :style="imgStyle"
-        @mousedown.stop.prevent="onDragStart"
-        @mousemove.stop.prevent="onDragMove"
-        @mouseup.stop.prevent="onDragEnd"
-        @mouseleave="onDragEnd"
-        @click.stop
-        @dragstart.prevent
-      />
-      <div class="noteImgLightboxBar" @click.stop>
-        <button type="button" @click="zoomIn">＋</button>
-        <button type="button" @click="zoomOut">－</button>
-        <button type="button" @click="zoomReset">重置</button>
-        <button type="button" @click="closeLightbox">关闭</button>
-      </div>
-    </div>
+    <div class="noteContentWrap customScrollbar" ref="noteContentWrap"></div>
+    <!--
+      F2：图片双击缩放查看器已抽出为独立组件 NoteImgLightbox.vue，
+      挂在 Edit.vue 内并 teleport 到 body；
+      全局监听 document.dblclick 自动命中此容器内的 <img>。
+    -->
   </div>
 </template>
 
@@ -65,30 +44,13 @@ export default {
       show: false,
       left: 0,
       top: 0,
-      node: null,
-      // F2：双击图片缩放查看器状态
-      lightboxVisible: false,
-      lightboxSrc: '',
-      scale: 1,
-      panX: 0,
-      panY: 0,
-      dragging: false,
-      dragStartX: 0,
-      dragStartY: 0
-    }
-  },
-  computed: {
-    imgStyle() {
-      return {
-        transform: `translate(${this.panX}px, ${this.panY}px) scale(${this.scale})`
-      }
+      node: null
     }
   },
   created() {
     this.$bus.$on('showNoteContent', this.onShowNoteContent)
     this.$bus.$on('hideNoteContent', this.hideNoteContent)
     document.body.addEventListener('click', this.hideNoteContent)
-    document.addEventListener('keydown', this.onKey)
     this.$bus.$on('node_active', this.onNodeActive)
     this.$bus.$on('scale', this.onScale)
     this.$bus.$on('translate', this.onScale)
@@ -98,24 +60,16 @@ export default {
   mounted() {
     this.mindMap.el.appendChild(this.$refs.noteContentViewer)
     this.initEditor()
-    // 把查看器挂到 body，脱离画布容器，避免被 overflow/stacking context 裁剪
-    if (this.$refs.lightbox && this.$refs.lightbox.parentNode !== document.body) {
-      document.body.appendChild(this.$refs.lightbox)
-    }
   },
   beforeDestroy() {
     this.$bus.$off('showNoteContent', this.onShowNoteContent)
     this.$bus.$off('hideNoteContent', this.hideNoteContent)
     document.body.removeEventListener('click', this.hideNoteContent)
-    document.removeEventListener('keydown', this.onKey)
     this.$bus.$off('node_active', this.onNodeActive)
     this.$bus.$off('scale', this.onScale)
     this.$bus.$off('translate', this.onScale)
     this.$bus.$off('svg_mousedown', this.hideNoteContent)
     this.$bus.$off('expand_btn_click', this.hideNoteContent)
-    if (this.$refs.lightbox && this.$refs.lightbox.parentNode) {
-      this.$refs.lightbox.parentNode.removeChild(this.$refs.lightbox)
-    }
   },
   methods: {
     onNodeActive(...args) {
@@ -177,57 +131,6 @@ export default {
       this.show = false
     },
 
-    // F2：双击备注内图片 → 打开缩放查看器
-    onDblClick(e) {
-      const t = e.target
-      if (t && t.tagName === 'IMG') {
-        this.openLightbox(t.getAttribute('src') || t.src)
-      }
-    },
-    openLightbox(src) {
-      if (!src) return
-      this.lightboxSrc = src
-      this.scale = 1
-      this.panX = 0
-      this.panY = 0
-      this.lightboxVisible = true
-    },
-    closeLightbox() {
-      this.lightboxVisible = false
-      this.lightboxSrc = ''
-    },
-    zoomIn() {
-      this.scale = Math.min(this.scale * 1.2, 8)
-    },
-    zoomOut() {
-      this.scale = Math.max(this.scale / 1.2, 0.2)
-    },
-    zoomReset() {
-      this.scale = 1
-      this.panX = 0
-      this.panY = 0
-    },
-    onWheel(e) {
-      const delta = e.deltaY > 0 ? 0.9 : 1.1
-      this.scale = Math.min(Math.max(this.scale * delta, 0.2), 8)
-    },
-    onKey(e) {
-      if (e.key === 'Escape') this.closeLightbox()
-    },
-    onDragStart(e) {
-      this.dragging = true
-      this.dragStartX = e.clientX - this.panX
-      this.dragStartY = e.clientY - this.panY
-    },
-    onDragMove(e) {
-      if (!this.dragging) return
-      this.panX = e.clientX - this.dragStartX
-      this.panY = e.clientY - this.dragStartY
-    },
-    onDragEnd() {
-      this.dragging = false
-    },
-
     // 初始化编辑器
     initEditor() {
       if (!this.editor) {
@@ -282,58 +185,5 @@ export default {
   border-radius: 3px;
   font-size: 12px;
   font-family: 'SFMono-Regular', Consolas, 'Liberation Mono', Menlo, monospace;
-}
-
-/* F2：双击图片缩放查看器（挂到 body，故用全局样式命中） */
-.noteImgLightbox {
-  position: fixed;
-  left: 0;
-  top: 0;
-  width: 100vw;
-  height: 100vh;
-  background: rgba(0, 0, 0, 0.82);
-  z-index: 10000;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  user-select: none;
-  cursor: zoom-out;
-}
-.noteImgLightboxImg {
-  max-width: 92vw;
-  max-height: 88vh;
-  object-fit: contain;
-  background: #fff;
-  box-shadow: 0 8px 40px rgba(0, 0, 0, 0.5);
-  cursor: grab;
-  transform-origin: center center;
-  will-change: transform;
-}
-.noteImgLightboxImg:active {
-  cursor: grabbing;
-}
-.noteImgLightboxBar {
-  position: fixed;
-  left: 50%;
-  bottom: 24px;
-  transform: translateX(-50%);
-  display: flex;
-  gap: 8px;
-  background: rgba(0, 0, 0, 0.55);
-  padding: 8px 10px;
-  border-radius: 8px;
-}
-.noteImgLightboxBar button {
-  min-width: 40px;
-  height: 32px;
-  border: none;
-  border-radius: 4px;
-  background: #2d8cf0;
-  color: #fff;
-  font-size: 14px;
-  cursor: pointer;
-}
-.noteImgLightboxBar button:hover {
-  background: #1c6fd0;
 }
 </style>
