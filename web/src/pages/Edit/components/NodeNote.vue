@@ -22,7 +22,7 @@
         <option v-for="l in codeLangs" :key="l" :value="l">{{ l }}</option>
       </select>
       <el-button size="mini" type="primary" @click="insertCodeBlock">插入代码块</el-button>
-      <span class="tip">选择语言后点击「插入代码块」，在光标处插入对应 ```xxx 代码块，预览区自动高亮</span>
+      <span class="tip">选择语言后点击「插入代码块」，在光标处插入对应 ```xxx 代码块，单栏渲染实时按语言高亮</span>
     </div>
     <span slot="footer" class="dialog-footer">
       <el-button @click="cancel">{{ $t('dialog.cancel') }}</el-button>
@@ -144,26 +144,31 @@ export default {
         this.editor = new Editor({
           el: this.$refs.noteEditor,
           height: '500px',
-          initialEditType: 'markdown',
-          previewStyle: 'vertical',
-          // 代码块语法高亮：支持多种编程语言（prismjs 已按需加载语言包）
+          // F1：单栏实时渲染（不再左右分栏）。写 markdown 当场渲染成单栏，
+          // 代码块由 codeSyntaxHighlight 插件按语言实时上色；图片粘贴为 data URL 内嵌，渲染为真 <img>。
+          initialEditType: 'wysiwyg',
+          hideModeSwitch: true,
           plugins: [[codeSyntaxHighlight, { highlighter: Prism }]]
         })
       }
       this.editor.setMarkdown(this.note)
     },
 
-    // 在光标处插入「```lang 代码块」并触发语法高亮（预览区实时渲染）
+    // 在光标处插入「```lang 代码块」并触发语法高亮（单栏实时渲染）
     insertCodeBlock() {
       if (!this.editor) return
       const lang = this.codeLang || 'text'
-      const snippet = '```' + lang + '\n\n```'
       const md = this.editor.mdEditor
       if (md && typeof md.replaceSelection === 'function') {
-        md.replaceSelection(snippet)
+        // markdown 模式：在 CodeMirror 光标处插入 ```lang 代码块
+        md.replaceSelection('```' + lang + '\n\n```')
       } else {
-        const cur = this.editor.getMarkdown() || ''
-        this.editor.setMarkdown((cur ? cur + '\n\n' : '') + snippet)
+        // wysiwyg 单栏模式：用内置 codeBlock 命令插入，语言落到代码块内联选择器
+        try {
+          this.editor.exec('codeBlock', { language: lang })
+        } catch (e) {
+          this.editor.insertText('```' + lang + '\n\n```')
+        }
       }
     },
 
