@@ -6,8 +6,8 @@ export ELECTRON_MIRROR=https://npmmirror.com/mirrors/electron/
 # 会导致 packaging 阶段卡死。nsis 等二进制已缓存到 ~/.cache/electron-builder，
 # 故不再设置 ELECTRON_BUILDER_BINARIES_MIRROR，让 electron-builder 用本地缓存 + GitHub 默认。
 export CSC_IDENTITY_AUTO_DISCOVERY=false
-export PATH="/c/Users/d36847/.workbuddy/binaries/node/versions/22.22.2-2:$PATH"
-NODE=/c/Users/d36847/.workbuddy/binaries/node/versions/22.22.2-2/node.exe
+export PATH="/c/Users/d36847/.workbuddy/binaries/node/versions/22.22.2-3:$PATH"
+NODE=/c/Users/d36847/.workbuddy/binaries/node/versions/22.22.2-3/node.exe
 LOG=/e/03_学习文件/mind-map-main/build_now.log
 : > "$LOG"
 echo "START $(date +%T)" | tee -a "$LOG"

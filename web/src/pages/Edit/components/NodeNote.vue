@@ -247,3 +247,71 @@ export default {
   }
 }
 </style>
+
+<style lang="less">
+// ============================================================
+// 备注弹窗紧凑化 + 贴合玻璃（透明）主题
+// 旧版问题：弹窗 body 22/24px 大内边距 + Toast UI 自带不透明白底厚框，
+// 叠出"白框套白框"的臃肿观感。这里收紧内边距、编辑器改半透明细边面板。
+// 注意：必须用全局块（非 scoped）——.nodeNoteDialog 落在 el-dialog 包装根上，
+// 且 Toast UI 内部结构（.toastui-editor-*）不在本组件模板内。
+// ============================================================
+.nodeNoteDialog {
+  // 弹窗内边距收紧（旧版 header 18/24、body 22/24、footer 14/24）
+  .el-dialog__header {
+    padding: 12px 16px;
+  }
+  .el-dialog__body {
+    padding: 10px 12px 12px;
+  }
+  .el-dialog__footer {
+    padding: 10px 12px 12px;
+  }
+
+  // 语言条融入玻璃底：去白底实心块感
+  .noteCodeLangBar .codeLangSelect {
+    background: transparent;
+    border-color: var(--macos-border-strong);
+    color: var(--macos-text);
+  }
+
+  // Toast UI 编辑器容器：不透明白框 → 半透明玻璃 + 细边
+  .toastui-editor-defaultUI {
+    border: 1px solid var(--macos-border);
+    border-radius: var(--macos-radius-sm);
+    background: rgba(255, 255, 255, 0.45);
+    box-shadow: none;
+  }
+  // 顶部工具栏：去白底与双层分隔线观感
+  .toastui-editor-defaultUI-toolbar {
+    background: transparent;
+    border-bottom: 1px solid var(--macos-divider);
+    box-shadow: none;
+  }
+  // 内容区逐层放透明，让弹窗玻璃底透出来
+  .toastui-editor-main,
+  .toastui-editor-main .toastui-editor-main-container,
+  .toastui-editor-main .toastui-editor-mode-switch,
+  .toastui-editor-ww-container,
+  .toastui-editor-ww-container .toastui-editor-page,
+  .toastui-editor-ww-container .toastui-editor-page-container {
+    background: transparent;
+  }
+}
+
+// 正文文字色随主题（仅浅色模式覆盖；暗色模式内容面保持浅色，
+// 用 Toast UI 默认深色文字，避免"白底白字"）
+body:not(.isDark) .nodeNoteDialog {
+  .toastui-editor-ww-container .toastui-editor,
+  .toastui-editor-ww-container .toastui-editor p,
+  .toastui-editor-ww-container .toastui-editor div {
+    color: var(--macos-text);
+  }
+}
+
+// 暗色模式：Toast UI 图标 sprite 是深色，内容面保持浅色才可读
+// （仅把框变薄，不把内容面翻成深色，避免图标不可见）
+body.isDark .nodeNoteDialog .toastui-editor-defaultUI {
+  background: rgba(255, 255, 255, 0.92);
+}
+</style>
