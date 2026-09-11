@@ -30,10 +30,20 @@ web/src/pages/Edit/components/_probe_import.py
 # ===== Build staging / throwaway snapshots from build_now.sh pipeline =====
 # root dist-electron/ (electron-builder 全量输出，未被上面的 electron-app/dist-electron/ 覆盖)
 dist-electron/
+dist-electron_pending_delete/
 # asar 打包暂存与历史快照（build_now.sh 产生，含 _appstage / dist_old_* / _dist_old）
 electron-app/_appstage/
-electron-app/_appstage.asar
+electron-app/_appstage*.asar
 electron-app/_dist_old/
 electron-app/dist_old_*/
+# electron-builder 绕 Defender 锁时的备用输出目录（--config.directories.output=dist-electron2）
+electron-app/dist-electron2/
+# 根目录同名暂存快照（历史误提交，已清理）
+/_appstage/
+# electron 临时安装目录（旧产物）
+.electron_tmp/
+# _trash：build_now.sh 每次部署前的旧 dist 快照；其中 .asar 常被 Defender 持只读锁残留
+_trash/
+_trash_pending_delete/
 # 根目录偶发生成的 build-info.json（gen-build-info.js 主写 dist/ 与 electron-app/dist/，已被上面忽略）
 /build-info.json
