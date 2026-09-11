@@ -87,6 +87,31 @@ SRC_ASAR="E:/03_学习文件/mind-map-main/electron-app/_appstage.asar"
 cd /e/03_学习文件/mind-map-main
 DST="D:/Program Files (x86)/思绪思维导图/resources/app.asar"
 powershell -NoProfile -ExecutionPolicy Bypass -File "E:/03_学习文件/mind-map-main/deploy_running.ps1" "$SRC_ASAR" "$DST" "思绪思维导图" | tee -a "$LOG" || echo "DEPLOY 步骤返回非0，请检查日志" | tee -a "$LOG"
+
+# === [5/5b] 同步部署到 resources/app 目录（Electron 加载优先级：app/ 目录 > app.asar）===
+# 历史教训（2026-09-10~11）：D:\ 下存在 Sep 8 的旧 resources/app/ 目录，Electron 优先加载它，
+# 导致覆盖 app.asar 的多次部署用户全部看不到（一直跑 v1.0.21 旧 UI）。
+# 部署真源必须是 app/ 目录；asar 只是兜底，两处都要同步。
+APP_DIR_DST="D:/Program Files (x86)/思绪思维导图/resources/app"
+if [ -d "$APP_DIR_DST" ]; then
+  # 杀进程（app/ 目录被运行中进程锁住时改名会失败）
+  powershell -NoProfile -Command "Get-Process | Where-Object { \$_.ProcessName -like '*思绪思维导图*' } | Stop-Process -Force -ErrorAction SilentlyContinue; Start-Sleep -Milliseconds 1500" >> "$LOG" 2>&1
+  APP_TS=$(date +%Y%m%d_%H%M%S)
+  powershell -NoProfile -Command "Rename-Item '$APP_DIR_DST' ('app.bak_' + '$APP_TS')" >> "$LOG" 2>&1 \
+    || { echo "APP_DIR 改名失败（可能被锁），跳过 app/ 目录同步" | tee -a "$LOG"; }
+fi
+if [ ! -d "$APP_DIR_DST" ]; then
+  powershell -NoProfile -Command "robocopy 'E:/03_学习文件/mind-map-main/electron-app/_appstage' '$APP_DIR_DST' /E /NFL /NDL /NJH /NJS /NC /NS /NP" >> "$LOG" 2>&1
+  echo "--- 校验 app/ 目录构建指纹 ---" | tee -a "$LOG"
+  cat "$APP_DIR_DST/dist/build-info.json" 2>/dev/null | tee -a "$LOG"
+  # app/ 目录守卫：noteCodeBar（v1.0.21 旧代码特征）必须为 0
+  if grep -a -q "noteCodeBar" "$APP_DIR_DST/dist/js/"*.js 2>/dev/null; then
+    echo "DEPLOY ASSERT FAILED: resources/app 目录仍含旧代码特征 noteCodeBar" | tee -a "$LOG"
+    exit 1
+  fi
+  echo "app-dir deploy OK (v$(grep -o '\"version\": \"[^\"]*\"' "$APP_DIR_DST/package.json" | cut -d'\"' -f4))" | tee -a "$LOG"
+fi
+
 echo "--- 校验已部署 asar 的构建指纹 ---" | tee -a "$LOG"
 "$NODE" "E:/03_学习文件/mind-map-main/electron-app/node_modules/@electron/asar/bin/asar.js" ef "$DST" dist/build-info.json 2>/dev/null | tee -a "$LOG" || echo "(build-info 提取失败，可忽略)" | tee -a "$LOG"
 echo "=== RESULT ===" | tee -a "$LOG"
