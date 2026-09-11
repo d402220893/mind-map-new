@@ -47,3 +47,6 @@ _trash/
 _trash_pending_delete/
 # 根目录偶发生成的 build-info.json（gen-build-info.js 主写 dist/ 与 electron-app/dist/，已被上面忽略）
 /build-info.json
+
+# asar ef 手动提取时落在 electron-app/ 的临时指纹文件
+electron-app/build-info.json

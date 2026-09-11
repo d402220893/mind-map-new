@@ -109,11 +109,26 @@ if [ ! -d "$APP_DIR_DST" ]; then
     echo "DEPLOY ASSERT FAILED: resources/app 目录仍含旧代码特征 noteCodeBar" | tee -a "$LOG"
     exit 1
   fi
-  echo "app-dir deploy OK (v$(grep -o '\"version\": \"[^\"]*\"' "$APP_DIR_DST/package.json" | cut -d'\"' -f4))" | tee -a "$LOG"
+  # 版本号提取：cut -d'\"' 在双引号转义下会报 "the delimiter must be a single character"，改用 sed
+  VER=$(sed -n 's/.*"version"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' "$APP_DIR_DST/package.json" | head -1)
+  echo "app-dir deploy OK (v${VER})" | tee -a "$LOG"
 fi
 
-echo "--- 校验已部署 asar 的构建指纹 ---" | tee -a "$LOG"
-"$NODE" "E:/03_学习文件/mind-map-main/electron-app/node_modules/@electron/asar/bin/asar.js" ef "$DST" dist/build-info.json 2>/dev/null | tee -a "$LOG" || echo "(build-info 提取失败，可忽略)" | tee -a "$LOG"
+echo "--- 校验已部署 asar（与本地打包产物逐字节比对 + 指纹提取）---" | tee -a "$LOG"
+# asar 的 ef/list 子命令在本环境输出为空且 node CLI 不认 /d/ 挂载路径（需用 D:/），
+# 因此改用：① cmp 比对部署包与本地 _appstage.asar；② 直接 grep 二进制里的 build-info 字段。
+if cmp -s "/e/03_学习文件/mind-map-main/electron-app/_appstage.asar" "$DST"; then
+  echo "asar 与本地 _appstage.asar 逐字节一致（部署内容正确）" | tee -a "$LOG"
+else
+  echo "WARN: 部署的 app.asar 与本地 _appstage.asar 不一致，请人工核对" | tee -a "$LOG"
+fi
+grep -a -o '"gitHash":[^,}]*' "/e/03_学习文件/mind-map-main/electron-app/_appstage.asar" | head -1 | tee -a "$LOG"
 echo "=== RESULT ===" | tee -a "$LOG"
-ls -la --time-style=+%H:%M:%S "dist-electron/思绪思维导图 Setup.exe" 2>&1 | tee -a "$LOG"
+# 安装包实际产物在 electron-app/dist-electron/（仓库根的 dist-electron/ 是旧路径，已不存在）
+SETUP="electron-app/dist-electron/思绪思维导图 Setup.exe"
+if [ -f "$SETUP" ]; then
+  ls -la --time-style=+%H:%M:%S "$SETUP" | tee -a "$LOG"
+else
+  echo "(本次未构建 NSIS 安装包：SKIP_NSIS=1 或 electron-builder 未执行)" | tee -a "$LOG"
+fi
 echo "END $(date +%T)" | tee -a "$LOG"
