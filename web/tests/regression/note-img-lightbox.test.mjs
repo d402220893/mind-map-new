@@ -83,23 +83,59 @@ test('[F2] NodeNoteContentShow.vue 不再内联 lightbox（已抽出到 NoteImgL
   )
 })
 
-// F1：F1 之前为"插入代码块"按钮外加的 .noteCodeBar 被用户反馈 UI 难看，
-// 且 exec('codeBlock', { language }) 的入参错（WYSIWYG 没有该 payload）导致按钮失效。
-// 重构后：删除底部 .noteCodeBar / codeLang / insertCodeBlock，使用 Toast UI 自带工具栏的 </> 按钮。
+// F1 演进（2026-09-11 二次修正）：
+// 初版在底部加 .noteCodeBar（语言下拉+插入代码块+长提示），用户反馈 UI 难看；
+// 且 exec('codeBlock', { language }) 的入参在 WYSIWYG 下不存在、被静默吞掉 → 插入的是无语言代码块。
+// 二版直接删掉整条栏改用自带 </> 按钮 → 用户反馈"编程语言选择都没了"（找不到入口）。
+// 现行方案：编辑器**上方**一行紧凑工具条 .noteCodeLangBar（无长提示），
+// 插入走 ProseMirror 直接建带 language attrs 的 codeBlock 节点，确保语言真的生效。
 
-test('[F1 回退] NodeNote.vue 移除底部 .noteCodeBar 工具栏（UI 难看+功能失效）', () => {
+test('[F1 语言选择] NodeNote.vue 保留紧凑语言工具条，且不再用底部 .noteCodeBar', () => {
   const s = read(new URL('pages/Edit/components/NodeNote.vue', SRC))
   assert.ok(
     !/class=["']noteCodeBar["']/.test(s),
-    'NodeNote.vue 不应再含底部 .noteCodeBar 工具栏（用 Toast UI 自带工具栏的 </> 按钮）'
+    'NodeNote.vue 不应再含底部 .noteCodeBar（旧版 UI 难看）'
   )
   assert.ok(
-    !/insertCodeBlock/.test(s),
-    'NodeNote.vue 不应再含 insertCodeBlock 方法（exec 入参错；改由自带工具栏触发）'
+    /class=["']noteCodeLangBar["']/.test(s),
+    'NodeNote.vue 应含紧凑语言工具条 .noteCodeLangBar'
   )
   assert.ok(
-    !/codeLang\b/.test(s),
-    'NodeNote.vue 不应再含 codeLang / codeLangs data'
+    /codeLangs\s*:/.test(s) && /codeLang:\s*['"]/.test(s),
+    'NodeNote.vue 应含 codeLang / codeLangs（语言选择数据）'
+  )
+  // 语言条必须在编辑器之前（顶部），不能是底部旧样式
+  assert.ok(
+    s.indexOf('noteCodeLangBar') < s.indexOf('ref="noteEditor"'),
+    '语言工具条应位于编辑器上方（旧版在底部被反馈难看）'
+  )
+})
+
+test('[F1 语言生效] 插入代码块必须把 language 写进 ProseMirror 节点 attrs，禁用 exec payload', () => {
+  const s = read(new URL('pages/Edit/components/NodeNote.vue', SRC))
+  // 断言只作用于代码：源码注释里会引用被禁用的旧写法（说明为何禁用），需先剥离注释
+  const code = s
+    .replace(/\/\*[\s\S]*?\*\//g, '')
+    .split('\n')
+    .map(l => l.replace(/\/\/.*$/, ''))
+    .join('\n')
+  assert.ok(
+    /insertCodeBlock\s*\(/.test(code),
+    'NodeNote.vue 应有 insertCodeBlock 方法'
+  )
+  // 关键回归：exec('codeBlock', { language }) 在 WYSIWYG 下入参被吞 → 绝不能再用
+  assert.ok(
+    !/exec\(\s*['"]codeBlock['"]\s*,\s*\{/.test(code),
+    '禁用 exec("codeBlock", { language })：WYSIWYG 无此 payload，会被静默吞掉（旧 bug）'
+  )
+  // 正确实现：schema.nodes.codeBlock.create({ language }) + dispatch
+  assert.ok(
+    /nodes\.codeBlock\.create\(\s*\{\s*language/.test(code),
+    '必须用 schema.nodes.codeBlock.create({ language }) 把语言写进节点 attrs'
+  )
+  assert.ok(
+    /replaceSelectionWith\(/.test(code),
+    '必须用 replaceSelectionWith 把代码块插入光标处'
   )
 })
 
