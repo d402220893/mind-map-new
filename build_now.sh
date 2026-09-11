@@ -101,7 +101,7 @@ if [ -d "$APP_DIR_DST" ]; then
     || { echo "APP_DIR 改名失败（可能被锁），跳过 app/ 目录同步" | tee -a "$LOG"; }
 fi
 if [ ! -d "$APP_DIR_DST" ]; then
-  powershell -NoProfile -Command "robocopy 'E:/03_学习文件/mind-map-main/electron-app/_appstage' '$APP_DIR_DST' /E /NFL /NDL /NJH /NJS /NC /NS /NP" >> "$LOG" 2>&1
+  powershell -NoProfile -Command "robocopy 'E:/03_学习文件/mind-map-main/electron-app/_appstage' '$APP_DIR_DST' /E /NFL /NDL /NJH /NJS /NC /NS /NP" >> "$LOG" 2>&1 || true
   echo "--- 校验 app/ 目录构建指纹 ---" | tee -a "$LOG"
   cat "$APP_DIR_DST/dist/build-info.json" 2>/dev/null | tee -a "$LOG"
   # app/ 目录守卫：noteCodeBar（v1.0.21 旧代码特征）必须为 0
