@@ -1,1 +1,0 @@
-[2026-08-21T06:30:12.631Z] require(electron) OK, app type=undefined
