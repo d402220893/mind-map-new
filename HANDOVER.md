@@ -9,11 +9,15 @@
 
 把下载的 mind-map（Electron + Vue + simple-mind-map）改造为支持多 Sheet（类 Excel）的思维导图工具，并通过 WinRAR SFX 打包成带 UI 安装向导的 `MindMap-Setup.exe`。
 
+> ⚠️ **2026-09-11 更新：WinRAR SFX 路线已退役**。当前出包统一走 `build_now.sh` → electron-builder NSIS，产物为
+> `electron-app\dist-electron\思绪思维导图 Setup.exe`。本节及下文中所有 `build\MindMapApp\`、`sync_app.js`、`copy.js`、
+> `MindMap.sfx` 相关路径**均已删除**，仅作历史记录保留；新流程请直接看第 3 节与 `build_now.sh`。
+
 | 角色 | 路径 |
 |---|---|
 | 前端源码 | `E:\03_学习文件\mind-map-main\web\src\` |
-| 构建产物同步目标 | `E:\03_学习文件\mind-map-main\build\MindMapApp\resources\app\` |
-| 安装包（SFX） | `E:\03_学习文件\mind-map-main\build\MindMap-Setup.exe`（WinRAR 自解压，靠 `sfx_config.txt` 的 `Setup=MindMap.exe --install` 拉起 Electron GUI 向导） |
+| 构建产物同步目标 | ~~`E:\03_学习文件\mind-map-main\build\MindMapApp\resources\app\`~~（已删；现为 `electron-app\dist\` → `resources\app\`） |
+| 安装包（SFX） | ~~`E:\03_学习文件\mind-map-main\build\MindMap-Setup.exe`~~（已删；现为 NSIS `思绪思维导图 Setup.exe`） |
 | 主进程 | `build\MindMapApp\resources\app\main.js` |
 | 重打包 Skill | `C:\Users\d36847\.workbuddy\skills\mind-map-electron-repack\SKILL.md` |
 | 项目 Memory | `E:\03_学习文件\mind-map-main\.workbuddy\memory\2026-08-25.md` |
