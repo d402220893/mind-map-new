@@ -700,10 +700,29 @@ export default {
       width: 150px;
       cursor: auto;
 
+      // 透明桥接：覆盖父菜单项与子菜单之间的 6px 间隙。
+      // 鼠标从“图标”项滑向子菜单会经过这片空白，而 visibility:hidden
+      // 的元素不接收指针事件，纯 CSS :hover 在间隙处丢失 → 子菜单瞬间消失。
+      // 伪元素把命中区向左延伸覆盖间隙，鼠标可平滑滑入子菜单（图标面板同理）。
+      &::before {
+        content: '';
+        position: absolute;
+        top: 0;
+        left: -16px;
+        width: 16px;
+        bottom: 0;
+        background: transparent;
+      }
+
       &.showLeft {
         left: -150px;
         margin-left: 0;
         margin-right: 6px;
+
+        &::before {
+          left: auto;
+          right: -16px;
+        }
       }
     }
 
