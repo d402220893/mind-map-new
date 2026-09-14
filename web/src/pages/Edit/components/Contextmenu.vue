@@ -636,6 +636,27 @@ export default {
   .item {
     position: relative;
     height: 32px;
+
+    // 透明桥接走廊：放在父项上（.item 无 overflow），覆盖父项与子菜单之间
+    // 的 6px 间隙 + 子菜单竖直范围，鼠标从父项平滑滑入子菜单不会丢失 :hover。
+    // 注意：图标面板 .iconPanel 有 overflow-y:auto，子菜单自身的 ::before 会被裁切，
+    // 故桥接必须上移到父项 ::after。z-index 低于 .subItems，避免遮挡子菜单点击。
+    &:has(.subItems)::after {
+      content: '';
+      position: absolute;
+      top: -12px;
+      height: 340px;
+      right: -18px;
+      width: 18px;
+      background: transparent;
+      z-index: 0;
+    }
+
+    // 子菜单翻到左侧时（subItemsShowLeft），桥接走廊镜像到父项左侧
+    &:has(.subItems.showLeft)::after {
+      right: auto;
+      left: -18px;
+    }
     padding: 0 10px;
     margin: 0 4px;
     border-radius: var(--macos-radius-xs);
@@ -699,30 +720,12 @@ export default {
       visibility: hidden;
       width: 150px;
       cursor: auto;
-
-      // 透明桥接：覆盖父菜单项与子菜单之间的 6px 间隙。
-      // 鼠标从“图标”项滑向子菜单会经过这片空白，而 visibility:hidden
-      // 的元素不接收指针事件，纯 CSS :hover 在间隙处丢失 → 子菜单瞬间消失。
-      // 伪元素把命中区向左延伸覆盖间隙，鼠标可平滑滑入子菜单（图标面板同理）。
-      &::before {
-        content: '';
-        position: absolute;
-        top: 0;
-        left: -16px;
-        width: 16px;
-        bottom: 0;
-        background: transparent;
-      }
+      z-index: 1; // 高于父项 ::after 桥接，避免桥接遮挡子菜单点击
 
       &.showLeft {
         left: -150px;
         margin-left: 0;
         margin-right: 6px;
-
-        &::before {
-          left: auto;
-          right: -16px;
-        }
       }
     }
 
