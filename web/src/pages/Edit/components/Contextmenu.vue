@@ -65,12 +65,12 @@
       <div class="item" @click="addOrEditNote">
         <span class="name">{{ $t('contextmenu.nodeNote') }}</span>
       </div>
-      <div class="item iconMenuItem">
+      <div class="item iconMenuItem" @mouseenter="onSubEnter" @mouseleave="onSubLeave">
         <span class="name">{{ $t('contextmenu.nodeIcon') || '图标' }}</span>
         <span class="el-icon-arrow-right"></span>
         <div
           class="subItems iconPanel listBox"
-          :class="{ isDark: isDark, showLeft: subItemsShowLeft }"
+          :class="{ isDark: isDark, showLeft: subItemsShowLeft, show: subOpen }"
           style="top: -10px"
         >
           <div
@@ -152,12 +152,12 @@
       <div class="item" @click="exec('UNEXPAND_ALL')">
         <span class="name">{{ $t('contextmenu.unExpandAll') }}</span>
       </div>
-      <div class="item">
+      <div class="item" @mouseenter="onSubEnter" @mouseleave="onSubLeave">
         <span class="name">{{ $t('contextmenu.expandTo') }}</span>
         <span class="el-icon-arrow-right"></span>
         <div
           class="subItems listBox"
-          :class="{ isDark: isDark, showLeft: subItemsShowLeft }"
+          :class="{ isDark: isDark, showLeft: subItemsShowLeft, show: subOpen }"
           style="top: -10px"
         >
           <div
@@ -189,12 +189,12 @@
           $t('contextmenu.removeAllNodeCustomStyles')
         }}</span>
       </div>
-      <div class="item">
+      <div class="item" @mouseenter="onSubEnter" @mouseleave="onSubLeave">
         <span class="name">{{ $t('contextmenu.copyToClipboard') }}</span>
         <span class="el-icon-arrow-right"></span>
         <div
           class="subItems listBox"
-          :class="{ isDark: isDark, showLeft: subItemsShowLeft }"
+          :class="{ isDark: isDark, showLeft: subItemsShowLeft, show: subOpen }"
           style="top: -130px"
         >
           <div
@@ -242,6 +242,8 @@ export default {
       numberType: '',
       numberLevel: '',
       subItemsShowLeft: false,
+      subOpen: false,
+      subTimer: null,
       isNodeMousedown: false
     }
   },
@@ -358,6 +360,10 @@ export default {
     this.$bus.$off('mouseup', this.onMouseup)
     this.$bus.$off('translate', this.hide)
     this.$bus.$off('node_mousedown', this.onNodeMousedown)
+    if (this.subTimer) {
+      clearTimeout(this.subTimer)
+      this.subTimer = null
+    }
   },
   methods: {
     ...mapMutations(['setLocalConfig']),
@@ -447,6 +453,11 @@ export default {
       this.node = ''
       this.numberType = ''
       this.numberLevel = ''
+      this.subOpen = false
+      if (this.subTimer) {
+        clearTimeout(this.subTimer)
+        this.subTimer = null
+      }
     },
 
     // 图标渲染：svg 字符串直接渲染，否则当 img src
@@ -590,6 +601,27 @@ export default {
       if (!this.node) return
       this.$bus.$emit('showNodeNote', this.node)
       this.hide()
+    },
+
+    // 子菜单显隐改用 JS 控制 + 延迟关闭，彻底消除纯 CSS :hover 在间隙处偶发瞬隐的时序不确定性。
+    // mouseenter/leave 不冒泡：鼠标在父项与其子菜单（同源子树）间移动不会触发父项 mouseleave，
+    // 只有真正离开整个子树才触发。离开时启动 180ms 定时器，期间划过 6px 间隙/桥接区或快速甩动
+    // 都不会关闭；进入子菜单后 onSubEnter 清定时器保持展开。
+    onSubEnter() {
+      if (this.subTimer) {
+        clearTimeout(this.subTimer)
+        this.subTimer = null
+      }
+      this.subOpen = true
+    },
+    onSubLeave() {
+      if (this.subTimer) {
+        clearTimeout(this.subTimer)
+      }
+      this.subTimer = setTimeout(() => {
+        this.subOpen = false
+        this.subTimer = null
+      }, 180)
     }
   }
 }
@@ -674,19 +706,15 @@ export default {
       }
     }
 
-    &:hover {
-      background: var(--macos-accent-soft);
-      color: var(--macos-accent);
-
-      .desc {
+      &:hover {
+        background: var(--macos-accent-soft);
         color: var(--macos-accent);
-        opacity: 0.75;
-      }
 
-      .subItems {
-        visibility: visible;
+        .desc {
+          color: var(--macos-accent);
+          opacity: 0.75;
+        }
       }
-    }
 
     &.disabled {
       color: var(--macos-text-3);
@@ -721,6 +749,14 @@ export default {
       width: 150px;
       cursor: auto;
       z-index: 1; // 高于父项 ::after 桥接，避免桥接遮挡子菜单点击
+
+      // 子菜单显隐改由 JS 控制（.show 类），不再依赖纯 CSS :hover。
+      // 原因：:hover 命中受浏览器事件节流影响，鼠标在 6px 间隙/桥接区快速划过或
+      // 斜向移动时会出现一帧“子菜单已 hidden、鼠标已不在父项”的窗口 → 偶发瞬隐且难恢复。
+      // JS 方案配 180ms 延迟关闭定时器（onSubEnter/onSubLeave）彻底消除该时序不确定性。
+      &.show {
+        visibility: visible;
+      }
 
       &.showLeft {
         left: -150px;
