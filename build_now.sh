@@ -6,7 +6,10 @@ export ELECTRON_MIRROR=https://npmmirror.com/mirrors/electron/
 # 会导致 packaging 阶段卡死。nsis 等二进制已缓存到 ~/.cache/electron-builder，
 # 故不再设置 ELECTRON_BUILDER_BINARIES_MIRROR，让 electron-builder 用本地缓存 + GitHub 默认。
 export CSC_IDENTITY_AUTO_DISCOVERY=false
-export PATH="/c/Users/d36847/.workbuddy/binaries/node/versions/22.22.2-3:$PATH"
+# 自带完整 PATH：WorkBuddy 的 bash 初始化偶尔不注入 git usr/bin，会导致脚本内
+# timeout/cp/mv/tee/grep/sed/cmp 等 coreutils 找不到（Exit 127），构建链路异常/僵死。
+# 这里显式补齐 git 的 usr/bin + bin + node，使脚本不再依赖外层环境 PATH。
+export PATH="/c/Users/d36847/.workbuddy/binaries/node/versions/22.22.2-3:/c/Users/d36847/.workbuddy/binaries/PortableGit/versions/1.2.0/usr/bin:/c/Users/d36847/.workbuddy/binaries/PortableGit/versions/1.2.0/bin:$PATH"
 NODE=/c/Users/d36847/.workbuddy/binaries/node/versions/22.22.2-3/node.exe
 LOG=/e/03_学习文件/mind-map-main/build_now.log
 : > "$LOG"
@@ -20,7 +23,12 @@ cd /e/03_学习文件/mind-map-main/web
 # 是本项目"改了没生效"的高频根因。每次构建强制清，牺牲少量增量速度换取可部署性。
 echo "--- 清 webpack 缓存 (node_modules/.cache) ---" | tee -a "$LOG"
 env -u NODE_OPTIONS "$NODE" -e "require('fs').rmSync('node_modules/.cache',{recursive:true,force:true})" 2>/dev/null || true
-BUILD_LOW_MEM=1 NODE_OPTIONS="--openssl-legacy-provider --max-old-space-size=4096" timeout 480 "$NODE" node_modules/@vue/cli-service/bin/vue-cli-service.js build >> "$LOG" 2>&1
+# vue build 用 node 包装，带可靠硬超时：msys 的 timeout 对 Windows node 子进程树（webpack worker）
+# 无法真正终止，会随管道 EOF 永久挂起 → 整链卡死在 [1/5]。run_vue_build.js 超时后
+# 用 taskkill /T /F 杀整个进程树并 exit 2（下方判定为 VUE BUILD FAILED），保证绝不无限卡。
+# 注意：传给 node 的绝对路径必须用 Windows 风格 E:/...，不能用 git-bash 的 /e/ 前缀
+# （/e/ 作为 argv 传给原生 node 会被错拼成 E:\e\... 导致 MODULE_NOT_FOUND）。
+BUILD_LOW_MEM=1 env -u NODE_OPTIONS "$NODE" E:/03_学习文件/mind-map-main/run_vue_build.js >> "$LOG" 2>&1
 RC=$?
 echo "vue rc=$RC at $(date +%T)" | tee -a "$LOG"
 if [ $RC -ne 0 ] || [ ! -f /e/03_学习文件/mind-map-main/dist/index.html ]; then
@@ -69,8 +77,15 @@ echo "=== [4/5] electron-builder (NSIS 安装包，可选) ===" | tee -a "$LOG"
 # 构建只删除 dist-electron 自身的临时产物，清空 NODE_OPTIONS 不影响用户数据安全。
 export NODE_OPTIONS=""
 if [ -z "$SKIP_NSIS" ]; then
-  timeout 600 npm run dist >> "$LOG" 2>&1
-  echo "builder rc=$? at $(date +%T)" | tee -a "$LOG"
+  # 绕 Defender 实时防护对 dist-electron/win-unpacked/resources/app.asar 的只读锁：
+  # electron-builder 的 EnsureEmptyDir 删旧 app.asar 时因被锁报 EBUSY/EPERM，NSIS 步骤整体失败。
+  # 改用独立输出目录 dist-electron2 避开被锁旧目录，生成后再把 Setup.exe 拷回 dist-electron/。
+  timeout 600 npm run dist -- --config.directories.output=dist-electron2 >> "$LOG" 2>&1
+  RC=$?
+  echo "builder rc=$RC at $(date +%T)" | tee -a "$LOG"
+  if [ $RC -ne 0 ]; then echo "NSIS 构建失败" | tee -a "$LOG"; exit 1; fi
+  echo "--- 拷回 Setup.exe (PowerShell -Force 绕 Defender 读锁) ---" | tee -a "$LOG"
+  powershell -NoProfile -Command "Copy-Item -Force 'E:/03_学习文件/mind-map-main/electron-app/dist-electron2/思绪思维导图 Setup.exe' 'E:/03_学习文件/mind-map-main/electron-app/dist-electron/思绪思维导图 Setup.exe'" >> "$LOG" 2>&1 || echo "WARN: 拷回 Setup.exe 失败(可能被锁)，请检查 dist-electron2 下产物" | tee -a "$LOG"
 else
   echo "SKIP_NSIS 已设置，跳过 NSIS 安装包构建（仅在 [5/5] 部署到运行真源）" | tee -a "$LOG"
 fi
