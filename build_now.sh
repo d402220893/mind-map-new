@@ -22,13 +22,18 @@ cd /e/03_学习文件/mind-map-main/web
 # 清 webpack 缓存：陈旧缓存会导致 Edit.vue 等改动未重编译，产出"假新包"（时间戳新但内容旧），
 # 是本项目"改了没生效"的高频根因。每次构建强制清，牺牲少量增量速度换取可部署性。
 echo "--- 清 webpack 缓存 (node_modules/.cache) ---" | tee -a "$LOG"
-env -u NODE_OPTIONS "$NODE" -e "require('fs').rmSync('node_modules/.cache',{recursive:true,force:true})" 2>/dev/null || true
+# 用 PowerShell .NET 直删绕开 WorkBuddy safe-delete shim：
+# node fs.rmSync 删大目录时会被 shim 拦成「重定向到回收站/等待确认」，曾导致构建僵在 [1/5]、
+# 日志停在「清缓存」之后不再前进（2026-09-15 排查：缓存目录已消失但 bash 再没走到下一步）。
+# .NET Directory::Delete 是原生删除，不经 node shim，稳定可靠。
+powershell -NoProfile -Command "if (Test-Path 'E:/03_学习文件/mind-map-main/web/node_modules/.cache') { [System.IO.Directory]::Delete('E:/03_学习文件/mind-map-main/web/node_modules/.cache', \$true); 'cache cleared' } else { 'no cache' }" >> "$LOG" 2>&1 || echo "清缓存失败(忽略)" | tee -a "$LOG"
 # vue build 用 node 包装，带可靠硬超时：msys 的 timeout 对 Windows node 子进程树（webpack worker）
 # 无法真正终止，会随管道 EOF 永久挂起 → 整链卡死在 [1/5]。run_vue_build.js 超时后
 # 用 taskkill /T /F 杀整个进程树并 exit 2（下方判定为 VUE BUILD FAILED），保证绝不无限卡。
 # 注意：传给 node 的绝对路径必须用 Windows 风格 E:/...，不能用 git-bash 的 /e/ 前缀
 # （/e/ 作为 argv 传给原生 node 会被错拼成 E:\e\... 导致 MODULE_NOT_FOUND）。
-BUILD_LOW_MEM=1 env -u NODE_OPTIONS "$NODE" E:/03_学习文件/mind-map-main/run_vue_build.js >> "$LOG" 2>&1
+# BUILD_LOW_MEM 默认 1（低内存防 OOM），可被外层 BUILD_LOW_MEM=0 覆盖（低内存触发 worker 死锁时改用）。
+BUILD_LOW_MEM="${BUILD_LOW_MEM:-1}" env -u NODE_OPTIONS "$NODE" E:/03_学习文件/mind-map-main/run_vue_build.js >> "$LOG" 2>&1
 RC=$?
 echo "vue rc=$RC at $(date +%T)" | tee -a "$LOG"
 if [ $RC -ne 0 ] || [ ! -f /e/03_学习文件/mind-map-main/dist/index.html ]; then

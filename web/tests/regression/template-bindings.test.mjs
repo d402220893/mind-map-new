@@ -262,3 +262,57 @@ test('[备注对话框点击外不关] NodeNote.vue 点击外部区域不应关�
   )
 })
 
+// ===== 修复：跨工作表复制带图节点后图片破图（HIGH）=====
+// 复现：NodeBase64ImageStorage 把 base64 节点图片抽成 key 存在「每个工作表各一份」
+// 的 imgMap 里，而 simple-mind-map 的复制只带节点 data（image 字段是 smm_img_key_xxx），
+// 跨表粘贴后目标表 imgMap 无此 key → 地址退化为 'smm_img_key_xxx' 字符串 → 破图。
+// 修复：模块级 key 注册表跨表共享 + beforeAddHistory 钩子补全悬空 key + 载入前预修复老文件。
+test('[跨表图片] Edit.vue 接入 nodeImageKeys 修复（import + 钩子 + 载入预修复）', () => {
+  const vue = read(new URL('pages/Edit/components/Edit.vue', SRC))
+  // 1) 必须 import 修复工具
+  assert.ok(
+    /from\s+['"]@\/utils\/nodeImageKeys['"]/.test(vue),
+    'Edit.vue 应 import @/utils/nodeImageKeys 修复工具'
+  )
+  assert.ok(
+    /harvestImageKeysFromContainer/.test(vue),
+    'Edit.vue 应调用 harvestImageKeysFromContainer 登记工作簿图片 key'
+  )
+  assert.ok(
+    /repairDanglingImageKeys/.test(vue),
+    'Edit.vue 应调用 repairDanglingImageKeys 补全悬空 key'
+  )
+  // 2) mounted 里注册 beforeAddHistory 钩子，且绑到 handleBeforeAddHistory
+  assert.ok(
+    /mindMap\.on\(\s*['"]beforeAddHistory['"]\s*,\s*this\.handleBeforeAddHistory\s*\)/.test(vue),
+    'mounted 应 mindMap.on(beforeAddHistory, handleBeforeAddHistory) 注册修复钩子'
+  )
+  // 3) 必须定义 handleBeforeAddHistory 方法体
+  const handler = /handleBeforeAddHistory\s*\(\)\s*\{[\s\S]*?\n\s\s\s\s\},/.exec(vue)
+  assert.ok(handler, '应能找到 handleBeforeAddHistory 方法体')
+  assert.ok(
+    /repairDanglingImageKeys\(tree\)/.test(handler[0]),
+    'handleBeforeAddHistory 内必须 repairDanglingImageKeys(tree) 补全悬空 key'
+  )
+  assert.ok(
+    /this\.mindMap\.reRender\(\)/.test(handler[0]),
+    'handleBeforeAddHistory 补全后应 reRender() 重绘（否则画布仍是悬空 key）'
+  )
+  // 4) beforeDestroy 解绑，防组件复用/切换时重复触发
+  assert.ok(
+    /mindMap\.off\(\s*['"]beforeAddHistory['"]\s*,\s*this\.handleBeforeAddHistory\s*\)/.test(vue),
+    'beforeDestroy 应 mindMap.off(beforeAddHistory, handleBeforeAddHistory) 解绑'
+  )
+  // 5) loadSheetData 载入前预修复老文件残留的悬空 key
+  const loadSheet = /loadSheetData\(data\)\s*\{[\s\S]*?\n\s\s\s\s\},/.exec(vue)
+  assert.ok(loadSheet, '应能找到 loadSheetData 方法体')
+  assert.ok(
+    /harvestImageKeysFromContainer\(getSheetsContainer\(\)\)/.test(loadSheet[0]),
+    'loadSheetData 载入前应 harvestImageKeysFromContainer 登记全工作簿 key'
+  )
+  assert.ok(
+    /repairDanglingImageKeys\(data\)/.test(loadSheet[0]),
+    'loadSheetData 载入前应 repairDanglingImageKeys(data) 修老文件悬空 key'
+  )
+})
+

@@ -149,6 +149,11 @@ import OutlineEdit from './OutlineEdit.vue'
 import { showLoading, hideLoading } from '@/utils/loading'
 import handleClipboardText from '@/utils/handleClipboardText'
 import { getParentWithClass } from '@/utils'
+import {
+  harvestImageKeysFromTree,
+  harvestImageKeysFromContainer,
+  repairDanglingImageKeys
+} from '@/utils/nodeImageKeys'
 import Scrollbar from './Scrollbar.vue'
 import exampleData from 'simple-mind-map/example/exampleData'
 import FormulaSidebar from './FormulaSidebar.vue'
@@ -347,6 +352,22 @@ export default {
     // 全局快捷键：Ctrl+S 保存 / Ctrl+Shift+S 另存为 / Ctrl+O 打开 / F2 编辑当前节点
     // 原代码 onGlobalKeydown 声明了但未注册到 window keydown，导致快捷键全部无效
     window.addEventListener('keydown', this.onGlobalKeydown)
+    // 跨工作表复制节点后「图片变破图」的修复钩子（详见 utils/nodeImageKeys.js）：
+    // NodeBase64ImageStorage 插件把 base64 图片抽成 key 存在「每个工作表各自的 imgMap」里，
+    // 而库的复制只带节点 data（此时 image 字段是 smm_img_key_xxx），跨表粘贴后 key 悬空 → 破图。
+    // beforeAddHistory 在历史快照之前触发，正好可以把本表缺的 key 从注册表补回 imgMap，
+    // 补全后的数据会随快照/保存落库，属于永久修复。
+    // 注意注册顺序：插件在 MindMap 构造时注册（更早），本钩子更晚 → 必定跑在插件抽取之后。
+    if (this.mindMap && typeof this.mindMap.on === 'function') {
+      this.mindMap.on('beforeAddHistory', this.handleBeforeAddHistory)
+    }
+    // 初始载入的工作表不走 loadSheetData，这里补一次全工作簿图片 key 登记，
+    // 保证「首次复制」时源工作表的图片 key 已在注册表里。
+    try {
+      harvestImageKeysFromContainer(getSheetsContainer())
+    } catch (e) {
+      console.error('初始登记节点图片 key 失败', e)
+    }
     this.webTip()
     // 自动保存：在 bindSaveEvent 注册之后初始化调度器
     this.initAutosave()
@@ -378,6 +399,9 @@ export default {
     window.removeEventListener('beforeunload', this.handleBeforeUnload)
     window.removeEventListener('paste', this.onPaste, true)
     window.removeEventListener('keydown', this.onGlobalKeydown)
+    if (this.mindMap && typeof this.mindMap.off === 'function') {
+      this.mindMap.off('beforeAddHistory', this.handleBeforeAddHistory)
+    }
     if (this.autosaveScheduler) {
       this.autosaveScheduler.cancel()
       this.autosaveScheduler = null
@@ -682,6 +706,30 @@ export default {
       }
     },
 
+    // ===== 跨工作表复制节点时的节点图片修复 =====
+    // 详见 utils/nodeImageKeys.js 顶部注释：base64 节点图片被插件抽成 key 存在
+    // 「每个工作表各自一份」的 imgMap 里，而库的复制不带 imgMap → 跨表粘贴后 key 悬空 → 破图。
+    // 本钩子挂在 mindMap 的 beforeAddHistory（历史快照之前），补全后再重渲染一次。
+    handleBeforeAddHistory() {
+      const renderer = this.mindMap && this.mindMap.renderer
+      const tree = renderer && renderer.renderTree
+      if (!tree) return
+      // 先把本表已有的 key 登记进注册表，供之后粘贴到别的工作表时查
+      harvestImageKeysFromTree(tree)
+      const repaired = repairDanglingImageKeys(tree)
+      if (repaired > 0) {
+        // 数据已补全，但画布上 <image> 加载的仍是悬空 key，必须重渲染才能换成真图。
+        // 延到下一帧执行：本钩子跑在 addHistory 内部，同步 reRender 会递归触发历史记录。
+        this.$nextTick(() => {
+          try {
+            if (this.mindMap) this.mindMap.reRender()
+          } catch (e) {
+            console.error('修复跨表复制节点图片后重渲染失败', e)
+          }
+        })
+      }
+    },
+
     // ===== 多工作表 =====
     // 刷新工作表列表与激活项
     refreshSheets() {
@@ -696,6 +744,15 @@ export default {
     // 用 setTimeout(80) 经常在事件到达前就放行，导致切换文件后被误标 dirty。
     loadSheetData(data) {
       this._isLoading = true
+      // 载入前先登记「整个工作簿」的图片 key，并补全本表被引用却缺失的 key。
+      // 老文件里可能残留跨工作表复制留下的悬空 key（表现为图片显示"加载失败"占位图），
+      // 这里顺手修掉；详见 utils/nodeImageKeys.js。
+      try {
+        harvestImageKeysFromContainer(getSheetsContainer())
+        repairDanglingImageKeys(data)
+      } catch (e) {
+        console.error('载入工作表前修复节点图片引用失败', e)
+      }
       if (data && data.root) {
         this.mindMap.setFullData(data)
       } else {
