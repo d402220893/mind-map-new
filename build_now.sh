@@ -9,14 +9,61 @@ export CSC_IDENTITY_AUTO_DISCOVERY=false
 # 自带完整 PATH：WorkBuddy 的 bash 初始化偶尔不注入 git usr/bin，会导致脚本内
 # timeout/cp/mv/tee/grep/sed/cmp 等 coreutils 找不到（Exit 127），构建链路异常/僵死。
 # 这里显式补齐 git 的 usr/bin + bin + node，使脚本不再依赖外层环境 PATH。
-export PATH="/c/Users/d36847/.workbuddy/binaries/node/versions/22.22.2-3:/c/Users/d36847/.workbuddy/binaries/PortableGit/versions/1.2.0/usr/bin:/c/Users/d36847/.workbuddy/binaries/PortableGit/versions/1.2.0/bin:$PATH"
-NODE=/c/Users/d36847/.workbuddy/binaries/node/versions/22.22.2-3/node.exe
+# 自动探测 WorkBuddy 托管的 node 版本目录（版本号会随环境变化，写死易失效 → 2026-09 多次踩坑）
+NODE_BASE="/c/Users/d36847/.workbuddy/binaries/node/versions"
+NODE_VER=""
+if [ -d "$NODE_BASE" ]; then
+  NODE_VER=$(ls -1 "$NODE_BASE" 2>/dev/null | grep -E '^[0-9]' | sort -V | tail -1)
+fi
+if [ -n "$NODE_VER" ] && [ -x "$NODE_BASE/$NODE_VER/node.exe" ]; then
+  NODE="$NODE_BASE/$NODE_VER/node.exe"
+else
+  NODE=/c/Users/d36847/.workbuddy/binaries/node/versions/22.22.2-3/node.exe
+fi
+export PATH="$(dirname "$NODE"):/c/Users/d36847/.workbuddy/binaries/PortableGit/versions/1.2.0/usr/bin:/c/Users/d36847/.workbuddy/binaries/PortableGit/versions/1.2.0/bin:$PATH"
+NPM="npm"
+ROOT=/e/03_学习文件/mind-map-main
+WEB="$ROOT/web"
+APP="$ROOT/electron-app"
 LOG=/e/03_学习文件/mind-map-main/build_now.log
 : > "$LOG"
 echo "START $(date +%T)" | tee -a "$LOG"
 pkill -9 -f vue-cli-service.js 2>/dev/null || true
 pkill -9 -f app-builder 2>/dev/null || true
 sleep 1
+echo "=== [0/5] 依赖自检与自动安装 ===" | tee -a "$LOG"
+# 依赖是可再生的构建缓存（非源码），清理时被删属正常；此处自动补齐，实现"一键编包"。
+# 仅校验关键入口二进制，避免目录存在但安装残缺的假阳性。
+ensure_deps() {
+  local dir="$1"
+  local bin="$2"
+  local label="$3"
+  if [ -f "$bin" ]; then
+    echo "  [OK] $label 依赖齐全" | tee -a "$LOG"
+    return 0
+  fi
+  echo "  [缺失] $label 依赖不存在，自动安装中（命中 npm 缓存会很快，但 reify 解压受 Defender 实时扫描影响可能需 30~60 分钟，已设 1h 超时）..." | tee -a "$LOG"
+  ( cd "$dir" && timeout 3600 "$NPM" install --no-audit --no-fund --prefer-offline --loglevel=http ) 2>&1 | tee -a "$LOG"
+  local rc=${PIPESTATUS[0]}
+  if [ $rc -ne 0 ]; then
+    echo "  [WARN] $label 首次安装 rc=$rc，清理残缺 node_modules 后重试一次..." | tee -a "$LOG"
+    powershell -NoProfile -Command "if (Test-Path '${dir}/node_modules') { [System.IO.Directory]::Delete('${dir}/node_modules', \$true) }" >> "$LOG" 2>&1 || true
+    ( cd "$dir" && timeout 3600 "$NPM" install --no-audit --no-fund --prefer-offline --loglevel=http ) 2>&1 | tee -a "$LOG"
+    rc=${PIPESTATUS[0]}
+    if [ $rc -ne 0 ]; then
+      echo "  [FAIL] $label 安装失败(rc=$rc)，请检查网络/registry 后重试" | tee -a "$LOG"
+      return 1
+    fi
+  fi
+  if [ -f "$bin" ]; then
+    echo "  [OK] $label 安装完成" | tee -a "$LOG"
+  else
+    echo "  [FAIL] $label 安装后仍未找到 $bin" | tee -a "$LOG"
+    return 1
+  fi
+}
+ensure_deps "$WEB" "$WEB/node_modules/.bin/vue-cli-service" "web (vue build)" || exit 1
+ensure_deps "$APP" "$APP/node_modules/@electron/asar/bin/asar.js" "electron-app (asar)" || exit 1
 echo "=== [1/5] vue build ===" | tee -a "$LOG"
 cd /e/03_学习文件/mind-map-main/web
 # 清 webpack 缓存：陈旧缓存会导致 Edit.vue 等改动未重编译，产出"假新包"（时间戳新但内容旧），
@@ -84,13 +131,16 @@ export NODE_OPTIONS=""
 if [ -z "$SKIP_NSIS" ]; then
   # 绕 Defender 实时防护对 dist-electron/win-unpacked/resources/app.asar 的只读锁：
   # electron-builder 的 EnsureEmptyDir 删旧 app.asar 时因被锁报 EBUSY/EPERM，NSIS 步骤整体失败。
-  # 改用独立输出目录 dist-electron2 避开被锁旧目录，生成后再把 Setup.exe 拷回 dist-electron/。
+  # 故改用独立输出目录 dist-electron2 避开被锁旧目录。
+  # ⚠️ 不再把 Setup.exe 拷回 dist-electron/：那样会得到两份完全相同的安装包（用户只想要一份）。
+  #    安装包唯一产物固定为 electron-app/dist-electron2/思绪思维导图 Setup.exe
   timeout 600 npm run dist -- --config.directories.output=dist-electron2 >> "$LOG" 2>&1
   RC=$?
   echo "builder rc=$RC at $(date +%T)" | tee -a "$LOG"
   if [ $RC -ne 0 ]; then echo "NSIS 构建失败" | tee -a "$LOG"; exit 1; fi
-  echo "--- 拷回 Setup.exe (PowerShell -Force 绕 Defender 读锁) ---" | tee -a "$LOG"
-  powershell -NoProfile -Command "Copy-Item -Force 'E:/03_学习文件/mind-map-main/electron-app/dist-electron2/思绪思维导图 Setup.exe' 'E:/03_学习文件/mind-map-main/electron-app/dist-electron/思绪思维导图 Setup.exe'" >> "$LOG" 2>&1 || echo "WARN: 拷回 Setup.exe 失败(可能被锁)，请检查 dist-electron2 下产物" | tee -a "$LOG"
+  # 清理历史遗留的 dist-electron/（旧绕行方案残留：重复的 Setup.exe + 0 字节 asar 垃圾），
+  # 确保全项目始终只有一个安装包。用 .NET Directory::Delete 直删，绕开 safe-delete 钩子。
+  powershell -NoProfile -Command "if (Test-Path 'E:/03_学习文件/mind-map-main/electron-app/dist-electron') { [System.IO.Directory]::Delete('E:/03_学习文件/mind-map-main/electron-app/dist-electron', \$true); 'legacy dist-electron cleaned' } else { 'no legacy dist-electron' }" >> "$LOG" 2>&1 || true
 else
   echo "SKIP_NSIS 已设置，跳过 NSIS 安装包构建（仅在 [5/5] 部署到运行真源）" | tee -a "$LOG"
 fi
@@ -144,8 +194,8 @@ else
 fi
 grep -a -o '"gitHash":[^,}]*' "/e/03_学习文件/mind-map-main/electron-app/_appstage.asar" | head -1 | tee -a "$LOG"
 echo "=== RESULT ===" | tee -a "$LOG"
-# 安装包实际产物在 electron-app/dist-electron/（仓库根的 dist-electron/ 是旧路径，已不存在）
-SETUP="electron-app/dist-electron/思绪思维导图 Setup.exe"
+# 安装包唯一产物在 electron-app/dist-electron2/（dist-electron 是绕 Defender 锁的旧绕行目录，已废弃）
+SETUP="electron-app/dist-electron2/思绪思维导图 Setup.exe"
 if [ -f "$SETUP" ]; then
   ls -la --time-style=+%H:%M:%S "$SETUP" | tee -a "$LOG"
 else
