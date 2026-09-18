@@ -61,9 +61,11 @@
         v-for="(item, index) in searchResultList"
         :key="item.id"
         :title="item.name"
-        v-html="item.text"
         @click.stop="onSearchResultItemClick(index)"
-      ></div>
+      >
+        <span class="noteBadge" v-if="item.noteHit">备注</span>
+        <span v-html="item.text"></span>
+      </div>
       <div class="empty" v-if="searchResultList.length <= 0">
         <span class="iconfont iconwushuju"></span>
         <span class="text">{{ $t('search.noResult') }}</span>
@@ -74,7 +76,53 @@
 
 <script>
 import { mapState } from 'vuex'
-import { isUndef, getTextFromHtml } from 'simple-mind-map/src/utils/index'
+import {
+  isUndef,
+  getTextFromHtml,
+  bfsWalk
+} from 'simple-mind-map/src/utils/index'
+
+// 正则特殊字符转义
+function escapeRegExp(s) {
+  return (s || '').replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+}
+
+// 转义 HTML，避免备注里的 < > & 被当成标签
+function escapeHtml(s) {
+  return (s || '').replace(/[&<>"']/g, c => {
+    return {
+      '&': '&amp;',
+      '<': '&lt;',
+      '>': '&gt;',
+      '"': '&quot;',
+      "'": '&#39;'
+    }[c]
+  })
+}
+
+// 高亮命中的关键词（先转义再包裹 match 样式）
+function highlight(text, q) {
+  const safe = escapeHtml(text)
+  if (!q) return safe
+  const re = new RegExp(escapeRegExp(q), 'g')
+  return safe.replace(re, m => `<span class="match">${m}</span>`)
+}
+
+// 从备注里取出包含关键词的一小段作为结果预览
+function getNoteSnippet(note, q) {
+  const oneLine = (note || '')
+    .replace(/\r?\n/g, ' ')
+    .replace(/\s+/g, ' ')
+  const idx = oneLine.indexOf(q)
+  if (idx === -1) return oneLine.slice(0, 50)
+  const start = Math.max(0, idx - 12)
+  const end = Math.min(oneLine.length, idx + q.length + 18)
+  return (
+    (start > 0 ? '…' : '') +
+    oneLine.slice(start, end) +
+    (end < oneLine.length ? '…' : '')
+  )
+}
 
 // 搜索替换
 export default {
@@ -122,6 +170,8 @@ export default {
       'search_match_node_list_change',
       this.onSearchMatchNodeListChange
     )
+    // 让搜索同时命中节点备注（node.data.note 里的 markdown 内容）
+    this.patchSearchWithNote()
     this.mindMap.keyCommand.addShortcut('Control+f', this.showSearch)
     window.addEventListener('resize', this.setSearchResultListHeight)
     this.$bus.$on('setData', this.close)
@@ -145,6 +195,63 @@ export default {
   },
   methods: {
     isUndef,
+
+    // 给 simple-mind-map 自带的 Search 插件打补丁：在标题匹配之外，
+    // 把"备注(node.data.note)里包含关键词"的节点也并入匹配列表。
+    // 这样高亮、跳转、计数都自动沿用插件原有逻辑，且不改动 node_modules。
+    patchSearchWithNote() {
+      const mindMap = this.mindMap
+      if (!mindMap || !mindMap.search) return
+      const search = mindMap.search
+      if (search.__noteSearchPatched) return
+      const origDoSearch = search.doSearch.bind(search)
+      search.doSearch = function() {
+        // 先跑插件原生的标题/概要匹配
+        origDoSearch()
+        try {
+          const text = this.searchText
+          if (!text) return
+          const { isOnlySearchCurrentRenderNodes } = this.mindMap.opt
+          const tree = isOnlySearchCurrentRenderNodes
+            ? this.mindMap.renderer.root
+            : this.mindMap.renderer.renderTree
+          if (!tree) return
+          // renderTree 里是 { data, children } 形式的普通对象；renderer.root 是节点实例。
+          // 统一取"节点数据对象"，text/note/uid 都在它上面。
+          const getNodeData = n =>
+            n && typeof n.getData === 'function' ? n.getData() : n && n.data
+          // 已匹配（标题命中）的 uid，避免备注重复计入
+          const matchedUids = new Set(
+            this.matchNodeList
+              .map(n => {
+                const d = getNodeData(n)
+                return d && d.uid
+              })
+              .filter(Boolean)
+          )
+          bfsWalk(tree, node => {
+            const d = getNodeData(node)
+            if (!d) return
+            const note = d.note
+            const uid = d.uid
+            if (
+              typeof note === 'string' &&
+              note.includes(text) &&
+              uid &&
+              !matchedUids.has(uid)
+            ) {
+              matchedUids.add(uid)
+              this.matchNodeList.push(node)
+            }
+          })
+          this.updateMatchNodeList(this.matchNodeList)
+        } catch (e) {
+          // 备注搜索异常不影响原生搜索
+          console.error('note search patch error:', e)
+        }
+      }
+      search.__noteSearchPatched = true
+    },
 
     handleSearchInfoChange(data) {
       this.currentIndex = data.currentIndex + 1
@@ -189,6 +296,8 @@ export default {
 
     onSearchNext() {
       this.showSearchResultList = true
+      // 每次搜索前确保补丁挂到当前的 search 实例上（防止 mindMap 重建后丢失）
+      this.patchSearchWithNote()
       this.mindMap.search.search(this.searchText)
     },
 
@@ -212,22 +321,32 @@ export default {
     },
 
     onSearchMatchNodeListChange(list) {
+      const q = this.searchText.trim()
       this.searchResultList = list.map(item => {
-        const data = item.data || item.nodeData.data
-        let name = data.text
+        const data = item.data || (item.nodeData && item.nodeData.data)
         const id = data.uid
+        let name = data.text
         if (data.richText) {
           name = getTextFromHtml(name)
         }
-        const reg = new RegExp(`${this.searchText.trim()}`, 'g')
-        const text = name.replace(reg, a => {
-          return `<span class="match">${a}</span>`
-        })
+        const note =
+          typeof data.note === 'string'
+            ? data.note
+            : item.getData
+            ? item.getData('note')
+            : ''
+        const titleHit = name.includes(q)
+        const noteHit = note.includes(q)
+        // 标题命中的显示标题；仅备注命中的显示备注片段
+        const text = titleHit
+          ? highlight(name, q)
+          : highlight(getNoteSnippet(note, q), q)
         return {
           data: item,
           id,
           text,
-          name
+          name,
+          noteHit
         }
       })
     },
@@ -344,6 +463,23 @@ export default {
 
       &:hover {
         background-color: #f2f4f7;
+      }
+
+      .noteBadge {
+        display: inline-block;
+        margin-right: 5px;
+        padding: 0 5px;
+        font-size: 11px;
+        line-height: 16px;
+        color: #fff;
+        background-color: #909399;
+        border-radius: 3px;
+        vertical-align: middle;
+        flex: none;
+      }
+
+      > span:last-child {
+        vertical-align: middle;
       }
 
       /deep/.match {
