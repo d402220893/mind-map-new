@@ -95,7 +95,7 @@ export default {
     this.$bus.$on('node_active', this.handleNodeActive)
     this.$bus.$on('showNodeIcon', this.handleShowNodeIcon)
   },
-  beforeDestroy() {
+  beforeUnmount() {
     this.$bus.$off('node_active', this.handleNodeActive)
     this.$bus.$off('showNodeIcon', this.handleShowNodeIcon)
   },
@@ -207,12 +207,12 @@ export default {
             cursor: pointer;
             position: relative;
 
-            /deep/ img {
+            :deep(img) {
               width: 100%;
               height: 100%;
             }
 
-            /deep/ svg {
+            :deep(svg) {
               width: 100%;
               height: 100%;
             }
@@ -254,7 +254,7 @@ export default {
           cursor: pointer;
           position: relative;
 
-          /deep/ img {
+          :deep(img) {
             width: 100%;
             height: 100%;
             object-fit: contain;

@@ -10,10 +10,10 @@
       <el-input
         v-model="text"
         :placeholder="$t('nodeTagStyle.placeholder')"
-        size="mini"
+        size="small"
         @blur="updateTagText"
-        @keydown.native.stop
-        @keyup.native.enter.stop="updateTagText"
+        @keydown.stop
+        @keyup.enter.stop="updateTagText"
       ></el-input>
       <div class="deleteBtn" @click.stop="deleteTag">
         <span class="iconfont iconshanchu"></span>
@@ -64,7 +64,7 @@ export default {
     this.mindMap.on('svg_mousedown', this.hide)
     this.mindMap.on('expand_btn_click', this.hide)
   },
-  beforeDestroy() {
+  beforeUnmount() {
     this.mindMap.off('node_tag_click', this.onNodeTagClick)
     this.mindMap.off('scale', this.hide)
     this.mindMap.off('translate', this.hide)

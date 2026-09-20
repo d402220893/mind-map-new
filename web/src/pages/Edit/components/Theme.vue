@@ -96,7 +96,7 @@ export default {
     this.theme = this.mindMap.getTheme()
     this.mindMap.on('view_theme_change', this.handleViewThemeChange)
   },
-  beforeDestroy() {
+  beforeUnmount() {
     this.mindMap.off('view_theme_change', this.handleViewThemeChange)
   },
   methods: {
@@ -222,7 +222,7 @@ export default {
   .tabBox {
     flex-shrink: 0;
 
-    /deep/ .el-tabs__nav-wrap {
+    :deep(.el-tabs__nav-wrap) {
       display: flex;
       justify-content: center;
     }

@@ -66,7 +66,7 @@ export default {
     document.addEventListener('dblclick', this._onDocDblClick, true)
     document.addEventListener('keydown', this._onKey)
   },
-  beforeDestroy() {
+  beforeUnmount() {
     document.removeEventListener('dblclick', this._onDocDblClick, true)
     document.removeEventListener('keydown', this._onKey)
     if (this.$el && this.$el.parentNode) {

@@ -77,7 +77,7 @@ export default {
       this.onViewBoxPositionChange
     )
   },
-  destroyed() {
+  unmounted() {
     window.removeEventListener('resize', this.setSize)
     this.$bus.$off('toggle_mini_map', this.toggle_mini_map)
     this.$bus.$off('data_change', this.data_change)

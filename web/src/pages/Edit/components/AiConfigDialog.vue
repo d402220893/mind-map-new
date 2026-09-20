@@ -2,7 +2,7 @@
   <el-dialog
     class="aiConfigDialog"
     :title="$t('ai.AIConfiguration')"
-    :visible.sync="aiConfigDialogVisible"
+    v-model="aiConfigDialogVisible"
     width="550px"
     append-to-body
   >
@@ -39,12 +39,14 @@
         </el-form-item> -->
       </el-form>
     </div>
-    <div slot="footer" class="dialog-footer">
-      <el-button @click="cancel">{{ $t('ai.cancel') }}</el-button>
-      <el-button type="primary" @click="confirm">{{
-        $t('ai.confirm')
-      }}</el-button>
-    </div>
+    <template #footer>
+      <div class="dialog-footer">
+        <el-button @click="cancel">{{ $t('ai.cancel') }}</el-button>
+        <el-button type="primary" @click="confirm">{{
+          $t('ai.confirm')
+        }}</el-button>
+      </div>
+    </template>
   </el-dialog>
 </template>
 
@@ -52,12 +54,10 @@
 import { mapState, mapMutations } from 'vuex'
 
 export default {
-  model: {
-    prop: 'visible',
-    event: 'change'
-  },
+  // Vue 3 移除了 model 选项：v-model 默认对应 modelValue / update:modelValue
+  emits: ['update:modelValue'],
   props: {
-    visible: {
+    modelValue: {
       type: Boolean,
       default: false
     }
@@ -115,7 +115,7 @@ export default {
     ...mapState(['aiConfig'])
   },
   watch: {
-    visible(val) {
+    modelValue(val) {
       this.aiConfigDialogVisible = val
     },
     aiConfigDialogVisible(val, oldVal) {
@@ -131,7 +131,7 @@ export default {
     ...mapMutations(['setLocalConfig']),
 
     close() {
-      this.$emit('change', false)
+      this.$emit('update:modelValue', false)
     },
 
     initFormData() {
@@ -162,7 +162,7 @@ export default {
 
 <style lang="less" scoped>
 .aiConfigDialog {
-  /deep/ .el-dialog__body {
+  :deep(.el-dialog__body) {
     padding: 12px 20px;
   }
 

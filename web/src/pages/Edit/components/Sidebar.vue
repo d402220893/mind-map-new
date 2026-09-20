@@ -49,7 +49,7 @@ export default {
   created() {
     this.$bus.$on('closeSideBar', this.handleCloseSidebar)
   },
-  beforeDestroy() {
+  beforeUnmount() {
     this.$bus.$off('closeSideBar', this.handleCloseSidebar)
   },
   methods: {

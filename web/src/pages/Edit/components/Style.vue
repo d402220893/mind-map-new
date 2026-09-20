@@ -12,7 +12,7 @@
           <div class="rowItem">
             <!-- <span class="name">{{ $t('style.fontFamily') }}</span> -->
             <el-select
-              size="mini"
+              size="small"
               style="width: 100px"
               v-model="style.fontFamily"
               placeholder=""
@@ -31,7 +31,7 @@
           <div class="rowItem">
             <!-- <span class="name">{{ $t('style.fontSize') }}</span> -->
             <el-select
-              size="mini"
+              size="small"
               style="width: 60px"
               v-model="style.fontSize"
               placeholder=""
@@ -49,7 +49,7 @@
           </div>
           <div class="rowItem">
             <el-select
-              size="mini"
+              size="small"
               style="width: 80px"
               v-model="style.textAlign"
               placeholder=""
@@ -116,7 +116,7 @@
           </el-popover>
           <el-popover ref="popover2" placement="bottom" trigger="hover">
             <el-radio-group
-              size="mini"
+              size="small"
               v-model="style.textDecoration"
               @change="update('textDecoration')"
             >
@@ -155,7 +155,7 @@
           <div class="rowItem">
             <span class="name">{{ $t('style.style') }}</span>
             <el-select
-              size="mini"
+              size="small"
               style="width: 80px"
               v-model="style.borderDasharray"
               placeholder=""
@@ -192,7 +192,7 @@
           <div class="rowItem">
             <span class="name">{{ $t('style.width') }}</span>
             <el-select
-              size="mini"
+              size="small"
               style="width: 80px"
               v-model="style.borderWidth"
               placeholder=""
@@ -216,7 +216,7 @@
           <div class="rowItem" v-show="style.shape === 'rectangle'">
             <span class="name">{{ $t('style.borderRadius') }}</span>
             <el-select
-              size="mini"
+              size="small"
               style="width: 80px"
               v-model="style.borderRadius"
               placeholder=""
@@ -283,7 +283,7 @@
           <div class="rowItem">
             <span class="name">{{ $t('style.direction') }}</span>
             <el-select
-              size="mini"
+              size="small"
               style="width: 80px"
               v-model="style.linearGradientDir"
               placeholder=""
@@ -305,7 +305,7 @@
           <div class="rowItem">
             <span class="name">{{ $t('style.shape') }}</span>
             <el-select
-              size="mini"
+              size="small"
               style="width: 120px"
               v-model="style.shape"
               placeholder=""
@@ -357,7 +357,7 @@
           <div class="rowItem">
             <span class="name">{{ $t('style.style') }}</span>
             <el-select
-              size="mini"
+              size="small"
               style="width: 80px"
               v-model="style.lineDasharray"
               placeholder=""
@@ -394,7 +394,7 @@
           <div class="rowItem">
             <span class="name">{{ $t('style.width') }}</span>
             <el-select
-              size="mini"
+              size="small"
               style="width: 80px"
               v-model="style.lineWidth"
               placeholder=""
@@ -418,7 +418,7 @@
           <div class="rowItem">
             <span class="name">{{ $t('style.arrowDir') }}</span>
             <el-select
-              size="mini"
+              size="small"
               style="width: 80px"
               v-model="style.lineMarkerDir"
               placeholder=""
@@ -466,7 +466,7 @@
             <span class="name">{{ $t('style.placement') }}</span>
             <el-radio-group
               v-model="style.imgPlacement"
-              size="mini"
+              size="small"
               @change="update('imgPlacement')"
             >
               <el-radio-button label="top">{{
@@ -491,7 +491,7 @@
             <span class="name">{{ $t('style.placement') }}</span>
             <el-radio-group
               v-model="style.tagPlacement"
-              size="mini"
+              size="small"
               @change="update('tagPlacement')"
             >
               <el-radio-button label="right">{{
@@ -635,7 +635,7 @@ export default {
   created() {
     this.$bus.$on('node_active', this.onNodeActive)
   },
-  beforeDestroy() {
+  beforeUnmount() {
     this.$bus.$off('node_active', this.onNodeActive)
   },
   methods: {

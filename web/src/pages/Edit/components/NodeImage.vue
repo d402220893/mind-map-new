@@ -2,7 +2,7 @@
   <el-dialog
     class="nodeImageDialog"
     :title="$t('nodeImage.title')"
-    :visible.sync="dialogVisible"
+    v-model="dialogVisible"
     :width="isMobile ? '90%' : '600px'"
     :top="isMobile ? '20px' : '15vh'"
   >
@@ -17,22 +17,24 @@
       <span class="label">请输入图片地址</span>
       <el-input
         v-model="imgUrl"
-        size="mini"
+        size="small"
         placeholder="http://xxx.com/xx.jpg"
-        @keydown.native.stop
+        @keydown.stop
       ></el-input>
     </div>
     <div class="title">可选</div>
     <div class="inputBox">
       <span class="label">{{ $t('nodeImage.imgTitle') }}</span>
-      <el-input v-model="imgTitle" size="mini" @keydown.native.stop></el-input>
+      <el-input v-model="imgTitle" size="small" @keydown.stop></el-input>
     </div>
-    <span slot="footer" class="dialog-footer">
-      <el-button @click="cancel">{{ $t('dialog.cancel') }}</el-button>
-      <el-button type="primary" @click="confirm">{{
-        $t('dialog.confirm')
-      }}</el-button>
-    </span>
+    <template #footer>
+      <span class="dialog-footer">
+        <el-button @click="cancel">{{ $t('dialog.cancel') }}</el-button>
+        <el-button type="primary" @click="confirm">{{
+          $t('dialog.confirm')
+        }}</el-button>
+      </span>
+    </template>
   </el-dialog>
 </template>
 
@@ -59,7 +61,7 @@ export default {
     this.$bus.$on('node_active', this.handleNodeActive)
     this.$bus.$on('showNodeImage', this.handleShowNodeImage)
   },
-  beforeDestroy() {
+  beforeUnmount() {
     this.$bus.$off('node_active', this.handleNodeActive)
     this.$bus.$off('showNodeImage', this.handleShowNodeImage)
   },

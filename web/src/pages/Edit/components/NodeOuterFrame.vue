@@ -14,7 +14,7 @@
             <span class="name">{{ $t('nodeOuterFrame.boxStyle') }}</span>
             <!-- 宽度 -->
             <el-select
-              size="mini"
+              size="small"
               style="width: 80px"
               v-model="styleConfig.strokeWidth"
               placeholder=""
@@ -40,7 +40,7 @@
             </el-select>
             <!-- 实现虚线 -->
             <el-select
-              size="mini"
+              size="small"
               style="width: 80px;margin-left: 4px;"
               v-model="styleConfig.strokeDasharray"
               placeholder=""
@@ -99,7 +99,7 @@
           <div class="rowItem">
             <span class="name">{{ $t('nodeOuterFrame.radius') }}</span>
             <el-select
-              size="mini"
+              size="small"
               style="width: 80px"
               v-model="styleConfig.radius"
               placeholder=""
@@ -152,7 +152,7 @@
           <div class="rowItem">
             <span class="name">{{ $t('nodeOuterFrame.fontFamily') }}</span>
             <el-select
-              size="mini"
+              size="small"
               v-model="styleConfig.fontFamily"
               placeholder=""
               @change="
@@ -230,7 +230,7 @@
           <div class="rowItem">
             <span class="name">{{ $t('nodeOuterFrame.lineHeight') }}</span>
             <el-select
-              size="mini"
+              size="small"
               style="width: 80px"
               v-model="styleConfig.lineHeight"
               placeholder=""
@@ -252,7 +252,7 @@
           <div class="rowItem">
             <span class="name">{{ $t('nodeOuterFrame.fontSize') }}</span>
             <el-select
-              size="mini"
+              size="small"
               style="width: 80px"
               v-model="styleConfig.fontSize"
               placeholder=""
@@ -295,7 +295,7 @@
           <div class="rowItem">
             <span class="name">{{ $t('nodeOuterFrame.textFillRadius') }}</span>
             <el-select
-              size="mini"
+              size="small"
               style="width: 80px"
               v-model="styleConfig.textFillRadius"
               placeholder=""
@@ -320,7 +320,7 @@
             <span class="name">{{ $t('nodeOuterFrame.textAlign') }}</span>
             <el-radio-group
               v-model="styleConfig.textAlign"
-              size="mini"
+              size="small"
               @change="
                 value => {
                   updateOuterFrame('textAlign', value)
@@ -438,7 +438,7 @@ export default {
     this.mindMap.on('outer_frame_delete', this.hide)
     this.mindMap.on('outer_frame_deactivate', this.hide)
   },
-  beforeDestroy() {
+  beforeUnmount() {
     this.mindMap.off('outer_frame_active', this.onOuterFrameActive)
     this.mindMap.off('outer_frame_delete', this.hide)
     this.mindMap.off('outer_frame_deactivate', this.hide)

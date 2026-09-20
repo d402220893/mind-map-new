@@ -4,7 +4,7 @@
     <el-dialog
       class="clientTipDialog"
       :title="$t('ai.connectFailedTitle')"
-      :visible.sync="clientTipDialogVisible"
+      v-model="clientTipDialogVisible"
       width="400px"
       append-to-body
     >
@@ -26,17 +26,19 @@
           }}</el-button>
         </p>
       </div>
-      <div slot="footer" class="dialog-footer">
-        <el-button type="primary" @click="clientTipDialogVisible = false">{{
-          $t('ai.close')
-        }}</el-button>
-      </div>
+      <template #footer>
+        <div class="dialog-footer">
+          <el-button type="primary" @click="clientTipDialogVisible = false">{{
+            $t('ai.close')
+          }}</el-button>
+        </div>
+      </template>
     </el-dialog>
     <!-- ai内容输入弹窗 -->
     <el-dialog
       class="createDialog"
       :title="$t('ai.createMindMapTitle')"
-      :visible.sync="createDialogVisible"
+      v-model="createDialogVisible"
       width="450px"
       append-to-body
     >
@@ -58,14 +60,16 @@
           }}</el-button>
         </div>
       </div>
-      <div slot="footer" class="dialog-footer">
-        <el-button @click="closeAiCreateDialog">{{
-          $t('ai.cancel')
-        }}</el-button>
-        <el-button type="primary" @click="doAiCreate">{{
-          $t('ai.confirm')
-        }}</el-button>
-      </div>
+      <template #footer>
+        <div class="dialog-footer">
+          <el-button @click="closeAiCreateDialog">{{
+            $t('ai.cancel')
+          }}</el-button>
+          <el-button type="primary" @click="doAiCreate">{{
+            $t('ai.confirm')
+          }}</el-button>
+        </div>
+      </template>
     </el-dialog>
     <!-- ai生成中添加一个透明层，防止期间用户进行操作 -->
     <div
@@ -82,21 +86,23 @@
     <el-dialog
       class="createDialog"
       :title="$t('ai.aiCreatePart')"
-      :visible.sync="createPartDialogVisible"
+      v-model="createPartDialogVisible"
       width="450px"
       append-to-body
     >
       <div class="inputBox">
         <el-input type="textarea" :rows="5" v-model="aiPartInput"> </el-input>
       </div>
-      <div slot="footer" class="dialog-footer">
-        <el-button @click="closeAiCreatePartDialog">{{
-          $t('ai.cancel')
-        }}</el-button>
-        <el-button type="primary" @click="confirmAiCreatePart">{{
-          $t('ai.confirm')
-        }}</el-button>
-      </div>
+      <template #footer>
+        <div class="dialog-footer">
+          <el-button @click="closeAiCreatePartDialog">{{
+            $t('ai.cancel')
+          }}</el-button>
+          <el-button type="primary" @click="confirmAiCreatePart">{{
+            $t('ai.confirm')
+          }}</el-button>
+        </div>
+      </template>
     </el-dialog>
   </div>
 </template>
@@ -159,7 +165,7 @@ export default {
   mounted() {
     document.body.appendChild(this.$refs.aiCreatingMaskRef)
   },
-  beforeDestroy() {
+  beforeUnmount() {
     this.$bus.$off('ai_create_all', this.aiCrateAll)
     this.$bus.$off('ai_create_part', this.showAiCreatePartDialog)
     this.$bus.$off('ai_chat', this.aiChat)
@@ -603,7 +609,7 @@ export default {
 <style lang="less" scoped>
 .clientTipDialog,
 .createDialog {
-  /deep/ .el-dialog__body {
+  :deep(.el-dialog__body) {
     padding: 12px 20px;
   }
 }

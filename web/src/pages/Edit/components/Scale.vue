@@ -57,7 +57,7 @@ export default {
       }
     }
   },
-  beforeDestroy() {
+  beforeUnmount() {
     this.mindMap.off('scale', this.onScale)
     this.mindMap.off('draw_click', this.onDrawClick)
   },

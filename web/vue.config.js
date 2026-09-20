@@ -2,6 +2,7 @@ const path = require('path')
 const isDev = process.env.NODE_ENV === 'development'
 const isLibrary = process.env.NODE_ENV === 'library'
 
+const webpack = require('webpack')
 const WebpackDynamicPublicPathPlugin = require('webpack-dynamic-public-path')
 
 module.exports = {
@@ -48,8 +49,40 @@ module.exports = {
     resolve: {
       alias: {
         '@': path.resolve(__dirname, './src/')
+      },
+      // webpack 5 不再自动 polyfill node 核心模块。
+      // 部分依赖（如 pptxgenjs 的浏览器 bundle）里带有 node 分支的 require，
+      // 运行时并不会真正调用它们，这里统一声明为不参与打包。
+      fallback: {
+        fs: false,
+        path: false,
+        os: false,
+        crypto: false,
+        stream: false,
+        buffer: false,
+        util: false,
+        url: false,
+        http: false,
+        https: false,
+        zlib: false,
+        events: false,
+        assert: false,
+        constants: false,
+        child_process: false,
+        net: false,
+        tls: false,
+        dns: false,
+        module: false,
+        worker_threads: false
       }
-    }
+    },
+    plugins: [
+      // 把 `node:fs` / `node:https` 这类带 scheme 的请求还原成裸模块名，
+      // 再交给上面的 fallback 处理，避免 webpack5 报 "Unhandled scheme"。
+      new webpack.NormalModuleReplacementPlugin(/^node:/, resource => {
+        resource.request = resource.request.replace(/^node:/, '')
+      })
+    ]
   },
   devServer: {
     proxy: {

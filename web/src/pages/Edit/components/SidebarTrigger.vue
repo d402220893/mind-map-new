@@ -70,7 +70,7 @@ export default {
     window.addEventListener('resize', this.onResize)
     this.updateSize()
   },
-  beforeDestroy() {
+  beforeUnmount() {
     window.removeEventListener('resize', this.onResize)
   },
   methods: {

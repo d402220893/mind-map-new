@@ -1,17 +1,16 @@
-import { Loading } from 'element-ui'
+import { ElLoading } from 'element-plus'
 
 let loadingInstance = null
 
 export const showLoading = () => {
-  loadingInstance = Loading.service({
+  loadingInstance = ElLoading.service({
     lock: true
   })
 }
 
 export const hideLoading = () => {
-    if (loadingInstance) {
-        loadingInstance.close()
-        loadingInstance = null
-    }
+  if (loadingInstance) {
+    loadingInstance.close()
+    loadingInstance = null
   }
-  
+}

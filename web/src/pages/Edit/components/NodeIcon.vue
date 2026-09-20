@@ -2,7 +2,7 @@
   <el-dialog
     class="nodeIconDialog"
     :title="$t('nodeIcon.title')"
-    :visible.sync="dialogVisible"
+    v-model="dialogVisible"
     width="500"
   >
     <div class="item" v-for="item in nodeIconList" :key="item.name">
@@ -41,7 +41,7 @@ export default {
     this.$bus.$on('node_active', this.handleNodeActive)
     this.$bus.$on('showNodeIcon', this.handleShowNodeIcon)
   },
-  beforeDestroy() {
+  beforeUnmount() {
     this.$bus.$off('node_active', this.handleNodeActive)
     this.$bus.$off('showNodeIcon', this.handleShowNodeIcon)
   },
@@ -94,7 +94,7 @@ export default {
 
 <style lang="less" scoped>
 .nodeIconDialog {
-  /deep/ .el-dialog__body {
+  :deep(.el-dialog__body) {
     padding: 0 20px;
   }
 
@@ -122,12 +122,12 @@ export default {
         cursor: pointer;
         position: relative;
 
-        /deep/ img {
+        :deep(img) {
           width: 100%;
           height: 100%;
         }
 
-        /deep/ svg {
+        :deep(svg) {
           width: 100%;
           height: 100%;
         }

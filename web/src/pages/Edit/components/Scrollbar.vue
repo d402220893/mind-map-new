@@ -56,7 +56,7 @@ export default {
     this.$bus.$on('scrollbar_change', this.updateScrollbar)
     window.addEventListener('resize', this.onResize)
   },
-  beforeDestroy() {
+  beforeUnmount() {
     this.$bus.$off('scrollbar_change', this.updateScrollbar)
     window.removeEventListener('resize', this.onResize)
   },

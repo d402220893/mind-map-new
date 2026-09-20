@@ -57,9 +57,11 @@
             {{ item.name }}
           </div>
         </div>
-        <div class="btn" slot="reference">
-          <span class="icon iconfont iconxingzhuang-wenzi"></span>
-        </div>
+        <template #reference>
+          <div class="btn">
+            <span class="icon iconfont iconxingzhuang-wenzi"></span>
+          </div>
+        </template>
       </el-popover>
     </el-tooltip>
 
@@ -80,18 +82,22 @@
             {{ item }}px
           </div>
         </div>
-        <div class="btn" slot="reference">
-          <span class="icon iconfont iconcase fontColor"></span>
-        </div>
+        <template #reference>
+          <div class="btn">
+            <span class="icon iconfont iconcase fontColor"></span>
+          </div>
+        </template>
       </el-popover>
     </el-tooltip>
 
     <el-tooltip :content="$t('richTextToolbar.color')" placement="top">
       <el-popover placement="bottom" trigger="hover">
         <Color :color="fontColor" @change="changeFontColor"></Color>
-        <div class="btn" slot="reference" :style="{ color: formatInfo.color }">
-          <span class="icon iconfont iconzitiyanse"></span>
-        </div>
+        <template #reference>
+          <div class="btn" :style="{ color: formatInfo.color }">
+            <span class="icon iconfont iconzitiyanse"></span>
+          </div>
+        </template>
       </el-popover>
     </el-tooltip>
 
@@ -104,9 +110,11 @@
           :color="fontBackgroundColor"
           @change="changeFontBackgroundColor"
         ></Color>
-        <div class="btn" slot="reference">
-          <span class="icon iconfont iconbeijingyanse"></span>
-        </div>
+        <template #reference>
+          <div class="btn">
+            <span class="icon iconfont iconbeijingyanse"></span>
+          </div>
+        </template>
       </el-popover>
     </el-tooltip>
 
@@ -123,9 +131,11 @@
             {{ item.name }}
           </div>
         </div>
-        <div class="btn" slot="reference">
-          <span class="icon iconfont iconjuzhongduiqi"></span>
-        </div>
+        <template #reference>
+          <div class="btn">
+            <span class="icon iconfont iconjuzhongduiqi"></span>
+          </div>
+        </template>
       </el-popover>
     </el-tooltip>
 
@@ -183,7 +193,7 @@ export default {
   mounted() {
     document.body.append(this.$refs.richTextToolbar)
   },
-  beforeDestroy() {
+  beforeUnmount() {
     this.$bus.$off('rich_text_selection_change', this.onRichTextSelectionChange)
   },
   methods: {

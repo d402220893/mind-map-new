@@ -40,7 +40,7 @@ export default {
       this.onDataChange(this.mindMap.getData())
     }
   },
-  beforeDestroy() {
+  beforeUnmount() {
     this.$bus.$off('data_change', this.onDataChange)
   },
   methods: {

@@ -92,7 +92,7 @@ export default {
     this._onResize = () => this.updateWindowState()
     window.addEventListener('resize', this._onResize)
   },
-  beforeDestroy() {
+  beforeUnmount() {
     if (this._onResize) {
       window.removeEventListener('resize', this._onResize)
     }

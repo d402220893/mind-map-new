@@ -1,9 +1,10 @@
 import exampleData from 'simple-mind-map/example/exampleData'
 import { simpleDeepClone } from 'simple-mind-map/src/utils/index'
-import Vue from 'vue'
 import vuexStore from '@/store'
 import * as WB from './workbookState'
 import { isQuotaExceededError } from './storageErrors'
+import bus from '@/utils/eventBus'
+import { getCurrentData } from '@/utils/global'
 
 const SIMPLE_MIND_MAP_CONFIG = 'SIMPLE_MIND_MAP_CONFIG'
 const SIMPLE_MIND_MAP_LANG = 'SIMPLE_MIND_MAP_LANG'
@@ -48,7 +49,7 @@ export const getData = () => {
   }
   // 操作本地文件模式
   if (vuexStore.state.isHandleLocalFile) {
-    return Vue.prototype.getCurrentData()
+    return getCurrentData()
   }
   // 多工作表模式：返回当前激活工作表的数据
   return getActiveSheet().data
@@ -80,7 +81,7 @@ export const storeData = data => {
     const activeSheet = getActiveSheet()
     activeSheet.data = originData
     saveSheetState()
-    Vue.prototype.$bus.$emit('write_local_file', originData)
+    bus.$emit('write_local_file', originData)
     if (vuexStore.state.isHandleLocalFile) {
       return
     }
@@ -89,7 +90,7 @@ export const storeData = data => {
   } catch (error) {
     console.log(error)
     if (isQuotaExceededError(error)) {
-      Vue.prototype.$bus.$emit('localStorageExceeded')
+      bus.$emit('localStorageExceeded')
     }
   }
 }

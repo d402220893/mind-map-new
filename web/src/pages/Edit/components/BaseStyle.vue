@@ -33,7 +33,7 @@
             <div class="rowItem">
               <span class="name">{{ $t('baseStyle.imageRepeat') }}</span>
               <el-select
-                size="mini"
+                size="small"
                 style="width: 120px"
                 v-model="style.backgroundRepeat"
                 placeholder=""
@@ -56,7 +56,7 @@
             <div class="rowItem">
               <span class="name">{{ $t('baseStyle.imagePosition') }}</span>
               <el-select
-                size="mini"
+                size="small"
                 style="width: 120px"
                 v-model="style.backgroundPosition"
                 placeholder=""
@@ -79,7 +79,7 @@
             <div class="rowItem">
               <span class="name">{{ $t('baseStyle.imageSize') }}</span>
               <el-select
-                size="mini"
+                size="small"
                 style="width: 120px"
                 v-model="style.backgroundSize"
                 placeholder=""
@@ -149,7 +149,7 @@
         <div class="rowItem">
           <span class="name">{{ $t('baseStyle.width') }}</span>
           <el-select
-            size="mini"
+            size="small"
             style="width: 80px"
             v-model="style.lineWidth"
             placeholder=""
@@ -180,7 +180,7 @@
         <div class="rowItem" v-if="lineStyleListShow.length > 1">
           <span class="name">{{ $t('baseStyle.style') }}</span>
           <el-select
-            size="mini"
+            size="small"
             style="width: 80px"
             v-model="style.lineStyle"
             placeholder=""
@@ -214,7 +214,7 @@
         >
           <span class="name">{{ $t('baseStyle.rootStyle') }}</span>
           <el-select
-            size="mini"
+            size="small"
             style="width: 80px"
             v-model="style.rootLineKeepSameInCurve"
             placeholder=""
@@ -237,7 +237,7 @@
           <!-- 连线圆角大小 -->
           <span class="name">{{ $t('baseStyle.lineRadius') }}</span>
           <el-select
-            size="mini"
+            size="small"
             style="width: 80px"
             v-model="style.lineRadius"
             placeholder=""
@@ -267,7 +267,7 @@
         >
           <span class="name">{{ $t('baseStyle.rootLineStartPos') }}</span>
           <el-select
-            size="mini"
+            size="small"
             style="width: 80px"
             v-model="style.rootLineStartPositionKeepSameInCurve"
             placeholder=""
@@ -308,7 +308,7 @@
           <el-popover
             placement="right"
             trigger="click"
-            v-model="rainbowLinesPopoverVisible"
+            v-model:visible="rainbowLinesPopoverVisible"
           >
             <div class="rainbowLinesOptionsBox" :class="{ isDark: isDark }">
               <div
@@ -332,16 +332,18 @@
                 }}</span>
               </div>
             </div>
-            <div slot="reference" class="curRainbowLine">
-              <div class="colorsBar" v-if="curRainbowLineColorList">
-                <span
-                  class="colorItem"
-                  v-for="color in curRainbowLineColorList"
-                  :style="{ backgroundColor: color }"
-                ></span>
+            <template #reference>
+              <div class="curRainbowLine">
+                <div class="colorsBar" v-if="curRainbowLineColorList">
+                  <span
+                    class="colorItem"
+                    v-for="color in curRainbowLineColorList"
+                    :style="{ backgroundColor: color }"
+                  ></span>
+                </div>
+                <span v-else>{{ $t('baseStyle.notUseRainbowLines') }}</span>
               </div>
-              <span v-else>{{ $t('baseStyle.notUseRainbowLines') }}</span>
-            </div>
+            </template>
           </el-popover>
         </div>
       </div>
@@ -369,7 +371,7 @@
         <div class="rowItem">
           <span class="name">{{ $t('baseStyle.width') }}</span>
           <el-select
-            size="mini"
+            size="small"
             style="width: 80px"
             v-model="style.generalizationLineWidth"
             placeholder=""
@@ -419,7 +421,7 @@
         <div class="rowItem">
           <span class="name">{{ $t('baseStyle.associativeLineWidth') }}</span>
           <el-select
-            size="mini"
+            size="small"
             style="width: 80px"
             v-model="style.associativeLineWidth"
             placeholder=""
@@ -471,7 +473,7 @@
             $t('baseStyle.associativeLineActiveWidth')
           }}</span>
           <el-select
-            size="mini"
+            size="small"
             style="width: 80px"
             v-model="style.associativeLineActiveWidth"
             placeholder=""
@@ -501,7 +503,7 @@
         <div class="rowItem">
           <span class="name">{{ $t('style.style') }}</span>
           <el-select
-            size="mini"
+            size="small"
             style="width: 80px"
             v-model="style.associativeLineDasharray"
             placeholder=""
@@ -544,7 +546,7 @@
         <div class="rowItem">
           <span class="name">{{ $t('baseStyle.fontFamily') }}</span>
           <el-select
-            size="mini"
+            size="small"
             v-model="style.associativeLineTextFontFamily"
             placeholder=""
             @change="update('associativeLineTextFontFamily', $event)"
@@ -582,7 +584,7 @@
         <div class="rowItem">
           <span class="name">{{ $t('baseStyle.fontSize') }}</span>
           <el-select
-            size="mini"
+            size="small"
             style="width: 80px"
             v-model="style.associativeLineTextFontSize"
             placeholder=""
@@ -960,7 +962,7 @@ export default {
   created() {
     this.$bus.$on('setData', this.onSetData)
   },
-  beforeDestroy() {
+  beforeUnmount() {
     this.$bus.$off('setData', this.onSetData)
   },
   methods: {

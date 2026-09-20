@@ -1,7 +1,4 @@
-import Vue from 'vue'
-import VueRouter from 'vue-router'
-
-Vue.use(VueRouter)
+import { createRouter, createWebHashHistory } from 'vue-router'
 
 const routes = [
   {
@@ -19,7 +16,9 @@ const routes = [
   }
 ]
 
-const router = new VueRouter({
+// Vue 2 的 `new VueRouter({ routes })` 默认即 hash 模式，这里保持一致
+const router = createRouter({
+  history: createWebHashHistory(),
   routes
 })
 

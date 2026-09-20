@@ -13,7 +13,7 @@
     <div class="moreColor">
       <span>{{ $t('color.moreColor') }}</span>
       <el-color-picker
-        size="mini"
+        size="small"
         show-alpha
         v-model="selectColor"
         @change="changeColor"

@@ -47,7 +47,7 @@ export default {
   mounted() {
     this.initEditor()
   },
-  beforeDestroy() {
+  beforeUnmount() {
     this.$bus.$off('node_active', this.onNodeActive)
     this.mindMap.off('node_note_click', this.onNodeNoteClick)
   },

@@ -8,7 +8,7 @@
           resize="none"
           type="textarea"
           :placeholder="$t('formulaSidebar.placeholder')"
-          @keydown.native.stop
+          @keydown.stop
         />
         <el-button
           size="small"
@@ -69,7 +69,7 @@ export default {
   created() {
     this.$bus.$on('node_active', this.handleNodeActive)
   },
-  beforeDestroy() {
+  beforeUnmount() {
     this.$bus.$off('node_active', this.handleNodeActive)
   },
   mounted() {
@@ -140,7 +140,7 @@ export default {
       }
     }
 
-    /deep/ .el-textarea__inner {
+    :deep(.el-textarea__inner) {
       background-color: transparent;
       color: #fff;
     }

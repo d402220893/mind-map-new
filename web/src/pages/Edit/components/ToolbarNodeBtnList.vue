@@ -252,7 +252,7 @@ export default {
     this.$bus.$on('painter_start', this.onPainterStart)
     this.$bus.$on('painter_end', this.onPainterEnd)
   },
-  beforeDestroy() {
+  beforeUnmount() {
     this.$bus.$off('mode_change', this.onModeChange)
     this.$bus.$off('node_active', this.onNodeActive)
     this.$bus.$off('back_forward', this.onBackForward)

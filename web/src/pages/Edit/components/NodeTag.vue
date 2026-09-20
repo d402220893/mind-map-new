@@ -2,15 +2,15 @@
   <el-dialog
     class="nodeTagDialog"
     :title="$t('nodeTag.title')"
-    :visible.sync="dialogVisible"
+    v-model="dialogVisible"
     :width="isMobile ? '90%' : '50%'"
     :top="isMobile ? '20px' : '15vh'"
   >
     <el-input
       v-model="tag"
-      @keyup.native.enter="add"
-      @keyup.native.stop
-      @keydown.native.stop
+      @keyup.enter="add"
+      @keyup.stop
+      @keydown.stop
       :disabled="tagArr.length >= max"
       :placeholder="$t('nodeTag.addTip')"
     >
@@ -30,12 +30,14 @@
         </div>
       </div>
     </div>
-    <span slot="footer" class="dialog-footer">
-      <el-button @click="cancel">{{ $t('dialog.cancel') }}</el-button>
-      <el-button type="primary" @click="confirm">{{
-        $t('dialog.confirm')
-      }}</el-button>
-    </span>
+    <template #footer>
+      <span class="dialog-footer">
+        <el-button @click="cancel">{{ $t('dialog.cancel') }}</el-button>
+        <el-button type="primary" @click="confirm">{{
+          $t('dialog.confirm')
+        }}</el-button>
+      </span>
+    </template>
   </el-dialog>
 </template>
 
@@ -68,7 +70,7 @@ export default {
     this.$bus.$on('node_active', this.handleNodeActive)
     this.$bus.$on('showNodeTag', this.handleShowNodeTag)
   },
-  beforeDestroy() {
+  beforeUnmount() {
     this.$bus.$off('node_active', this.handleNodeActive)
     this.$bus.$off('showNodeTag', this.handleShowNodeTag)
   },

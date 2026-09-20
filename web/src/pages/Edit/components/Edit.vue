@@ -141,7 +141,7 @@ import NodeImgPreview from './NodeImgPreview.vue'
 import SidebarTrigger from './SidebarTrigger.vue'
 import { mapState } from 'vuex'
 import icon from '@/config/icon'
-import Vue from 'vue'
+import { setCurrentDataGetter } from '@/utils/global'
 import Search from './Search.vue'
 import NodeIconSidebar from './NodeIconSidebar.vue'
 import NodeIconToolbar from './NodeIconToolbar.vue'
@@ -372,7 +372,7 @@ export default {
     // 自动保存：在 bindSaveEvent 注册之后初始化调度器
     this.initAutosave()
   },
-  beforeDestroy() {
+  beforeUnmount() {
     this.$bus.$off('execCommand', this.execCommand)
     this.$bus.$off('paddingChange', this.onPaddingChange)
     this.$bus.$off('export', this.export)
@@ -660,7 +660,7 @@ export default {
 
     // 全局拦截 Ctrl/Cmd+S / Ctrl+Shift+S / Ctrl+O / F2：
     // 原 onGlobalKeydown 仅声明但从未注册到 window keydown，导致 Ctrl+S 完全无效。
-    // 这里在 mounted 注册、beforeDestroy 解绑。Ctrl+S 统一调 doSave()，
+    // 这里在 mounted 注册、beforeUnmount 解绑。Ctrl+S 统一调 doSave()，
     // 而不再用"desktop 端交给主进程菜单"的早返回路径——主进程没有菜单
     // （Menu.setApplicationMenu(null)），那条路径永远不会触发。
     onGlobalKeydown(e) {
@@ -1595,10 +1595,10 @@ export default {
       }
       // api/index.js文件使用
       // 当正在编辑本地文件时通过该方法获取最新数据
-      Vue.prototype.getCurrentData = () => {
+      setCurrentDataGetter(() => {
         const fullData = this.mindMap.getData(true)
         return { ...fullData }
-      }
+      })
       // 协同测试
       this.cooperateTest()
       // 应用已保存的画布背景；之后每次渲染结束（编辑/切换/改主题）都会兜底重应用，

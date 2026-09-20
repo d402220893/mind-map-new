@@ -45,7 +45,7 @@
               v-model="watermarkConfig.text"
               size="small"
               @change="updateWatermarkConfig"
-              @keydown.native.stop
+              @keydown.stop
             ></el-input>
           </div>
         </div>
@@ -96,7 +96,7 @@
               :max="50"
               :step="1"
               @change="updateWatermarkConfig"
-              @keydown.native.stop
+              @keydown.stop
             ></el-input-number>
           </div>
         </div>
@@ -111,7 +111,7 @@
               :max="90"
               :step="10"
               @change="updateWatermarkConfig"
-              @keydown.native.stop
+              @keydown.stop
             ></el-input-number>
           </div>
         </div>
@@ -124,7 +124,7 @@
               size="small"
               :step="10"
               @change="updateWatermarkConfig"
-              @keydown.native.stop
+              @keydown.stop
             ></el-input-number>
           </div>
         </div>
@@ -137,7 +137,7 @@
               size="small"
               :step="10"
               @change="updateWatermarkConfig"
-              @keydown.native.stop
+              @keydown.stop
             ></el-input-number>
           </div>
         </div>
@@ -341,7 +341,7 @@
         <div class="rowItem">
           <span class="name">{{ $t('setting.mousewheelAction') }}</span>
           <el-select
-            size="mini"
+            size="small"
             style="width: 120px"
             v-model="config.mousewheelAction"
             placeholder=""
@@ -366,7 +366,7 @@
             $t('setting.mousewheelZoomActionReverse')
           }}</span>
           <el-select
-            size="mini"
+            size="small"
             style="width: 120px"
             v-model="config.mousewheelZoomActionReverse"
             placeholder=""
@@ -392,7 +392,7 @@
         <div class="rowItem">
           <span class="name">{{ $t('setting.createNewNodeBehavior') }}</span>
           <el-select
-            size="mini"
+            size="small"
             style="width: 120px"
             v-model="config.createNewNodeBehavior"
             placeholder=""
@@ -602,7 +602,7 @@ export default {
     this.initLoacalConfig()
     this.$bus.$on('toggleOpenNodeRichText', this.onToggleOpenNodeRichText)
   },
-  beforeDestroy() {
+  beforeUnmount() {
     this.$bus.$off('toggleOpenNodeRichText', this.onToggleOpenNodeRichText)
   },
   methods: {

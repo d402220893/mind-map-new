@@ -15,26 +15,23 @@
     @node-drag-start="onNodeDragStart"
     @node-drag-end="onNodeDragEnd"
     @current-change="onCurrentChange"
-    @mouseenter.native="isInTreArea = true"
-    @mouseleave.native="isInTreArea = false"
+    @mouseenter="isInTreArea = true"
+    @mouseleave="isInTreArea = false"
   >
-    <span
-      class="customNode"
-      slot-scope="{ node, data }"
-      :data-id="data.uid"
-      @click="onClick(data)"
-    >
-      <span
-        class="nodeEdit"
-        :contenteditable="!isReadonly"
-        :key="getKey()"
-        @keydown.stop="onNodeInputKeydown($event, node)"
-        @keyup.stop
-        @blur="onBlur($event, node)"
-        @paste="onPaste($event, node)"
-        v-html="node.label"
-      ></span>
-    </span>
+    <template #default="{ node, data }">
+      <span class="customNode" :data-id="data.uid" @click="onClick(data)">
+        <span
+          class="nodeEdit"
+          :contenteditable="!isReadonly"
+          :key="getKey()"
+          @keydown.stop="onNodeInputKeydown($event, node)"
+          @keyup.stop
+          @blur="onBlur($event, node)"
+          @paste="onPaste($event, node)"
+          v-html="node.label"
+        ></span>
+      </span>
+    </template>
   </el-tree>
 </template>
 
@@ -85,7 +82,7 @@ export default {
   mounted() {
     this.refresh()
   },
-  beforeDestroy() {
+  beforeUnmount() {
     window.removeEventListener('keydown', this.onKeyDown)
     this.$bus.$off('data_change', this.handleDataChange)
     this.$bus.$off('node_tree_render_end', this.handleNodeTreeRenderEnd)

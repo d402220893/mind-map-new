@@ -1,10 +1,7 @@
-import Vue from 'vue'
-import Vuex from 'vuex'
+import { createStore } from 'vuex'
 import { storeLocalConfig } from '@/api'
 
-Vue.use(Vuex)
-
-const store = new Vuex.Store({
+const store = createStore({
   state: {
     isHandleLocalFile: false, // 是否操作的是本地文件
     localConfig: {

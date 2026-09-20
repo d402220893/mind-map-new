@@ -55,7 +55,7 @@ export default {
   mounted() {
     document.body.append(this.$refs.nodeImgPlacementToolbar)
   },
-  beforeDestroy() {
+  beforeUnmount() {
     this.mindMap.off('node_img_click', this.show)
     this.mindMap.off('draw_click', this.close)
     this.mindMap.off('svg_mousedown', this.close)

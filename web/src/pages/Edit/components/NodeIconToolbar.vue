@@ -53,7 +53,7 @@ export default {
     mounted() {
         document.body.append(this.$refs.nodeIconToolbar)
     },
-    beforeDestroy() {
+    beforeUnmount() {
         this.mindMap.off('node_icon_click', this.show)
         this.mindMap.off('draw_click', this.close)
         this.mindMap.off('svg_mousedown', this.close)
@@ -175,12 +175,12 @@ export default {
             position: relative;
             float: left;
 
-            /deep/ img {
+            :deep(img) {
                 width: 100%;
                 height: 100%;
             }
 
-            /deep/ svg {
+            :deep(svg) {
                 width: 100%;
                 height: 100%;
             }

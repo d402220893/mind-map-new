@@ -61,7 +61,7 @@ export default {
     this.mindMap.el.appendChild(this.$refs.noteContentViewer)
     this.initEditor()
   },
-  beforeDestroy() {
+  beforeUnmount() {
     this.$bus.$off('showNoteContent', this.onShowNoteContent)
     this.$bus.$off('hideNoteContent', this.hideNoteContent)
     document.body.removeEventListener('click', this.hideNoteContent)

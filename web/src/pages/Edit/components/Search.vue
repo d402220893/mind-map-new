@@ -9,19 +9,22 @@
         :placeholder="$t('search.searchPlaceholder')"
         size="small"
         v-model="searchText"
-        @keyup.native.enter.stop="onSearchNext"
-        @keydown.native.stop
+        @keyup.enter.stop="onSearchNext"
+        @keydown.stop
         @focus="onFocus"
         @blur="onBlur"
       >
-        <i slot="prefix" class="el-input__icon el-icon-search"></i>
-        <el-button
-          size="small"
-          slot="append"
-          v-if="!isUndef(searchText)"
-          @click="showReplaceInput = true"
-          >{{ $t('search.replace') }}</el-button
-        >
+        <template #prefix>
+          <i class="el-input__icon el-icon-search"></i>
+        </template>
+        <template #append>
+          <el-button
+            size="small"
+            v-if="!isUndef(searchText)"
+            @click="showReplaceInput = true"
+            >{{ $t('search.replace') }}</el-button
+          >
+        </template>
       </el-input>
       <div class="searchInfo" v-if="showSearchInfo && !isUndef(searchText)">
         {{ currentIndex }} / {{ total }}
@@ -34,14 +37,18 @@
       size="small"
       v-model="replaceText"
       style="margin: 12px 0;"
-      @keydown.native.stop
+      @keydown.stop
       @focus="onFocus"
       @blur="onBlur"
     >
-      <i slot="prefix" class="el-input__icon el-icon-edit"></i>
-      <el-button size="small" slot="append" @click="hideReplaceInput">{{
-        $t('search.cancel')
-      }}</el-button>
+      <template #prefix>
+        <i class="el-input__icon el-icon-edit"></i>
+      </template>
+      <template #append>
+        <el-button size="small" @click="hideReplaceInput">{{
+          $t('search.cancel')
+        }}</el-button>
+      </template>
     </el-input>
     <div class="btnList" v-if="showReplaceInput">
       <el-button size="small" :disabled="isReadonly" @click="replace">{{
@@ -179,7 +186,7 @@ export default {
   mounted() {
     this.setSearchResultListHeight()
   },
-  beforeDestroy() {
+  beforeUnmount() {
     this.$bus.$off('show_search', this.showSearch)
     this.mindMap.off('search_info_change', this.handleSearchInfoChange)
     this.mindMap.off('node_click', this.blur)
@@ -482,7 +489,7 @@ export default {
         vertical-align: middle;
       }
 
-      /deep/.match {
+      :deep(.match) {
         color: #409eff;
         font-weight: bold;
       }

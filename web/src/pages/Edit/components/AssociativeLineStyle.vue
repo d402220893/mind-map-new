@@ -24,7 +24,7 @@
         <div class="rowItem">
           <span class="name">{{ $t('baseStyle.associativeLineWidth') }}</span>
           <el-select
-            size="mini"
+            size="small"
             style="width: 80px"
             v-model="style.associativeLineWidth"
             placeholder=""
@@ -76,7 +76,7 @@
             $t('baseStyle.associativeLineActiveWidth')
           }}</span>
           <el-select
-            size="mini"
+            size="small"
             style="width: 80px"
             v-model="style.associativeLineActiveWidth"
             placeholder=""
@@ -106,7 +106,7 @@
         <div class="rowItem">
           <span class="name">{{ $t('style.style') }}</span>
           <el-select
-            size="mini"
+            size="small"
             style="width: 80px"
             v-model="style.associativeLineDasharray"
             placeholder=""
@@ -149,7 +149,7 @@
         <div class="rowItem">
           <span class="name">{{ $t('baseStyle.fontFamily') }}</span>
           <el-select
-            size="mini"
+            size="small"
             v-model="style.associativeLineTextFontFamily"
             placeholder=""
             @change="update('associativeLineTextFontFamily', $event)"
@@ -187,7 +187,7 @@
         <div class="rowItem">
           <span class="name">{{ $t('baseStyle.fontSize') }}</span>
           <el-select
-            size="mini"
+            size="small"
             style="width: 80px"
             v-model="style.associativeLineTextFontSize"
             placeholder=""

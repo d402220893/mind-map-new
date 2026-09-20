@@ -2,7 +2,7 @@
   <el-dialog
     class="nodeHyperlinkDialog"
     :title="$t('nodeHyperlink.title')"
-    :visible.sync="dialogVisible"
+    v-model="dialogVisible"
     :width="isMobile ? '90%' : '50%'"
     :top="isMobile ? '20px' : '15vh'"
   >
@@ -10,34 +10,38 @@
       <span class="name">{{ $t('nodeHyperlink.link') }}</span>
       <el-input
         v-model="link"
-        size="mini"
+        size="small"
         placeholder="http://xxxx.com/"
-        @keyup.native.stop
-        @keydown.native.stop
+        @keyup.stop
+        @keydown.stop
         @blur="handleUrl()"
       >
-        <el-select v-model="protocol" slot="prepend" style="width: 80px;">
-          <el-option label="https" value="https"></el-option>
-          <el-option label="http" value="http"></el-option>
-          <el-option label="无" value="none"></el-option>
-        </el-select>
+        <template #prepend>
+          <el-select v-model="protocol" style="width: 80px;">
+            <el-option label="https" value="https"></el-option>
+            <el-option label="http" value="http"></el-option>
+            <el-option label="无" value="none"></el-option>
+          </el-select>
+        </template>
       </el-input>
     </div>
     <div class="item">
       <span class="name">{{ $t('nodeHyperlink.name') }}</span>
       <el-input
         v-model="linkTitle"
-        size="mini"
-        @keyup.native.stop
-        @keydown.native.stop
+        size="small"
+        @keyup.stop
+        @keydown.stop
       ></el-input>
     </div>
-    <span slot="footer" class="dialog-footer">
-      <el-button @click="cancel">{{ $t('dialog.cancel') }}</el-button>
-      <el-button type="primary" @click="confirm">{{
-        $t('dialog.confirm')
-      }}</el-button>
-    </span>
+    <template #footer>
+      <span class="dialog-footer">
+        <el-button @click="cancel">{{ $t('dialog.cancel') }}</el-button>
+        <el-button type="primary" @click="confirm">{{
+          $t('dialog.confirm')
+        }}</el-button>
+      </span>
+    </template>
   </el-dialog>
 </template>
 
@@ -60,7 +64,7 @@ export default {
     this.$bus.$on('node_active', this.handleNodeActive)
     this.$bus.$on('showNodeLink', this.handleShowNodeLink)
   },
-  beforeDestroy() {
+  beforeUnmount() {
     this.$bus.$off('node_active', this.handleNodeActive)
     this.$bus.$off('showNodeLink', this.handleShowNodeLink)
   },
