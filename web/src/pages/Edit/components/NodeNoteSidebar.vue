@@ -9,6 +9,7 @@ import Sidebar from './Sidebar.vue'
 import { mapState, mapMutations } from 'vuex'
 import Viewer from '@toast-ui/editor/dist/toastui-editor-viewer'
 import '@toast-ui/editor/dist/toastui-editor-viewer.css'
+import { markRaw } from 'vue'
 
 export default {
   components: {
@@ -71,9 +72,14 @@ export default {
     // 初始化编辑器
     initEditor() {
       if (!this.editor) {
-        this.editor = new Viewer({
-          el: this.$refs.noteContentWrap
-        })
+        // ⚠️ 必须 markRaw：Viewer 内部同样是 ProseMirror，被 Vue3 data() 代理后
+        // setMarkdown() 会抛 `RangeError: Applying a mismatched transaction`
+        //（Vue2 时代 data() 不做深度代理，所以升级到 Vue3 后才暴露）。
+        this.editor = markRaw(
+          new Viewer({
+            el: this.$refs.noteContentWrap
+          })
+        )
       }
     },
 

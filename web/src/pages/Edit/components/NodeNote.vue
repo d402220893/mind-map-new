@@ -63,6 +63,7 @@ import 'prismjs/components/prism-yaml'
 import 'prismjs/components/prism-markdown'
 import 'prismjs/components/prism-xml-doc'
 import { isMobile } from 'simple-mind-map/src/utils/index'
+import { markRaw } from 'vue'
 
 // 节点备注内容设置
 export default {
@@ -145,15 +146,23 @@ export default {
 
     initEditor() {
       if (!this.editor) {
-        this.editor = new Editor({
-          el: this.$refs.noteEditor,
-          height: '500px',
-          // F1：单栏实时渲染（不再左右分栏）。写 markdown 当场渲染成单栏，
-          // 代码块由 codeSyntaxHighlight 插件按语言实时上色；图片粘贴为 data URL 内嵌，渲染为真 <img>。
-          initialEditType: 'wysiwyg',
-          hideModeSwitch: true,
-          plugins: [[codeSyntaxHighlight, { highlighter: Prism }]]
-        })
+        // ⚠️ 必须 markRaw：Toast UI Editor 内部是 ProseMirror（EditorState / Node / Plugin）。
+        // Vue3 的 data() 会把赋进来的类实例深度包成 reactive Proxy（Vue2 不会），
+        // 一旦任何一处读到的 Node 是「代理」而另一处是「原始对象」，ProseMirror 的
+        // Node.eq() / sameMarkup() 就会返回 false，于是 view.dispatch() 抛
+        // `RangeError: Applying a mismatched transaction`（首次点「备注」必现，
+        // 之后 setMarkdown / insertCodeBlock 全废）。markRaw 让实例保持原始引用。
+        this.editor = markRaw(
+          new Editor({
+            el: this.$refs.noteEditor,
+            height: '500px',
+            // F1：单栏实时渲染（不再左右分栏）。写 markdown 当场渲染成单栏，
+            // 代码块由 codeSyntaxHighlight 插件按语言实时上色；图片粘贴为 data URL 内嵌，渲染为真 <img>。
+            initialEditType: 'wysiwyg',
+            hideModeSwitch: true,
+            plugins: [[codeSyntaxHighlight, { highlighter: Prism }]]
+          })
+        )
       }
       this.editor.setMarkdown(this.note)
     },
@@ -183,7 +192,11 @@ export default {
           this.editor.setMarkdown((cur ? cur + '\n\n' : '') + '```' + lang + '\n\n```')
         }
       } catch (e) {
-        // 最后兜底：仍插入代码块（无语言），用户可点代码块上的语言标签改
+        // 最后兜底：仍插入代码块（无语言），用户可点代码块上的语言标签改。
+        // ⚠️ 必须打日志：这条兜底插入的是「无语言」代码块（不会有语法着色），
+        // 2026-09-20 用户报的「插入代码未着色」就是被它掩盖的
+        //（真正原因是 editor 被 Vue3 代理，见 initEditor 里的 markRaw 说明）。
+        console.error('[NodeNote] 插入代码块失败，已降级为无语言代码块:', e)
         this.editor.exec('codeBlock')
       }
     },
