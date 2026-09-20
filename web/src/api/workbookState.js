@@ -70,6 +70,8 @@ function normalize(w) {
   if (typeof w.name !== 'string' || !w.name) w.name = '未命名'
   if (typeof w.filePath !== 'string') w.filePath = ''
   if (typeof w.dirty !== 'boolean') w.dirty = false
+  // 【详设 §5.2/D6】Tab 只存 kind（'mindmap' | 'markdown'），内容一律不在本模块
+  w.kind = w.kind === 'markdown' ? 'markdown' : 'mindmap'
   if (typeof w.lastAutosavedAt !== 'number') w.lastAutosavedAt = 0
   if (!w.sheetState || !Array.isArray(w.sheetState.sheets)) {
     w.sheetState = createDefaultSheetState(w.name)
@@ -125,9 +127,17 @@ export function getWorkbookList() {
       id: w.id,
       name: w.name,
       filePath: w.filePath,
+      kind: w.kind,
       dirty: w.dirty
     }))
   }
+}
+
+// 【详设 §5.2/D6】Tab 类型（'mindmap' | 'markdown'）
+export function getKind(id) {
+  const s = loadState()
+  const w = s.workbooks.find(x => x.id === id)
+  return w ? w.kind : 'mindmap'
 }
 
 export function getActiveWorkbookId() {
@@ -185,6 +195,7 @@ export function setActiveSheetState(sheetState) {
 export function addWorkbook({
   name,
   filePath,
+  kind,
   sheetState: initialSheetState,
   skipOldWriteback = false
 } = {}) {
@@ -192,6 +203,8 @@ export function addWorkbook({
   const newWb = normalize({
     name: name || '未命名-' + (s.workbooks.length + 1),
     filePath: filePath || '',
+    kind: kind === 'markdown' ? 'markdown' : 'mindmap',
+    // markdown Tab 内容在 documentStore，sheetState 仍是占位默认（避免既有导图侧代码读到 null）
     sheetState: initialSheetState || createDefaultSheetState('Sheet1'),
     dirty: false
   })

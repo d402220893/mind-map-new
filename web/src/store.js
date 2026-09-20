@@ -1,5 +1,5 @@
 import { createStore } from 'vuex'
-import { storeLocalConfig } from '@/api'
+import { storeLocalConfig } from '@/api/localConfig'
 
 const store = createStore({
   state: {

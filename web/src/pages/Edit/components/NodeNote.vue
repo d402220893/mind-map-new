@@ -7,6 +7,21 @@
     :top="isMobile ? '20px' : '15vh'"
     :close-on-click-modal="false"
   >
+    <!-- 引用块列表（§7.14 / §8.3）：固定在备注编辑器上方，自有备注在下方 -->
+    <div class="refArea">
+      <RefBlock
+        v-for="r in refs"
+        :key="r.refId || r.sectionId"
+        :ref-obj="r"
+        :node="targetNode"
+        :node-link="nodeLink"
+        @conflict="onConflict"
+        @unref="onUnref"
+        @reselect="onReselect"
+      />
+      <el-button size="small" @click="pickVisible = true">🔗 引用文档章节</el-button>
+      <el-button size="small" @click="refreshAll">🔄 刷新全部引用</el-button>
+    </div>
     <div class="noteCodeLangBar">
       <span class="label">代码块语言</span>
       <select v-model="codeLang" class="codeLangSelect">
@@ -33,6 +48,21 @@
         }}</el-button>
       </span>
     </template>
+
+    <!-- 章节选择器 + 冲突弹窗 -->
+    <SectionPicker
+      v-model="pickVisible"
+      :prefer-path="pickPrefer"
+      @pick="onPick"
+    />
+    <ConflictDialog
+      v-model="conflictVisible"
+      :title="conflictTitle"
+      :mine="conflictMine"
+      :current="conflictCurrent"
+      :impact="conflictImpact"
+      @resolve="onResolve"
+    />
   </el-dialog>
 </template>
 
@@ -64,10 +94,21 @@ import 'prismjs/components/prism-markdown'
 import 'prismjs/components/prism-xml-doc'
 import { isMobile } from 'simple-mind-map/src/utils/index'
 import { markRaw } from 'vue'
+import RefBlock from './RefBlock.vue'
+import SectionPicker from './SectionPicker.vue'
+import ConflictDialog from './ConflictDialog.vue'
+import {
+  getRefs as readRefs,
+  addRef,
+  removeRef,
+  refreshAllRefs,
+  resolveConflict
+} from '@/utils/workspaceBridge'
 
 // 节点备注内容设置
 export default {
   name: 'NodeNote',
+  components: { RefBlock, SectionPicker, ConflictDialog },
   data() {
     return {
       dialogVisible: false,
@@ -77,6 +118,16 @@ export default {
       isMobile: isMobile(),
       appointNode: null,
       codeLang: 'python',
+      // ── 章节引用（§7.14）──
+      refs: [],
+      pickVisible: false,
+      pickPrefer: null,
+      conflictVisible: false,
+      conflictCtx: null,
+      conflictTitle: '',
+      conflictMine: '',
+      conflictCurrent: '',
+      conflictImpact: 1,
       // 语言列表与已 import 的 prismjs 语言包保持一致（未 import 的语言不会上色）
       codeLangs: [
         'text',
@@ -98,11 +149,25 @@ export default {
       ]
     }
   },
+  computed: {
+    targetNode() {
+      return this.appointNode || (this.activeNodes && this.activeNodes[0]) || null
+    },
+    nodeLink() {
+      const n = this.targetNode
+      if (!n || !n.getData) return ''
+      const d = n.getData()
+      return (d && d.link) || ''
+    }
+  },
   watch: {
     dialogVisible(val, oldVal) {
       if (!val && oldVal) {
         this.$bus.$emit('endTextEdit')
       }
+    },
+    targetNode() {
+      this.loadRefs()
     }
   },
   created() {
@@ -125,6 +190,89 @@ export default {
         this.note = firstNode.getData('note') || ''
       } else {
         this.note = ''
+      }
+      this.loadRefs()
+    },
+
+    // ── 章节引用 ──────────────────────────────────────────────
+    loadRefs() {
+      const n = this.targetNode
+      this.refs = n ? readRefs(n) || [] : []
+    },
+
+    async onPick(spec) {
+      const node = this.targetNode
+      if (!node) {
+        this.$message.warning('请先选中节点')
+        return
+      }
+      const refSpec = {
+        file: spec.file,
+        sectionId: spec.sectionId,
+        sectionPath: spec.sectionPath || [],
+        title: spec.title || '',
+        baseHash: spec.baseHash,
+        cachedContent: spec.content || ''
+      }
+      // mode='link' 只写 node.link；'ref' 只写 _mindlink.refs；'both' 两者都写
+      if (spec.mode !== 'ref') {
+        const anchor = spec.sectionPath && spec.sectionPath.length
+          ? '#' + spec.sectionPath[spec.sectionPath.length - 1]
+          : ''
+        node.setData({ link: spec.file + anchor })
+      }
+      if (spec.mode !== 'link') addRef(node, refSpec)
+      this.loadRefs()
+      this.$message.success('已引用章节')
+    },
+
+    async onUnref(refId) {
+      const node = this.targetNode
+      if (node) removeRef(node, refId)
+      this.loadRefs()
+    },
+
+    onReselect(refObj) {
+      this.pickPrefer = refObj && refObj.sectionPath ? refObj.sectionPath : null
+      this.pickVisible = true
+    },
+
+    async refreshAll() {
+      const r = await refreshAllRefs()
+      if (!r.ok) {
+        this.$message.error('刷新失败：' + (r.error && (r.error.message || r.error.code)))
+        return
+      }
+      this.$message.success('已刷新当前导图的引用快照')
+      this.loadRefs()
+    },
+
+    // 冲突：由 commitEdit 返回值判定（§7.14 A8），此处只负责弹窗与分发
+    onConflict(payload) {
+      this.conflictCtx = payload.refCtx
+      this.conflictTitle = (payload.ref && payload.ref.title) || ''
+      this.conflictMine = payload.newContent || ''
+      this.conflictCurrent =
+        payload.current && payload.current.content ? payload.current.content : ''
+      this.conflictImpact = payload.impact || 1
+      this.conflictVisible = true
+    },
+
+    async onResolve({ choice, merged }) {
+      const ctx = this.conflictCtx
+      if (!ctx) return
+      const r = await resolveConflict(
+        ctx,
+        { choice, mine: choice === 'manual-merge' ? merged : this.conflictMine, current: { content: this.conflictCurrent } },
+        {}
+      )
+      if (!r.ok) {
+        this.$message.error('解决冲突失败：' + (r.error && (r.error.message || r.error.code)))
+        return
+      }
+      if (!(r.data && r.data.canceled)) {
+        this.$message.success('已解决冲突并写盘')
+        this.loadRefs()
       }
     },
 

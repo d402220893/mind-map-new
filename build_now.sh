@@ -64,6 +64,22 @@ ensure_deps() {
 }
 ensure_deps "$WEB" "$WEB/node_modules/.bin/vue-cli-service" "web (vue build)" || exit 1
 ensure_deps "$APP" "$APP/node_modules/@electron/asar/bin/asar.js" "electron-app (asar)" || exit 1
+# === [0.5/5] 架构守卫 + 全量测试（出包硬闸门）===
+# 历史教训（2026-09-20 白屏事故）：此前 build_now.sh **完全不跑守卫**，
+# 而 "@/api 漏导出"、"workspaceBridge 模块顶层解构导致 services 冻结成 undefined"
+# 这类缺陷 **webpack 只给 warning、不进退出码** —— 于是"守卫全绿"与"构建出包"
+# 是两条互不相干的路径，坏包照样发得出去，用户直接白屏。
+# 这里把守卫接成硬闸门：不通过就不出包（宁可不出，也不发一个打不开的包）。
+echo "=== [0.5/5] 架构守卫 + 全量测试（出包硬闸门）===" | tee -a "$LOG"
+if ( cd "$WEB" && timeout 1200 "$NPM" test ) >> "$LOG" 2>&1; then
+  echo "  [OK] check-arch + 全量测试通过" | tee -a "$LOG"
+else
+  rc=$?
+  echo "  [FAIL] 守卫/测试未通过（rc=$rc）→ 终止出包。详见 $LOG 末尾" | tee -a "$LOG"
+  tail -30 "$LOG" | tee -a "$LOG"
+  echo "  提示：漏导出 / import 环 / 分层越界 / 预算不足 都会在此拦下，请先修根因，不要绕过。" | tee -a "$LOG"
+  exit 1
+fi
 echo "=== [1/5] vue build ===" | tee -a "$LOG"
 cd /e/03_学习文件/mind-map-main/web
 # 清 webpack 缓存：陈旧缓存会导致 Edit.vue 等改动未重编译，产出"假新包"（时间戳新但内容旧），
@@ -146,17 +162,47 @@ else
 fi
 echo "=== [5/5] 打包并部署到运行真源 D:\Program Files (x86)\思绪思维导图\resources\app.asar ===" | tee -a "$LOG"
 cd /e/03_学习文件/mind-map-main/electron-app
+# ⚠️ 清 _appstage 必须"删干净 + 断言删干净"。
+# 历史坑（2026-09-20 查白屏时发现）：这里原为 `rm -rf _appstage 2>/dev/null || true`，
+# 一旦删除失败（被锁/被上游工具拦），`|| true` 把失败**静默吞掉** → 旧产物残留 →
+# 被 `cp -rf dist/.` 合并 → 陈旧 chunk 一路带进 asar 与 D 盘部署目录。
+# 实测 D:\...\resources\app\dist\js 混着 09:30/10:06/15:02/17:41/18:32 五代构建的 chunk
+# （13 个 3.8MB 陈旧文件 ≈ 45MB 垃圾），而新鲜产物只有 12 个文件。
 rm -rf _appstage 2>/dev/null || true
+if [ -d _appstage ]; then
+  # safe-delete shim / Defender 可能让 rm 失败，退回 .NET 强删
+  powershell -NoProfile -Command "if (Test-Path 'E:/03_学习文件/mind-map-main/electron-app/_appstage') { [System.IO.Directory]::Delete('E:/03_学习文件/mind-map-main/electron-app/_appstage', \$true) }" >> "$LOG" 2>&1 || true
+fi
+if [ -d _appstage ]; then
+  echo "BUILD ASSERT FAILED: _appstage 无法清理（残留会让陈旧 chunk 混入 asar 与部署目录）" | tee -a "$LOG"
+  exit 1
+fi
 mkdir -p _appstage/dist
 cp package.json main.js preload.js index.html install.html install-meta.js appicon.ico _appstage/ 2>/dev/null
 # 关键：先建好 _appstage/dist，再用 "dist/." 把内容平铺进去；
 # 严禁 "cp -r dist _appstage/dist"（若 _appstage/dist 已存在会生成 dist/dist 双层嵌套，致白屏/资源 404）
 cp -rf dist/. _appstage/dist/
+# 断言：打包源与构建产物**文件集合完全一致**（多一个陈旧文件都不允许）
+STAGE_DIFF=$(diff <(cd dist && find . -type f | sort) <(cd _appstage/dist && find . -type f | sort) || true)
+if [ -n "$STAGE_DIFF" ]; then
+  echo "BUILD ASSERT FAILED: _appstage/dist 与 electron-app/dist 文件集合不一致（疑似旧产物被合并）" | tee -a "$LOG"
+  echo "$STAGE_DIFF" | head -20 | tee -a "$LOG"
+  exit 1
+fi
+echo "stage-assert OK: _appstage/dist 与构建产物文件集合一致（$(cd dist && find . -type f | wc -l) 个文件）" | tee -a "$LOG"
 "$NODE" node_modules/@electron/asar/bin/asar.js pack _appstage _appstage.asar >> "$LOG" 2>&1
 SRC_ASAR="E:/03_学习文件/mind-map-main/electron-app/_appstage.asar"
 cd /e/03_学习文件/mind-map-main
 DST="D:/Program Files (x86)/思绪思维导图/resources/app.asar"
-powershell -NoProfile -ExecutionPolicy Bypass -File "E:/03_学习文件/mind-map-main/deploy_running.ps1" "$SRC_ASAR" "$DST" "思绪思维导图" | tee -a "$LOG" || echo "DEPLOY 步骤返回非0，请检查日志" | tee -a "$LOG"
+# ⚠️ 原来这里是 `... | tee -a "$LOG" || echo "DEPLOY 步骤返回非0，请检查日志" | tee -a "$LOG"`
+# —— 部署失败只打一行字就继续往下跑，最后还会打印 RESULT 和安装包大小，
+# 看起来"构建成功"，实际 D 盘还是旧代码。这类"报成功实则没部署"最耗排查时间，改为硬失败。
+if ! powershell -NoProfile -ExecutionPolicy Bypass -File "E:/03_学习文件/mind-map-main/deploy_running.ps1" "$SRC_ASAR" "$DST" "思绪思维导图" >> "$LOG" 2>&1; then
+  echo "DEPLOY ASSERT FAILED: deploy_running.ps1 返回非0（app.asar 未成功部署）" | tee -a "$LOG"
+  tail -20 "$LOG" | tee -a "$LOG"
+  exit 1
+fi
+echo "asar deploy OK" | tee -a "$LOG"
 
 # === [5/5b] 同步部署到 resources/app 目录（Electron 加载优先级：app/ 目录 > app.asar）===
 # 历史教训（2026-09-10~11）：D:\ 下存在 Sep 8 的旧 resources/app/ 目录，Electron 优先加载它，
@@ -168,10 +214,17 @@ if [ -d "$APP_DIR_DST" ]; then
   powershell -NoProfile -Command "Get-Process | Where-Object { \$_.ProcessName -like '*思绪思维导图*' } | Stop-Process -Force -ErrorAction SilentlyContinue; Start-Sleep -Milliseconds 1500" >> "$LOG" 2>&1
   APP_TS=$(date +%Y%m%d_%H%M%S)
   powershell -NoProfile -Command "Rename-Item '$APP_DIR_DST' ('app.bak_' + '$APP_TS')" >> "$LOG" 2>&1 \
-    || { echo "APP_DIR 改名失败（可能被锁），跳过 app/ 目录同步" | tee -a "$LOG"; }
+    || { echo "DEPLOY ASSERT FAILED: resources/app 改名失败（被锁）→ 不能继续：Electron 加载优先级 app/ > app.asar，asar 更新了用户仍会跑旧代码" | tee -a "$LOG"; exit 1; }
 fi
 if [ ! -d "$APP_DIR_DST" ]; then
-  powershell -NoProfile -Command "robocopy 'E:/03_学习文件/mind-map-main/electron-app/_appstage' '$APP_DIR_DST' /E /NFL /NDL /NJH /NJS /NC /NS /NP" >> "$LOG" 2>&1 || true
+  # robocopy 的退出码语义特殊：0=无需复制、1=成功复制、>=8=真失败。
+  # 原来写成 `|| true` 会把 >=8 的失败也吞掉（负样式），这里显式判 rc。
+  ROB_RC=0
+  powershell -NoProfile -Command "robocopy 'E:/03_学习文件/mind-map-main/electron-app/_appstage' '$APP_DIR_DST' /E /NFL /NDL /NJH /NJS /NC /NS /NP" >> "$LOG" 2>&1 || ROB_RC=$?
+  if [ "$ROB_RC" -ge 8 ]; then
+    echo "DEPLOY ASSERT FAILED: resources/app 拷贝失败（robocopy rc=$ROB_RC）" | tee -a "$LOG"
+    exit 1
+  fi
   echo "--- 校验 app/ 目录构建指纹 ---" | tee -a "$LOG"
   cat "$APP_DIR_DST/dist/build-info.json" 2>/dev/null | tee -a "$LOG"
   # app/ 目录守卫：noteCodeBar（v1.0.21 旧代码特征）必须为 0
@@ -181,6 +234,24 @@ if [ ! -d "$APP_DIR_DST" ]; then
   fi
   # 版本号提取：cut -d'\"' 在双引号转义下会报 "the delimiter must be a single character"，改用 sed
   VER=$(sed -n 's/.*"version"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' "$APP_DIR_DST/package.json" | head -1)
+  # 部署完整性：部署目录必须与打包源**文件集合完全一致**（防"部署没生效"或"旧文件污染"）
+  DEPLOY_DIFF=$(diff <(cd electron-app/_appstage/dist && find . -type f | sort) <(cd "$APP_DIR_DST/dist" && find . -type f | sort) || true)
+  if [ -n "$DEPLOY_DIFF" ]; then
+    echo "DEPLOY ASSERT FAILED: resources/app/dist 与打包源不一致（部署未生效或被旧文件污染）" | tee -a "$LOG"
+    echo "$DEPLOY_DIFF" | head -20 | tee -a "$LOG"
+    exit 1
+  fi
+  echo "deploy-assert OK: resources/app/dist 与打包源文件集合一致" | tee -a "$LOG"
+  # 防白屏代码必须真的在包里 —— 否则就是"我修了，你怎么还看到白屏"
+  if ! grep -a -q "应用启动失败" "$APP_DIR_DST/dist/js/app.js" 2>/dev/null; then
+    echo "DEPLOY ASSERT FAILED: 部署包缺少启动诊断代码（main.js 的防白屏兜底未编译进 bundle）" | tee -a "$LOG"
+    exit 1
+  fi
+  echo "deploy-assert OK: 启动诊断（防白屏兜底）已编译进 bundle" | tee -a "$LOG"
+  # 备份清理：上面每次改名都会产生 app.bak_<ts>，从不清理会无限累积
+  # （2026-09-20 实测已攒到 27 个 ≈ 数百 MB 旧代码）。保留最新 3 个作回滚点，其余删除。
+  # 只匹配 app.bak_*，绝不触碰正在运行的 app/ 与 app.asar。
+  powershell -NoProfile -Command "\$r='D:/Program Files (x86)/思绪思维导图/resources'; \$b=@(Get-ChildItem -LiteralPath \$r -Directory | Where-Object { \$_.Name -like 'app.bak_*' } | Sort-Object Name -Descending); if (\$b.Count -gt 3) { \$b | Select-Object -Skip 3 | ForEach-Object { try { [System.IO.Directory]::Delete(\$_.FullName, \$true) } catch {} }; Write-Output ('backup-prune: removed ' + (\$b.Count - 3) + ', kept 3') } else { Write-Output ('backup-prune: kept ' + \$b.Count) }" >> "$LOG" 2>&1 || true
   echo "app-dir deploy OK (v${VER})" | tee -a "$LOG"
 fi
 

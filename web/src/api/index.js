@@ -8,7 +8,6 @@ import { getCurrentData } from '@/utils/global'
 
 const SIMPLE_MIND_MAP_CONFIG = 'SIMPLE_MIND_MAP_CONFIG'
 const SIMPLE_MIND_MAP_LANG = 'SIMPLE_MIND_MAP_LANG'
-const SIMPLE_MIND_MAP_LOCAL_CONFIG = 'SIMPLE_MIND_MAP_LOCAL_CONFIG'
 
 // 初始化纯状态机：用浏览器 localStorage 作为存储，并用真实模板作为空白页数据
 WB.initWorkbookStorage(localStorage)
@@ -143,25 +142,10 @@ export const getLang = () => {
   return 'zh'
 }
 
-// 存储本地配置
-export const storeLocalConfig = config => {
-  if (window.takeOverApp) {
-    return window.takeOverAppMethods.saveLocalConfig(config)
-  }
-  localStorage.setItem(SIMPLE_MIND_MAP_LOCAL_CONFIG, JSON.stringify(config))
-}
-
-// 获取本地配置
-export const getLocalConfig = () => {
-  if (window.takeOverApp) {
-    return window.takeOverAppMethods.getLocalConfig()
-  }
-  let config = localStorage.getItem(SIMPLE_MIND_MAP_LOCAL_CONFIG)
-  if (config) {
-    return JSON.parse(config)
-  }
-  return null
-}
+// 本地配置（localStorage）：实现抽至 ./localConfig，专破 api/index.js ⇄ store.js 的 ESM 环。
+// store.js 不再 import @/api，改 import @/api/localConfig，从而消除双向依赖。
+// 此处 re-export 保持 `@/api` 对外接口不变（Index.vue 等仍从 @/api 取 getLocalConfig）。
+export { storeLocalConfig, getLocalConfig } from './localConfig'
 
 // ===== 多工作表对外接口 =====
 
@@ -307,8 +291,13 @@ export const getActiveWorkbookId = () => WB.getActiveWorkbookId()
 export const switchWorkbook = id => WB.switchWorkbook(id)
 
 // 新增一个 workbook（可选携带初始 sheetState 与 filePath），并切换为激活
-export const addWorkbook = ({ name, filePath, sheetState: initialSheetState, skipOldWriteback = false } = {}) =>
-  WB.addWorkbook({ name, filePath, sheetState: initialSheetState, skipOldWriteback })
+// ⚠️ 本包装层**必须显式转发 `kind`**。曾经这里漏掉了它（只解构 name/filePath/sheetState/
+//    skipOldWriteback），于是 workspaceBridge.tabsAdapter.add({kind:'markdown'}) 传下来的
+//    kind 被静默丢弃 → WB.normalize() 默认落回 'mindmap' → 打开 .md 文件却渲染成导图。
+//    这类"包装层吞字段"的 bug 不会有编译错误（JS 解构多余字段不报错），只能靠转发纪律 +
+//    回归守卫（tests/regression/*）拦。新增字段时务必同步此处。
+export const addWorkbook = ({ name, filePath, kind, sheetState: initialSheetState, skipOldWriteback = false } = {}) =>
+  WB.addWorkbook({ name, filePath, kind, sheetState: initialSheetState, skipOldWriteback })
 
 // 关闭 workbook：至少保留一个；关闭最后一个时新建一个空的替换
 export const removeWorkbook = id => WB.removeWorkbook(id)
@@ -329,6 +318,10 @@ export const getCurrentSheetState = () => WB.getActiveSheetState()
 
 // 未保存标记
 export const markDirty = (id, value) => WB.markDirty(id, value)
+// Tab 类型（§5.2/D6）：'mindmap' | 'markdown'。视图据此决定渲染导图还是 md 编辑器。
+// ⚠️ 漏导出不会有编译错误 —— webpack 只给 warning，产物照出，调用点运行时才 TypeError。
+//    （这条曾漏掉，见 .workbuddy/tools/check-api-exports.mjs 与 check-arch 断言⑪）
+export const getKind = id => WB.getKind(id)
 export const isDirty = id => WB.isDirty(id)
 export const markAutosaved = (id, ts) => WB.markAutosaved(id, ts)
 export const getLastAutosavedAt = id => WB.getLastAutosavedAt(id)

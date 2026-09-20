@@ -26,6 +26,25 @@ contextBridge.exposeInMainWorld('smmApi', {
     ipcRenderer.invoke('smm:rename-file', { oldPath, newPath }),
   // 设置窗口标题（用于直观显示当前文件路径）
   setTitle: title => ipcRenderer.invoke('smm:set-title', title),
+  // ── 工作区 / 双链（详设 §7.2）：新增通道须与 main.js 的 ipcMain.handle 一一对应 ──
+  //    （由 electron-app/tests/ipc-channels.test.mjs 守门，防止"加了 handler 忘了暴露"）
+  pickDirectory: opts => ipcRenderer.invoke('smm:pick-directory', opts),
+  readTree: (root, opts) => ipcRenderer.invoke('smm:read-tree', { root, ...opts }),
+  statMany: paths => ipcRenderer.invoke('smm:stat-many', { paths }),
+  readText: (filePath, opts) => ipcRenderer.invoke('smm:read-text', { filePath, ...opts }),
+  writeText: (filePath, content, opts) =>
+    ipcRenderer.invoke('smm:write-text', { filePath, content, ...opts }),
+  writeBinary: (filePath, base64, opts) =>
+    ipcRenderer.invoke('smm:write-binary', { filePath, base64, ...opts }),
+  mkdirp: dirPath => ipcRenderer.invoke('smm:mkdirp', { dirPath }),
+  move: (from, to) => ipcRenderer.invoke('smm:move', { from, to }),
+  trash: paths => ipcRenderer.invoke('smm:trash', { paths }),
+  watch: root => ipcRenderer.invoke('smm:watch', { root }),
+  unwatch: () => ipcRenderer.invoke('smm:unwatch'),
+  openExternal: (url, opts) => ipcRenderer.invoke('smm:open-external', { url, ...opts }),
+  revealInFolder: filePath => ipcRenderer.invoke('smm:reveal-in-folder', { filePath }),
+  // 主进程推送的 fs 事件（400ms 合并窗口后的批量事件）
+  onFsEvent: cb => ipcRenderer.on('smm:fs-event', (e, p) => cb(p)),
   // 自定义标题栏窗口控制
   windowControls: {
     minimize: () => ipcRenderer.invoke('smm:window-minimize'),

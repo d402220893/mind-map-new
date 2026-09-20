@@ -17,6 +17,7 @@
 // 不强求 rels.length 下限，也不强求 fileArgs 在场（用 relaxNg 更严：manual 跟踪若
 // 真加 fileArgs 请升级该测试）。
 
+import { resolveAsar, asarSkip } from './_asar-path.mjs'
 import { test } from 'node:test'
 import assert from 'node:assert'
 import fs from 'node:fs'
@@ -29,7 +30,10 @@ const asar = require('@electron/asar')
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 const root = path.resolve(__dirname, '..')
-const asarPath = path.join(root, 'dist-electron', 'win-unpacked', 'resources', 'app.asar')
+// ⚠️ 产物路径必须动态解析：打包链已把 asar 产出改到项目根 _appstage.asar，
+// 硬编码 dist-electron 会指向 Sep-11 的 0 字节残留（守卫空转，见 _asar-path.mjs 头注）
+const asarPath = resolveAsar()
+const asarSkipOpt = { skip: asarSkip() }
 
 // 从 JS 源码里抽出 require('./xxx') / require('../xxx') 的相对路径
 function extractLocalRequires(src) {
@@ -60,14 +64,9 @@ function asarHas(asarPath, relPath) {
   }
 }
 
-const haveAsar = fs.existsSync(asarPath)
+const haveAsar = !!asarPath
 
-test('main.js 的所有本地 require 都在 asar 内（防 fileArgs.js 类漏打包回归）', (t) => {
-  if (!haveAsar) {
-    return assert.fail(
-      'app.asar 尚未构建（路径：dist-electron/win-unpacked/resources/app.asar），请先 vue build + asar pack'
-    )
-  }
+test('main.js 的所有本地 require 都在 asar 内（防 fileArgs.js 类漏打包回归）', asarSkipOpt, (t) => {
   const mainSrc = asar.extractFile(asarPath, 'main.js').toString('utf8')
   const rels = extractLocalRequires(mainSrc)
   // v1.0.18 简化版主进程仅一个本地 require（install-meta）。不强求 >= 2。

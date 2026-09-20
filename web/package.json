@@ -9,7 +9,7 @@
     "format": "prettier --write src/* src/*/* src/*/*/* src/*/*/*/*",
     "createNodeImageList": "node ./scripts/createNodeImageList.js",
     "ai:serve": "node ./scripts/ai.js",
-    "test": "node --test",
+    "test": "node scripts/check-arch.mjs && node --test",
     "test:unit": "node --test",
     "test:regression": "node --test"
   },

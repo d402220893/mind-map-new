@@ -80,7 +80,14 @@ test('[退出丢盘] Edit.vue 在 beforeunload 走同步落盘 syncSaveOnExit（
     /handleBeforeUnload\(\)\s*\{[\s\S]*?syncSaveOnExit\(\)/.test(vue),
     'handleBeforeUnload 应调用 syncSaveOnExit 同步落盘'
   )
-  assert.ok(/window\.smmApi\.writeFileSync/.test(vue), 'syncSaveOnExit 应调用 window.smmApi.writeFileSync')
+  // 视图已收口到 bridge 的 shell 网关（不再直调 window.smmApi）；
+  // 同步语义由 shell.writeFileSync 保证 —— 这里额外断言**没有 await**，
+  // 否则会退化成"发起写盘就销毁窗口"，一样丢文件。
+  assert.ok(/shell\.writeFileSync\(/.test(vue), 'syncSaveOnExit 应经 shell 网关同步写盘')
+  assert.strictEqual(
+    /await\s+shell\.writeFileSync\(/.test(vue), false,
+    'syncSaveOnExit 不得 await（beforeunload 是同步上下文，await 等于没写）'
+  )
 })
 
 // ===== 修复：storeData 三写放大（MED）=====

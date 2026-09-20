@@ -98,6 +98,7 @@ import MindMapLayoutPro from 'simple-mind-map/src/plugins/MindMapLayoutPro.js'
 import NodeBase64ImageStorage from 'simple-mind-map/src/plugins/NodeBase64ImageStorage.js'
 import Themes from 'simple-mind-map-plugin-themes'
 import { shouldFireGlobalShortcut } from '@/utils/shortcutGuard'
+import { navigate, shell } from '@/utils/workspaceBridge'
 import { createAutosaveScheduler, resolveAutosaveTarget } from '@/utils/autosave'
 import { reduceDragMask } from '@/utils/dragMaskController'
 // 协同编辑插件
@@ -329,8 +330,8 @@ export default {
     // 多工作表文件：恢复上次保存路径，并监听主进程菜单命令（保存/另存为/打开）
     this.currentFilePath = getCurrentFilePath()
     this.updateTitle()
-    if (window.smmApi && window.smmApi.onMenuCommand) {
-      window.smmApi.onMenuCommand(this.handleMenuCommand)
+    if (shell.has('onMenuCommand')) {
+      shell.onMenuCommand(this.handleMenuCommand)
     }
     this.$bus.$on('requestSave', this.doSave)
     this.$bus.$on('requestSaveAs', this.doSaveAs)
@@ -527,13 +528,12 @@ export default {
         this.manualSave()
         const container = getSheetsContainer()
         if (
-          !window.smmApi ||
-          !window.smmApi.writeFile ||
+          !shell.has('writeFile') ||
           !this.isAbsolutePath(this.currentFilePath)
         ) {
           return
         }
-        const res = await window.smmApi.writeFile(
+        const res = await shell.writeFile(
           this.currentFilePath,
           JSON.stringify(container)
         )
@@ -853,7 +853,7 @@ export default {
     async saveWorkbookToFile(defaultName) {
       // 重新同步为当前激活 workbook 的真实路径（多文件切换后可能滞后）
       this.currentFilePath = getCurrentFilePath()
-      if (!window.smmApi || !window.smmApi.saveWorkbook) {
+      if (!shell.has('saveWorkbook')) {
         // 网页端无文件对话框，退化为浏览器下载
         this.exportSheetsBlob(defaultName)
         return
@@ -866,7 +866,7 @@ export default {
         const defaultPath = this.isAbsolutePath(this.currentFilePath)
           ? this.currentFilePath
           : defaultName
-        const res = await window.smmApi.saveWorkbook(
+        const res = await shell.saveWorkbook(
           JSON.stringify(container),
           defaultPath
         )
@@ -942,13 +942,12 @@ export default {
       this.currentFilePath = getCurrentFilePath()
       if (
         this.isAbsolutePath(this.currentFilePath) &&
-        window.smmApi &&
-        window.smmApi.writeFile
+        shell.has('writeFile')
       ) {
         try {
           this.manualSave()
           const container = getSheetsContainer()
-          const res = await window.smmApi.writeFile(
+          const res = await shell.writeFile(
             this.currentFilePath,
             JSON.stringify(container)
           )
@@ -1100,13 +1099,13 @@ export default {
 
     // 打开本地文件
     async openWorkbook() {
-      if (!window.smmApi || !window.smmApi.openWorkbookDialog) {
+      if (!shell.has('openWorkbookDialog')) {
         this.$message.warning('当前环境不支持打开本地文件')
         return
       }
       try {
         this.manualSave()
-        const res = await window.smmApi.openWorkbookDialog()
+        const res = await shell.openWorkbookDialog()
         if (res && res.canceled) return
         if (res && res.error) {
           this.$message.error('打开失败：' + res.error)
@@ -1160,7 +1159,7 @@ export default {
 
     // 新建本地文件（来自工具栏“新建文件”/“另存为”）：弹出保存对话框写入，并作为单一工作表加载，记录真实路径
     async newWorkbook(content) {
-      if (!window.smmApi || !window.smmApi.saveWorkbook) {
+      if (!shell.has('saveWorkbook')) {
         // 网页端无文件对话框：直接以单工作表加载，不落盘
         const container = {
           app: 'smm-multisheet',
@@ -1192,7 +1191,7 @@ export default {
             }
           ]
         }
-        const res = await window.smmApi.saveWorkbook(
+        const res = await shell.saveWorkbook(
           JSON.stringify(container),
           defaultName
         )
@@ -1222,7 +1221,7 @@ export default {
       // 先把当前 mind map 数据落盘到当前 workbook（保持当前 workbook 完整）
       this.manualSave()
       // 新建一个全新的空白文件（使用默认模板），不要复制当前文件内容
-      if (!window.smmApi || !window.smmApi.saveWorkbook) {
+      if (!shell.has('saveWorkbook')) {
         // 网页端：直接新建一个内存 workbook 并切换
         const { addWorkbook } = await import('@/api')
         addWorkbook({ name: '未命名', filePath: '' })
@@ -1248,7 +1247,7 @@ export default {
             }
           ]
         }
-        const res = await window.smmApi.saveWorkbook(
+        const res = await shell.saveWorkbook(
           JSON.stringify(container),
           defaultName
         )
@@ -1372,9 +1371,9 @@ export default {
       const title = this.currentFilePath
         ? base + ' - ' + this.fileName
         : base + ' - 未保存'
-      if (window.smmApi && window.smmApi.setTitle) {
+      if (shell.has('setTitle')) {
         try {
-          window.smmApi.setTitle(title)
+          shell.setTitle(title)
         } catch (e) {}
       }
     },
@@ -1411,12 +1410,12 @@ export default {
       if (!this.autosave || this._isLoading) return
       this.currentFilePath = getCurrentFilePath()
       if (!this.isAbsolutePath(this.currentFilePath)) return
-      if (!window.smmApi || typeof window.smmApi.writeFileSync !== 'function') {
+      if (!shell.has('writeFileSync')) {
         return
       }
       try {
         const container = getSheetsContainer()
-        const res = window.smmApi.writeFileSync(
+        const res = shell.writeFileSync(
           this.currentFilePath,
           JSON.stringify(container)
         )
@@ -1469,6 +1468,16 @@ export default {
           },
           hide: () => {
             this.$bus.$emit('hideNoteContent')
+          }
+        },
+        // 【详设 §7.12-3】节点 link 点击 → 统一交给 fileRouter（md/smm/图片/外链）。
+        // 库官方钩子，仅在点超链接图标时触发；不要放到 node_click（已被 Contextmenu 用于收菜单）。
+        customHyperlinkJump: (link, node) => {
+          try {
+            navigate(link, getCurrentFilePath() || '')
+          } catch (e) {
+            console.warn('[hyperlink] 跳转失败，回退系统打开:', e)
+            if (/^https?:/i.test(link)) window.open(link)
           }
         },
         openRealtimeRenderOnNodeTextEdit: true,

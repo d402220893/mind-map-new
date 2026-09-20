@@ -1,0 +1,17 @@
+{
+  "pureMin": 160,
+  "totalMin": 227,
+  "orchestrationMin": 51,
+  "regressionMin": 11,
+  "electronMin": 5,
+  "pureRatioMin": 0.70,
+  "baseline": {
+    "pure": 94,
+    "orchestration": 0,
+    "regression": 32,
+    "electron": 13,
+    "_note": "改造前实测基线（详设 §11.2 第 2734 行：分母 = 四层合计 − 既有基线）。regression/electron 里这 45 条是既有用例，不属于本轮新增。"
+  },
+  "_comment": "设计终值（§11.2 / §14）：pure≥160、新增合计≥227（orch≥51 / reg≥11 / electron≥5）、pure 占新增≥70%。已达标并转为硬门槛，后续只允许上调。",
+  "designTarget": { "pure": 160, "total": 227, "orchestration": 51, "regression": 11, "electron": 5, "pureRatio": 0.70 }
+}

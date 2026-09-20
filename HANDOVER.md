@@ -1197,3 +1197,175 @@ onRemove(w) {
 - 备份分支 `backup/pre-rollback-20260908` 零改动。
 - 下一步（用户选）：先收紧部署真源（已完成）；后续治本架构 → 把 Sidebar/auto-hide/zen 等视图态收进 Vuex store，消灭 `$bus` 字符串事件与 `barHover` 裸字典。
 
+---
+
+## 32. 2026-09-20：v1.5 架构落地 + v2.0.x 出包链 + 两批真 bug 修复（当前进度）
+
+> 本节为「当前进度」汇总，承接 §31 之后的全部演进。§30 之后版本号已从 1.0.2x 跳至 **2.0.x**（Vue3 迁移 + 服务层重构），出包链与部署真源已重构。详细逐日记录见 `.workbuddy/memory/2026-09-20.md`。
+
+### 32.1 版本与出包链现状
+- 当前版本 **2.0.10**（`electron-app/package.json`；`web/package.json` 的 `0.1.0` 是占位符，非真源）。
+- 出包唯一真源脚本：项目根 `build_now.sh`（`build.bat` 双击入口），六段流水线：
+  `[0/5]依赖自检→[0.5/5]架构守卫+全量测试(硬闸门)→[1/5]vue build→[2/5]cp+剥51.la+指纹→[3/5]bump→[4/5]NSIS(可SKIP_NSIS=1)→[5/5]asar+部署D盘→[5/5b]同步resources/app`。
+- 安装包唯一产物：`electron-app/dist-electron2/思绪思维导图 Setup.exe`（`dist-electron/` 已废弃，Defender 锁 .asar 绕行遗留）。
+- **部署真源**：`D:\Program Files (x86)\思绪思维导图\resources\`，Electron 加载优先级 `app/` 目录 > `app.asar`，两处都同步；每次部署校验与本地 `_appstage.asar` 逐字节一致。
+- 版本号 + build-info 指纹有一处**已知滞后**：`build-info.json` 在 [2/5] 生成（bump 前），故显示比 package.json 落后一位（显示 2.0.9，实跑 2.0.10），非阻断。
+
+### 32.2 架构（v1.5 详设落地）
+- 五层 L0–L4 + CG 组合根；详细设计在 `design/详细设计方案_导图与MD.md`（v1.5）。
+- 延迟绑定 Proxy（`utils/lateBind.js`）根治模块顶层解构冻结 undefined（白屏根因）；`api/index.js ⇄ store.js` ESM 环已拆（`localConfig.js`）。
+- 架构守卫 `scripts/check-arch.mjs`（13 类断言：0 环、api 具名导出、本地 import 存在、测试预算 pureRatio≥0.70 等），接入 `npm test` 与 `build_now.sh` 双阻断。
+- 测试分层：pure / orchestration / regression / electron；`web && npm test` 当前 **941/941 全绿**，check-arch EXIT 0（pure 599 / orch 150 / reg 79 / electron 31 → added 720，ratio 0.7014，0 环）。
+
+### 32.3 第一批 4 个真 bug（已修复 + 出包 v2.0.10）
+用户反馈（附图，模型读不了图，靠源码走链静态取证）：
+1. **md 打开成导图** → `@/api.addWorkbook` 包装层漏转发 `kind`，被静默丢成默认 `'mindmap'`。修：`api/index.js` 补解构并转发 `kind`。
+2. **建立索引失败** → `workspaceIndex.write` 直接写 `.mindlink/`，全新目录缺该目录 → ENOENT → 永久失败。修：加 `ensureIndexDir` 自动 mkdirp，覆盖全部写路径。
+3. **无关文件（图片）显示在工作区树** → `read-tree` 不过滤扩展名。修：新增纯函数 `filterWorkspaceTree`（只留 `.md/.markdown/.smm`）。
+4. **新增文件不实时刷新** → 主进程 `smm:watch` 发原始 `rename`/无 `rel`/单事件，渲染侧查表落空静默丢。修：主进程判定 `add/unlink`+`rel` 批量发；新建 `fsEventMap.js` 契约纯函数 + 桥遍历批量事件。
+- 配套测试：`fsEventMap.test.mjs`(6) / `workspaceTreeFilter.test.mjs`(6) / `fs-tree-contract.test.mjs`(6 条源码守卫) + orchestration 增 ⑱⑲ 等。
+
+### 32.4 ✅ 第二批 4 个真 bug（已全部修复，出包 v2.0.11）
+
+> 状态：**4 个 bug 已静态取证 + 写修复 + 补测试（`web && npm test` 949/949 全绿，较 941 新增 8 例）+ 出包 v2.0.11 部署 D 盘**。下面保留原「用户现象 → 链路 → 根因 → 修复方向」记录作为归档，每个 bug 末尾补 ⚙️ 实际修复说明。
+
+#### 环境与版本基线
+- 版本 **2.0.10**（已部署）；`web && npm test` 当前 941/941 全绿，check-arch EXIT 0。
+- 关键库：`@toast-ui/editor` ^3.1.5（MdEditor 与 NodeNote 都用）；Vue 3 + Element Plus。
+- 关键纪律（详见 `.workbuddy/memory/MEMORY.md`）：持有 Toast UI Editor/Viewer 实例一律 `markRaw()`；自定义节点字段必须 `_` 前缀（存 `data._mindlink`）；改功能必须补 node:assert 用例，非零 fail 阻断出包。
+
+---
+
+#### Bug ① 文件树双击 .smm 打开失败
+
+**现象**：在左侧工作区文件树点（用户描述「双击」）.smm 文件，打不开。
+
+**已查明的调用链**（全部代码已核对）：
+```
+WorkspacePanel.vue onFileClick(f)  →  openFile(f)  →  openPath(f.path)
+  openPath (workspaceBridge.js:82) 匹配 SMM_EXT  →  openMindMap(abs)
+  openMindMap (workspaceBridge.js:109):
+    1. findByPath(abs) 已打开则 activate 返回（复用分支）
+    2. services.workspaceService.readText(abs)     // → fsApi.readText → ok({content, mtimeMs})
+    3. decodeSmm(read.data.content)                // → {sheets, activeId}
+    4. addWorkbook({ name, filePath, kind:'mindmap' })   // 注意：此刻 activeId 已切到新 workbook
+    5. loadSheetsContainer(container)              // 失败则 return {ok:false, error E_BAD_SMM}
+    6. setCurrentFilePath(abs); markDirty(wb.id,false); activate(wb.id)
+```
+
+**已排除的疑点（已核对无误）**：
+- `fsApi.readText` 返回 `ok({ content, mtimeMs, ... })`，`read.data.content` 字段名**正确**（fsApi.js:46）。
+- `decodeSmm` 对单图（`{type:'mindmap'}` / 裸节点）与容器（`{type:'smms'}`）都有分支兼容（smmCodec.js:47-65）。
+- `WorkspacePanel` 是单 `@click`（不是 `@dblclick`），但用户「双击」本质是两次 click，第一次就应触发 openFile；无 dblclick 处理不算 bug 根因。
+
+**根因假设（按可能性排序，待验证）**：
+1. **`addWorkbook` 与 `loadSheetsContainer` 顺序问题**（最可疑）：`addWorkbook({kind:'mindmap'})` 内部会把 activeId 切到新 workbook 并**用默认 exampleData 初始化**其 sheetState；随后 `loadSheetsContainer(container)` 调 `WB.setActiveSheetState(...)` 覆盖。若 `addWorkbook` 返回的 `wb.id` 与 `loadSheetsContainer` 后实际激活的 sheet 不一致，或 `loadSheetsContainer` 校验 `container.sheets` 失败（单图被 `decodeSmm` 包成 `[{id:'root', data}]`，`id='root'` 固定），可能走到 `E_BAD_SMM` 分支 → `openFile` 弹「打开失败：工作表容器为空」。
+2. **未打开工作区时的 `readText`**：`workspaceService.readText` 直接委托 `fsApi.readText`（workspaceService.js:176），即使 root 为 null 也能读绝对路径，此点无问题；但 `findByPath` / `activate` 依赖 `@/api` 的 workbookState，若 `import exampleData` 等初始化未完成会抛错（概率低）。
+3. **`decodeSmm` 抛 `appError` 未被 catch**：`openMindMap` 里 `decodeSmm(read.data.content)` **没有 try/catch**，若 .smm 是单图且 `looksLikeNode` 判断误判（无 `children` 数组的根），可能抛 `E_SMM_INVALID_JSON` 直接 reject，`openFile` 的 `await openPath` 抛 unhandled rejection（WorkspacePanel.vue:294 无 try/catch）。
+
+**建议排查动作**（接手者第一步做）：
+- 在 `openMindMap` 里对 `decodeSmm` 包 try/catch，把异常转成 `{ok:false,error}`，看真实报错是什么。
+- 用一个最小 .smm 文件（单图 `{"type":"mindmap","data":{"data":{"text":"x"}}}` 与容器 `{"type":"smms","data":{"sheets":[...]}}`）分别验证 `decodeSmm` 输出。
+- 重点核对 `addWorkbook` 内部对 `kind:'mindmap'` 时是否已初始化 sheetState、`loadSheetsContainer` 的 `container.sheets` 校验对单图包装 `id:'root'` 是否通过。
+- 关键文件：`web/src/utils/workspaceBridge.js`（openMindMap 109-129）、`web/src/api/workbookState.js`（addWorkbook/normalize）、`web/src/api/index.js`（loadSheetsContainer 240-262）。
+
+> ⚙️ **实际修复（v2.0.11）**：根因假设 #3 命中且更彻底——`decodeSmm` 返回的是**非 Result 形状** `{sheets, activeId}`，旧代码 `if (!decoded.ok) return decoded` 因 `decoded.ok` 恒为 `undefined` 而**永远为真**，任何 .smm 都被提前返回、文件打不开。改为 `try { decoded = decodeSmm(...) } catch(e){ return {ok:false, error:{code:(e&&e.code)||'E_SMM_INVALID', message:e&&e.message}} }` + `const container = decoded`，交由 `loadSheetsContainer` 正常装配。补契约锁测试 `smmCodec.test.mjs` ×2（单图/容器均非 Result）。
+
+---
+
+#### Bug ② 思维导图添加引用后未显示备注
+
+**现象**：给节点「添加引用（引用文档章节）」后，备注里看不到被引用章节的内容。
+
+**已查明的链路**：
+```
+NodeNote.vue onPick(spec)  →  refSpec = { file, sectionId, sectionPath, title, baseHash, cachedContent: spec.content }
+  spec.mode !== 'ref'  →  node.setData({ link })          // mode 含 link 才写 link
+  spec.mode !== 'link' →  addRef(node, refSpec)            // workspaceBridge.addRef → refService.addRef
+  loadRefs()  →  this.refs = readRefs(node)               // refData.getNodeRefs(node.data._mindlink.refs)
+  模板 v-for="r in refs" 渲染 <RefBlock :ref-obj="r" :node="targetNode" />
+  RefBlock.created → check() → checkValidity(file,[refObj]) 异步拉章节内容 → displayContent
+```
+
+**根因（已锁定，高置信度）**：
+`addRef` 在 `refData.js:25-36` **只持久化 5 个字段**：`{file, sectionId, sectionPath, mode, baseHash, baseRev}`，**把 `title` 和 `cachedContent` 静默丢弃**（`setNodeRefs` 里 `const { refId, ...rest } = r` 只剥 refId，但 `addRef` 构造 ref 时本就没带 title/cachedContent）。
+而 `NodeNote.onPick`（NodeNote.vue:209-216）明明组装了 `title` 和 `cachedContent`，传进 `addRef` 后被丢弃 → `loadRefs()` 读回的 ref 无 title、无 cachedContent。
+
+**后果链**：
+- `RefBlock.displayContent = this.content || refObj.cachedContent || '（章节内容为空）'`（RefBlock.vue:113-115）。虽然 `check()` 会异步用 `checkValidity` 重新读文件取 `hit.current.content`，理论上仍能显示；但若 `checkValidity` 返回 stale/missing 或读盘失败，就回退到 `refObj.cachedContent`，而它已被丢弃 → 显示「（章节内容为空）」。
+- `RefBlock` 标题 `引用自 {{ refObj.file }} · {{ pathLabel }}`，`pathLabel` 取 `refObj.sectionPath`（还在），但 `title` 丢了，冲突弹窗 `onConflict` 取 `payload.ref.title` 会拿到 undefined。
+
+**建议修复方向**：
+- `refData.js` 的 `addRef` 增补持久化 `title` 与 `cachedContent`（或至少 `title`），并让 `setNodeRefs` 保留它们。注意 `_mindlink` 是自定义字段（`_` 前缀已合规），新增键不会当样式注入。
+- 同步补纯测试 `refData.test.mjs`：断言 `addRef` 后 `getNodeRefs` 能读回 title/cachedContent。
+- 关键文件：`web/src/services/refData.js`（addRef/setNodeRefs/getNodeRefs）、`web/src/pages/Edit/components/NodeNote.vue`（onPick 209-227）、`web/src/pages/Edit/components/RefBlock.vue`（displayContent/check）。
+
+> ⚙️ **实际修复（v2.0.11）**：根因假设已锁定并确认——`refData.js` 的 `addRef` 只解构了 6 字段，漏掉 `title` / `cachedContent`。改为解构 `{ ..., title = '', cachedContent = '' }` 并写入 ref 对象；去重命中分支补充「若既有 ref 缺 title 则回填」。补测试 `refData.test.mjs` ×2（持久化 title/cachedContent；去重回填 title）。修复后 `RefBlock` 标题与冲突弹窗 `payload.ref.title` 不再为 undefined，引用即刻可见被引用章节内容。
+
+---
+
+#### Bug ③ 编辑 md 文件没有光标
+
+**现象**：打开 .md 进入编辑器后，看不到光标、无法直接定位输入。
+
+**已查明的链路**：
+```
+MdEditor.vue mounted → initEditor()（new Editor({ initialEditType:'wysiwyg', ... })，markRaw）
+                    → mountContent()（mdDoc.get/load → setMarkdown(content)）
+Index.vue: <MdEditor v-if="activeKind==='markdown'" :key="activeWorkbookId" :tabId :filePath />
+```
+`initEditor` 用 `el: this.$refs.host`；`mountContent` 的 `$nextTick` 里 `this.editor.setMarkdown(content)`，**全程没有 `focus()`**；组件有 `focus()` 方法（335-337）但从未被调用。
+
+**根因假设（按可能性排序，待验证）**：
+1. **未聚焦**（最可能）：Toast UI WYSIWYG 编辑器 `setMarkdown` 后不会自动聚焦；`v-if` 挂载完也没有任何 `this.editor.focus()` 或 `view.focus()` 调用。用户点进编辑器需要手动再点一下正文，视觉上「没光标」。修：`mountContent` 的 `$nextTick` 里 `setMarkdown` 后调用 `this.editor.focus()`（注意别在每次 `onChange` 后反复 focus 抢焦点）。
+2. **高度塌陷 / 容器无确定高度**：`.mdEditor { height:100% }`，`.mdEditorHost { flex:1; min-height:0 }`，但 `.editWrap` 是 `position:relative` 且无显式 height（Index.vue `.editWrap { flex:1 }` 依赖父 `.editorRow { flex:1 }`）。若祖先链高度未落到 Toast UI 内部，编辑区可能渲染成 0 高 → 看不到光标。核对 built 后的 `.mdEditorHost` 实际高度。
+3. **readonly 误判**：`mountContent` 里 `this.readonly = this.encodingSuspect || (!this.forcedEdit && content.length > BIG_FILE)`；若非 UTF-8 误判（`encodingSuspect`）或文件 >1MB，会走「只读预览」且不给编辑光标。但只读态有黄色提示条，用户未提，概率低。
+
+**建议排查动作**：
+- 先在 `mountContent` 的 `$nextTick` 加 `this.editor.focus()` 试最小改动。
+- 同时用 DevTools 检查 `.mdEditorHost` / Toast UI 内部 `.toastui-editor` 的实际高度是否为 0。
+- 关键文件：`web/src/pages/Edit/components/MdEditor.vue`（initEditor 93-112 / mountContent 114-132 / focus 335-337）、`web/src/pages/Edit/Index.vue`（.editWrap/.editorRow 高度链）。
+
+> ⚙️ **实际修复（v2.0.11）**：根因假设 #1 命中——`mountContent` 全程无 `focus()`，且 `setMarkdown` 多次触发污染 undo。改为：① `setMarkdown` 前 `if (this.editor.getMarkdown() !== content)` 去重，避免 `mounted`+`watch tabId/filePath` 重复压栈；② `resetMdHistory()` 调 `clearHistoryBaseline(view)`（`view.state.tr.setMeta(historyKey,{recreate:true})`）清空 undo 基线，使初始载入不可撤销；③ `this.editor.focus()` 使光标可见。新建 `web/src/utils/mdHistory.js`（纯函数）并补 `mdHistory.test.mjs` ×4。
+
+---
+
+#### Bug ④ md 文件 Ctrl+Z 清空全文
+
+**现象**：在 md 编辑器里按 Ctrl+Z，整个文件内容被清空。
+
+**已查明的链路**：
+```
+MdEditor.initEditor → new Editor({...})，Toast UI 自带 undo 栈
+mountContent → setMarkdown(content)  // 首次/每次切换都重设内容
+onChange → mdDoc.setContent + scheduleSave
+```
+`MdEditor` 通过 `v-if` + `:key="activeWorkbookId"` 挂载（Index.vue:40-46），且内部 `watch: tabId()/filePath()` 都会再次 `mountContent()`。`mounted()` 也会 `mountContent()`。
+
+**根因假设（高置信度方向，待验证）**：
+1. **`setMarkdown` 不清 undo 历史 + 多次 mountContent 叠加**：Toast UI 的 `setMarkdown` 默认**不重置 undo 栈**。`mountContent` 被 `mounted` + `watch tabId/filePath` 触发多次，每次 `setMarkdown(content)` 都往 undo 栈里压入一次「全文替换」历史；当用户 Ctrl+Z 时，会一路回退到最早一次 `setMarkdown` 之前的状态 —— 即**空编辑器**（编辑器刚 `new` 出来时是空的），于是「全文被清空」。
+2. **`v-if` + `:key` 切换重建实例**：切到 md tab 时组件重建，`initEditor` 新建空 Editor，`mountContent` 才 `setMarkdown` 填入内容。若某些时序下 `mountContent` 在 `initEditor` 之前、或 `doc` 为空（`mdDoc.get` 未命中 + `mdDoc.load` 未 await 完成），`setMarkdown('')` 会把编辑器清空并压入 undo 栈，Ctrl+Z 无法恢复。
+
+**建议修复方向**：
+- 在 `mountContent` 的 `setMarkdown` 之后、首次填入内容时调用 `this.editor.resetHistory ? this.editor.resetHistory() : null`（Toast UI v3 提供 `resetHistory()`？需核实 API），或改用 `this.editor.setMarkdown(content, false)` 的第二个参数（`cursorToEnd`）并在填入后用 `resetHistory` 清掉「由 setMarkdown 造成的撤销点」。
+- 若 Toast UI v3.1.5 无 `resetHistory`，替代方案：只在「真正首次载入 / 内容确实变化」时 setMarkdown，避免 `mounted`+`watch` 重复触发；用 `mdDoc.get` 的内容与编辑器当前内容比对去重。
+- 关键文件：`web/src/pages/Edit/components/MdEditor.vue`（mountContent 114-132 / initEditor 93-112）、`web/src/services/mdDocument.js`（load/get，确认 content 来源）。
+
+> ⚙️ **实际修复（v2.0.11）**：与 Bug③ 同源——`setMarkdown` 未清 undo + 多次 `mountContent` 叠加，Ctrl+Z 一路回退到空编辑器。修复即 Bug③ 的 ①去重 + ②`resetMdHistory()` 清基线（见上方 ⚙️ 说明）。根因假设 #2（`v-if`+`:key` 重建实例导致 `setMarkdown('')` 压空栈）经去重后亦被消除：内容未变时不再重复 `setMarkdown`。
+
+---
+
+### 32.5 收尾事项（非阻断，待用户确认）
+- **第二批 4 bug 已全部修复 + 出包 v2.0.11 部署 D 盘**（构建日志 `build_now.log` / `build_v2011.log`）：`[0.5/5]` 测试门禁 949/949 全绿、asar 与本地 `_appstage.asar` 逐字节一致、`app-dir deploy OK (v2.0.11)`。
+- **已知指纹小瑕疵（非阻断，沿用既有约定）**：`dist/build-info.json` 版本号仍记 `2.0.10`，因为 `[2/5]` 生成指纹早于 `[3/5]` bump（见 MEMORY.md「构建指纹 & 调试」）。如需严格一致，须先 commit+bump 再 gen-build-info；当前不影响运行。
+- `electron-app/tests` 有 7 项既有 asar 守卫路径漂移（硬编码 `dist-electron/...`，产出已改 `dist-electron2`），不在 web 门禁内，待对齐。
+- D 盘 `resources/` 的 `app.bak_*` 备份已由 `build_now.sh` 自动 prune（保留最新 3 个）。
+- 本次修复 + 测试 + HANDOVER 更新**待 git 提交**（见 §32.6 step 5）。
+
+### 32.6 交接给下一位开发者的执行清单（按顺序）
+1. ✅ 读 §32.4 四个 bug 的「根因假设 + 建议排查动作」，按 ①→②→③→④ 已逐个验证并修复（② 根因锁定，最先做）。
+2. ✅ 每个 bug 修复后补对应 node:assert 用例：`smmCodec.test.mjs`×2、`refData.test.mjs`×2、`mdHistory.test.mjs`×4（纯函数，归 `tests/pure/`），守住 check-arch 的 pureRatio≥0.70 预算（949/949）。
+3. ✅ 全部修完跑 `cd web && npm test` 全绿 + check-arch EXIT 0，再 `bash build_now.sh` 出包部署 v2.0.11。
+4. ⏳ 重启后真机点测四件事（待用户/下一位验证）：① 点 .smm 正常打开；② 加引用后备注里显示被引用内容；③ md 编辑器有光标可直接输入；④ Ctrl+Z 只撤销一次编辑、不清空全文。
+5. ⏳ 提交本次改动：`git add` + `git commit`（4 bug 源码 + 新建 `mdHistory.js` + 4 个测试文件 + HANDOVER.md §32.4/§32.5/§32.6 状态更新）。
+

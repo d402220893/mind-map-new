@@ -86,6 +86,7 @@ import xmind from 'simple-mind-map/src/parse/xmind.js'
 import markdown from 'simple-mind-map/src/parse/markdown.js'
 import { mapMutations } from 'vuex'
 import { parseEmmx } from '@/utils/parseEmmx'
+import { shell } from '@/utils/workspaceBridge'
 
 // 导入
 export default {
@@ -345,13 +346,13 @@ export default {
 
     // 本地客户端：调用主进程通用文件选择对话框，统一导入所有支持格式
     async handleLocalFile() {
-      if (!window.smmApi || !window.smmApi.importFileDialog) {
+      if (!shell.has('importFileDialog')) {
         this.$message.warning('当前环境不支持本地文件导入')
         return
       }
       try {
         const exts = ['smm', 'json', 'xmind', 'md', 'emmx']
-        const res = await window.smmApi.importFileDialog(exts)
+        const res = await shell.importFileDialog(exts)
         if (!res || res.canceled) return
         if (res.error) {
           this.$message.error('读取文件失败：' + res.error)

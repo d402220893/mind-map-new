@@ -161,6 +161,7 @@ import Import from './Import.vue'
 import { mapState } from 'vuex'
 import { ElNotification } from 'element-plus'
 import exampleData from 'simple-mind-map/example/exampleData'
+import { shell } from '@/utils/workspaceBridge'
 import { getData } from '../../../api'
 import ToolbarNodeBtnList from './ToolbarNodeBtnList.vue'
 import { throttle, isMobile } from 'simple-mind-map/src/utils/index'
@@ -406,7 +407,7 @@ export default {
     // 打开本地文件
     async openLocalFile() {
       // 桌面端：复用 Edit.vue 的打开流程（主进程文件对话框）
-      if (window.__LOCAL_APP__ && window.smmApi && window.smmApi.openWorkbookDialog) {
+      if (window.__LOCAL_APP__ && shell.has('openWorkbookDialog')) {
         this.$bus.$emit('requestOpen')
         return
       }
@@ -514,7 +515,7 @@ export default {
     // 创建本地文件
     async createLocalFile(content) {
       // 桌面端：通过主进程文件对话框保存，并交由 Edit.vue 加载（File System Access API 在 Electron 渲染进程中不可用）
-      if (window.__LOCAL_APP__ && window.smmApi) {
+      if (window.__LOCAL_APP__ && shell.available()) {
         this.$bus.$emit('newWorkbook', content)
         return
       }

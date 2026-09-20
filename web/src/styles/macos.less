@@ -43,6 +43,27 @@
   --macos-hover: rgba(0, 0, 0, 0.05);
   --macos-hover-strong: rgba(0, 0, 0, 0.08);
   --macos-ring: rgba(10, 132, 255, 0.35);
+  --macos-warning: #e6a23c;
+
+  // ---------- 引用块专用色（§8.5 G7）----------
+  // 引用块（紫边+浅紫底）与「我的备注」（白底无边框）强区分；引用块不用毛玻璃。
+  --mm-ref-bg: #f3f0ff;
+  --mm-ref-border: #7c3aed;
+  --mm-ref-text: #4c1d95;
+  --mm-note-bg: #ffffff;
+  --mm-note-border: transparent;
+  --mm-note-text: inherit;
+  --mm-warn-bg: #fef3c7;
+  --mm-warn-text: #92400e;
+
+  // ---------- diff 高亮色（§8.5 H8）----------
+  // 与引用块紫、警告条黄色相分离：警告条黄用于背景条，diff 修改黄用于行底。
+  --mm-diff-add-bg: #dcfce7;
+  --mm-diff-add-text: #166534;
+  --mm-diff-del-bg: #fee2e2;
+  --mm-diff-del-text: #991b1b;
+  --mm-diff-mod-bg: #fef3c7;
+  --mm-diff-mod-text: #92400e;
 }
 
 body.isDark {
@@ -70,6 +91,25 @@ body.isDark {
   --macos-hover: rgba(255, 255, 255, 0.07);
   --macos-hover-strong: rgba(255, 255, 255, 0.12);
   --macos-ring: rgba(10, 132, 255, 0.50);
+  --macos-warning: #f0b357;
+
+  // ---------- 引用块专用色（深色）----------
+  --mm-ref-bg: #1e1b2e;
+  --mm-ref-border: #a78bfa;
+  --mm-ref-text: #ddd6fe;
+  --mm-note-bg: #1a1a1a;
+  --mm-note-border: transparent;
+  --mm-note-text: inherit;
+  --mm-warn-bg: #422006;
+  --mm-warn-text: #fde68a;
+
+  // ---------- diff 高亮色（深色，对比度 ≥ 4.5:1 WCAG AA）----------
+  --mm-diff-add-bg: #14532d;
+  --mm-diff-add-text: #bbf7d0;
+  --mm-diff-del-bg: #7f1d1d;
+  --mm-diff-del-text: #fecaca;
+  --mm-diff-mod-bg: #78350f;
+  --mm-diff-mod-text: #fde68a;
 }
 
 // ---------- 全局排版与滚动条 ----------

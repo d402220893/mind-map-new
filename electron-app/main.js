@@ -1,4 +1,4 @@
-const { app, BrowserWindow, dialog, Menu, ipcMain } = require('electron')
+const { app, BrowserWindow, dialog, Menu, ipcMain, shell } = require('electron')
 const http = require('http')
 const fs = require('fs')
 const path = require('path')
@@ -174,6 +174,244 @@ ipcMain.handle('smm:read-file', async (e, { filePath }) => {
     return { ok: true, content: fs.readFileSync(filePath, 'utf8') }
   } catch (err) {
     return { ok: false, error: err.message }
+  }
+})
+
+// ══════════════════════════════════════════════════════════════════════════
+// 工作区 / 双链（md↔导图）所需 IPC（详设 §7.2）
+// ⚠️ 全部写在 main.js 内，不新建本地模块 —— 避免触碰 build_now.sh 的 _appstage 白名单拷贝清单
+//    （asar-modules.test.mjs 会兜底校验 main.js 的所有本地 require 都在包内）
+// ══════════════════════════════════════════════════════════════════════════
+const DEFAULT_IGNORE = ['node_modules', '.git', '.mindlink', '_trash', 'dist', 'dist-electron', 'dist-electron2']
+const MAX_TEXT_BYTES = 8 * 1024 * 1024 // 8MB
+const MAX_BINARY_BYTES = 10 * 1024 * 1024 // 10MB
+const TRASH_BATCH = 20
+
+let fsWatcher = null // 同时只保留一个 root
+
+function isIgnored(name, ignore) {
+  return name.startsWith('.') || ignore.includes(name)
+}
+
+// 1 选择目录（只读对话框）
+ipcMain.handle('smm:pick-directory', async (e, { title } = {}) => {
+  const res = await dialog.showOpenDialog({ title: title || '选择工作区目录', properties: ['openDirectory'] })
+  if (res.canceled || !res.filePaths || !res.filePaths[0]) return { canceled: true, dirPath: null }
+  return { canceled: false, dirPath: res.filePaths[0] }
+})
+
+// 2 读目录树（root 必须已存在且为目录）
+ipcMain.handle('smm:read-tree', async (e, { root, depth = Infinity, ignore } = {}) => {
+  const ig = Array.isArray(ignore) ? ignore : DEFAULT_IGNORE
+  try {
+    const st = fs.statSync(root)
+    if (!st.isDirectory()) return { ok: false, code: 'E_NOT_DIR', message: root }
+  } catch (err) {
+    return { ok: false, code: 'E_STAT', message: err.message }
+  }
+  const walk = (dir, d) => {
+    const out = []
+    let entries = []
+    try { entries = fs.readdirSync(dir, { withFileTypes: true }) } catch (e) { return out }
+    for (const ent of entries) {
+      if (isIgnored(ent.name, ig)) continue
+      const p = path.join(dir, ent.name)
+      if (ent.isDirectory()) {
+        out.push({ name: ent.name, path: p, isDir: true, children: d < depth ? walk(p, d + 1) : [] })
+      } else {
+        let size = 0
+        try { size = fs.statSync(p).size } catch (e) {}
+        out.push({ name: ent.name, path: p, isDir: false, size })
+      }
+    }
+    return out
+  }
+  try {
+    return { ok: true, tree: walk(root, 1) }
+  } catch (err) {
+    return { ok: false, code: 'E_READ_TREE', message: err.message }
+  }
+})
+
+// 3 批量 stat（只读）
+ipcMain.handle('smm:stat-many', async (e, { paths = [] } = {}) => {
+  const stats = {}
+  for (const p of paths) {
+    try {
+      const st = fs.statSync(p)
+      stats[p] = { exists: true, isDir: st.isDirectory(), isFile: st.isFile(), mtimeMs: st.mtimeMs, size: st.size }
+    } catch (err) {
+      stats[p] = { exists: false, isDir: false, isFile: false, mtimeMs: 0, size: 0 }
+    }
+  }
+  return { ok: true, stats }
+})
+
+// 4 读文本（默认上限 8MB）
+ipcMain.handle('smm:read-text', async (e, { filePath, maxBytes } = {}) => {
+  const cap = maxBytes || MAX_TEXT_BYTES
+  try {
+    const st = fs.statSync(filePath)
+    if (st.size > cap) return { ok: false, code: 'E_TOO_LARGE', size: st.size, maxBytes: cap }
+    return { ok: true, content: fs.readFileSync(filePath, 'utf8'), mtimeMs: st.mtimeMs }
+  } catch (err) {
+    return { ok: false, code: 'E_READ', message: err.message }
+  }
+})
+
+// 5 写文本（expectMtimeMs 不匹配仅告警，写盘不阻断）
+ipcMain.handle('smm:write-text', async (e, { filePath, content = '', expectMtimeMs } = {}) => {
+  let mtimeChanged = false
+  if (expectMtimeMs != null) {
+    try {
+      const st = fs.statSync(filePath)
+      mtimeChanged = Math.floor(st.mtimeMs) !== Math.floor(expectMtimeMs)
+    } catch (err) { mtimeChanged = false }
+  }
+  try {
+    fs.writeFileSync(filePath, content, 'utf8')
+    const st = fs.statSync(filePath)
+    return mtimeChanged
+      ? { ok: false, code: 'E_MTIME_CHANGED', mtimeMs: st.mtimeMs, written: true }
+      : { ok: true, mtimeMs: st.mtimeMs }
+  } catch (err) {
+    return { ok: false, code: 'E_WRITE', message: err.message }
+  }
+})
+
+// 6 写二进制（base64 入参，上限 10MB）
+ipcMain.handle('smm:write-binary', async (e, { filePath, base64 = '', mkdirp } = {}) => {
+  const buf = Buffer.from(base64, 'base64')
+  if (buf.length > MAX_BINARY_BYTES) return { ok: false, code: 'E_TOO_LARGE', size: buf.length }
+  try {
+    if (mkdirp) fs.mkdirSync(path.dirname(filePath), { recursive: true })
+    fs.writeFileSync(filePath, buf)
+    return { ok: true, size: buf.length }
+  } catch (err) {
+    return { ok: false, code: 'E_WRITE', message: err.message }
+  }
+})
+
+// 7 递归建目录
+ipcMain.handle('smm:mkdirp', async (e, { dirPath } = {}) => {
+  try {
+    fs.mkdirSync(dirPath, { recursive: true })
+    return { ok: true }
+  } catch (err) {
+    return { ok: false, code: 'E_MKDIR', message: err.message }
+  }
+})
+
+// 8 移动（目标存在 → E_EXISTS；跨盘回退 copy + 回收站）
+ipcMain.handle('smm:move', async (e, { from, to } = {}) => {
+  try {
+    if (fs.existsSync(to)) return { ok: false, code: 'E_EXISTS', path: to }
+    if (to.startsWith(path.dirname(from) + path.sep) || path.dirname(from) === path.dirname(to)) {
+      // 同目录：改名语义，允许
+    }
+    try {
+      fs.renameSync(from, to)
+      return { ok: true }
+    } catch (err) {
+      if (err.code !== 'EXDEV') return { ok: false, code: 'E_MOVE', message: err.message }
+      // 跨盘：copy + 回收站删除源文件（禁 fs.rm）
+      fs.copyFileSync(from, to)
+      try { await shell.trashItem(from) } catch (e) {}
+      return { ok: true, fallback: 'copy+trash' }
+    }
+  } catch (err) {
+    return { ok: false, code: 'E_MOVE', message: err.message }
+  }
+})
+
+// 9 删除到回收站（禁 fs.rm；一次最多 20 条）
+ipcMain.handle('smm:trash', async (e, { paths: targets = [] } = {}) => {
+  const list = targets.slice(0, TRASH_BATCH)
+  const failed = []
+  for (const p of list) {
+    try { await shell.trashItem(p) } catch (err) { failed.push({ path: p, message: err.message }) }
+  }
+  return { ok: failed.length === 0, failed, skipped: targets.length - list.length }
+})
+
+// 10/11 目录监听：同时只保留一个 root；400ms 合并窗口后推 smm:fs-event
+// ⚠️ 事件载荷契约（渲染进程 workspaceBridge.startFsBridge 依赖，改这里必须同步改那边）：
+//    { root, events: [{ type:'add'|'change'|'unlink', path:<绝对>, rel:<相对root,/> , ts }] }
+//    早期实现直接透传 fs.watch 的 'rename'/'change'，既没有语义化的 add/unlink，也没有 rel
+//    → 渲染端按 {type,rel} 取值全落空 → 树永不刷新（2026-09-20「新增文件未实时显示」）。
+ipcMain.handle('smm:watch', (e, { root } = {}) => {
+  if (fsWatcher) { try { fsWatcher.close() } catch (err) {} fsWatcher = null }
+  const pending = new Map()
+  let timer = null
+  const flush = () => {
+    const events = [...pending.values()]
+    pending.clear()
+    if (events.length && mainWindow && !mainWindow.isDestroyed()) {
+      mainWindow.webContents.send('smm:fs-event', { root, events })
+    }
+  }
+  const push = (type, rel) => {
+    const abs = path.join(root, rel || '')
+    // fs.watch 的 type 只有 'rename' / 'change'；'rename' 既可能是新建也可能是删除，
+    // 必须 stat 一次才能区分（stat 失败 = 已被删除 → unlink）。
+    let kind = 'change'
+    if (type === 'rename') {
+      let alive = false
+      try { fs.statSync(abs); alive = true } catch (err) { alive = false }
+      kind = alive ? 'add' : 'unlink'
+    }
+    pending.set(kind + '|' + rel, { type: kind, path: abs, rel, ts: Date.now() })
+    clearTimeout(timer)
+    timer = setTimeout(flush, 400)
+  }
+  try {
+    fsWatcher = fs.watch(root, { recursive: true }, (type, filename) => {
+      if (!filename) return
+      const rel = String(filename).replace(/\\/g, '/')
+      if (/(^|\/)(node_modules|\.git|\.mindlink|_trash)(\/|$)/.test(rel)) return // 噪声过滤
+      push(type, rel)
+    })
+  } catch (err) {
+    return { ok: false, code: 'E_WATCH', message: err.message } // Linux 无 recursive → 降级
+  }
+  return { ok: true }
+})
+
+ipcMain.handle('smm:unwatch', () => {
+  if (fsWatcher) { try { fsWatcher.close() } catch (err) {} fsWatcher = null }
+  return { ok: true }
+})
+
+// 12 外部打开（白名单：http/https/file，或工作区内解析出的绝对路径）
+ipcMain.handle('smm:open-external', async (e, { url, baseDir } = {}) => {
+  let target = String(url || '')
+  if (!target) return { ok: false, code: 'E_BAD_URL' }
+  if (/^(https?:|mailto:)/i.test(target)) {
+    await shell.openExternal(target)
+    return { ok: true }
+  }
+  if (/^file:\/\//i.test(target)) {
+    await shell.openExternal(target)
+    return { ok: true }
+  }
+  // 相对路径：只允许解析到 baseDir 之内，防越界
+  if (baseDir) {
+    const abs = path.resolve(baseDir, target)
+    const rel = path.relative(baseDir, abs)
+    if (rel.startsWith('..') || path.isAbsolute(rel)) return { ok: false, code: 'E_PATH_ESCAPE', path: abs }
+    await shell.openPath(abs)
+    return { ok: true }
+  }
+  return { ok: false, code: 'E_BAD_URL', url: target } // 其他 scheme（javascript: 等）一律拒绝
+})
+
+// 13 在文件夹中显示
+ipcMain.handle('smm:reveal-in-folder', async (e, { filePath } = {}) => {
+  try {
+    shell.showItemInFolder(filePath)
+    return { ok: true }
+  } catch (err) {
+    return { ok: false, code: 'E_REVEAL', message: err.message }
   }
 })
 

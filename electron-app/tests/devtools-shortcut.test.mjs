@@ -1,3 +1,4 @@
+import { resolveAsar, asarSkip } from './_asar-path.mjs'
 import { test } from 'node:test'
 import assert from 'node:assert'
 import fs from 'node:fs'
@@ -12,7 +13,10 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url))
 const root = path.resolve(__dirname, '..')
 
 const mainSrc = fs.readFileSync(path.join(root, 'main.js'), 'utf8')
-const asarPath = path.join(root, 'dist-electron', 'win-unpacked', 'resources', 'app.asar')
+// ⚠️ 产物路径必须动态解析：打包链已把 asar 产出改到项目根 _appstage.asar，
+// 硬编码 dist-electron 会指向 Sep-11 的 0 字节残留（守卫空转，见 _asar-path.mjs 头注）
+const asarPath = resolveAsar()
+const asarSkipOpt = { skip: asarSkip() }
 
 test('DevTools 快捷键支持 F12（用户按 F12 必须能打开控制台）', () => {
   assert.ok(
@@ -39,8 +43,7 @@ test('DevTools 切换只在 keyDown 响应（keyDown+keyUp 双触发会「开了
   )
 })
 
-test('app.asar 内的 main.js 已含 F12（防止改了源码却没重打包，F12 在真机上不生效）', () => {
-  if (!fs.existsSync(asarPath)) return // 尚未构建 asar 时跳过，避免误报
+test('app.asar 内的 main.js 已含 F12（防止改了源码却没重打包，F12 在真机上不生效）', asarSkipOpt, () => {
   const inner = asar.extractFile(asarPath, 'main.js').toString('utf8')
   assert.ok(
     /input\.key\s*===\s*'F12'/.test(inner),

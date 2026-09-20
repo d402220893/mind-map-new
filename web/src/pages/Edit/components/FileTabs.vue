@@ -59,6 +59,7 @@
 
 <script>
 import { mapState } from 'vuex'
+import { shell } from '@/utils/workspaceBridge'
 
 // 顶部文件标签栏：在菜单栏位置显示所有打开的思维导图文件，
 // 每个文件可独立保存/加载，但内部仍包含多个 sheet（由底部 SheetTabs 管理）。
@@ -100,33 +101,23 @@ export default {
   methods: {
     async updateWindowState() {
       try {
-        if (window.smmApi && window.smmApi.windowControls && window.smmApi.windowControls.getState) {
-          const state = await window.smmApi.windowControls.getState()
-          this.isMaximized = !!state.maximized
+        if (shell.windowControls.has('getState')) {
+          const state = await shell.windowControls.getState()
+          this.isMaximized = !!(state && state.maximized)
         }
       } catch (e) {}
     },
     async onMinimize() {
-      try {
-        if (window.smmApi && window.smmApi.windowControls && window.smmApi.windowControls.minimize) {
-          await window.smmApi.windowControls.minimize()
-        }
-      } catch (e) {}
+      try { await shell.windowControls.minimize() } catch (e) {}
     },
     async onMaximize() {
       try {
-        if (window.smmApi && window.smmApi.windowControls && window.smmApi.windowControls.maximize) {
-          await window.smmApi.windowControls.maximize()
-          await this.updateWindowState()
-        }
+        await shell.windowControls.maximize()
+        await this.updateWindowState()
       } catch (e) {}
     },
     async onClose() {
-      try {
-        if (window.smmApi && window.smmApi.windowControls && window.smmApi.windowControls.close) {
-          await window.smmApi.windowControls.close()
-        }
-      } catch (e) {}
+      try { await shell.windowControls.close() } catch (e) {}
     },
     onSwitch(w) {
       if (w.id === this.activeId) return

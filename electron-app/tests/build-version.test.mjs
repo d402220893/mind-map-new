@@ -1,3 +1,4 @@
+import { resolveAsar, asarSkip } from './_asar-path.mjs'
 import { test } from 'node:test'
 import assert from 'node:assert'
 import fs from 'node:fs'
@@ -14,7 +15,10 @@ const root = path.resolve(__dirname, '..')
 const pkgPath = path.join(root, 'package.json')
 const nsiPath = path.join(root, 'make_installer.nsi')
 const distDir = path.join(root, 'dist')
-const asarPath = path.join(root, 'dist-electron', 'win-unpacked', 'resources', 'app.asar')
+// ⚠️ 产物路径必须动态解析：打包链已把 asar 产出改到项目根 _appstage.asar，
+// 硬编码 dist-electron 会指向 Sep-11 的 0 字节残留（守卫空转，见 _asar-path.mjs 头注）
+const asarPath = resolveAsar()
+const asarSkipOpt = { skip: asarSkip() }
 
 const pkg = JSON.parse(fs.readFileSync(pkgPath, 'utf8'))
 
@@ -29,8 +33,7 @@ test('package.json 与 make_installer.nsi 的版本号一致', () => {
   )
 })
 
-test('app.asar 内版本号与 package.json 一致（防止过期 asar 被打进安装包）', () => {
-  if (!fs.existsSync(asarPath)) return // 尚未构建 asar 时跳过，避免误报
+test('app.asar 内版本号与 package.json 一致（防止过期 asar 被打进安装包）', asarSkipOpt, () => {
   const inner = JSON.parse(asar.extractFile(asarPath, 'package.json').toString('utf8'))
   assert.strictEqual(
     inner.version,
@@ -39,8 +42,8 @@ test('app.asar 内版本号与 package.json 一致（防止过期 asar 被打进
   )
 })
 
-test('app.asar 的打包时间不早于 dist（dist 重编后必须重打 asar）', () => {
-  if (!fs.existsSync(asarPath) || !fs.existsSync(distDir)) return
+test('app.asar 的打包时间不早于 dist（dist 重编后必须重打 asar）', asarSkipOpt, () => {
+  assert.ok(fs.existsSync(distDir), 'dist 不存在：先 vue build 再测')
   const asarM = fs.statSync(asarPath).mtimeMs
   const distM = fs.statSync(distDir).mtimeMs
   assert.ok(
