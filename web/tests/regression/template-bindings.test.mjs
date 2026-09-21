@@ -339,6 +339,12 @@ test('[引用块合并框] NodeNote 引用块与编辑器合并为一个框', ()
   assert.ok(/\.noteBox/.test(vue), '应有 noteBox 合并样式')
   assert.ok(/\.refBlock\s*\{[^}]*border:\s*none/s.test(vue), 'noteBox 内引用块应去自有边框')
   assert.ok(/\.toastui-editor-defaultUI\s*\{[^}]*border:\s*none/s.test(vue), 'noteBox 内编辑器应去自带边框')
+  // 2026-09-21 二次反馈：引用块须在编辑器"下方"（工具栏保持框顶），分隔线在引用块顶部
+  const iEditor = vue.indexOf('class="noteEditor"')
+  const iRefArea = vue.indexOf('class="refArea"')
+  assert.ok(iEditor > -1 && iRefArea > -1 && iEditor < iRefArea, 'refArea 必须位于 noteEditor 之后（工具栏在框的最顶部）')
+  assert.ok(/\.refBlock\s*\{[^}]*border-top:\s*1px/s.test(vue), '引用块应只保留顶部分隔线（附在编辑区底部）')
+  assert.ok(!/\.refBlock\s*\{[^}]*border-bottom:\s*1px/s.test(vue), '引用块不应再有底部分隔线')
 })
 
 test('[统一搜索] WorkspacePanel 去掉模式切换，单框同搜 md+smm', () => {

@@ -25,9 +25,16 @@
       </div>
     </div>
 
-    <!-- 引用块与编辑器合并为同一个框：引用块嵌在编辑器边框内顶部，不再像"第二个输入框" -->
+    <!--
+      引用块与编辑器合并为同一个框（2026-09-21 二次反馈修订）：
+      引用块放在编辑器"下方"——工具栏保持在框的最顶部（经典编辑器观感），
+      引用内容像邮件引用/附件条一样附在编辑区底部，同一个外框、一条分隔线。
+      （此前放工具栏上方，用户仍感知为"上面一个框、下面一个框"）
+    -->
     <div class="noteBox">
-      <!-- 引用块列表（§7.14 / §8.3）：位于编辑器上方，自有备注在下方 -->
+      <div class="noteEditor" ref="noteEditor" @keyup.stop @keydown.stop></div>
+
+      <!-- 引用块列表（§7.14 / §8.3）：位于编辑器下方，附在同一外框底部 -->
       <div class="refArea" v-if="refs.length">
         <RefBlock
           v-for="r in refs"
@@ -40,8 +47,6 @@
           @reselect="onReselect"
         />
       </div>
-
-      <div class="noteEditor" ref="noteEditor" @keyup.stop @keydown.stop></div>
     </div>
     <!--
       F1：单栏实时渲染（wysiwyg 单栏，不再左右分栏）
@@ -478,9 +483,9 @@ export default {
   }
 
   // ============================================================
-  // 引用块 + 编辑器合并为"一个框"（2026-09-21 反馈：不要两个对话框观感）。
-  // 外框统一持有边框/底色；引用块去自有紫色边框（只留底部分隔线），
-  // Toast UI 编辑器去自带边框，融入外框。
+  // 引用块 + 编辑器合并为"一个框"（2026-09-21 二次反馈修订：引用块移到编辑器下方）。
+  // 外框统一持有边框/底色；引用块去自有紫色边框，附在编辑区底部
+  // （只留顶部分隔线，工具栏始终在框的最顶部），编辑器去自带边框融入外框。
   // ============================================================
   .noteBox {
     border: 1px solid var(--macos-border);
@@ -494,7 +499,7 @@ export default {
       background: transparent;
       margin-bottom: 0;
       padding: 6px 8px;
-      border-bottom: 1px solid var(--macos-divider, #e4e7ed);
+      border-top: 1px solid var(--macos-divider, #e4e7ed);
 
       // 失效引用仍保留红色左条警示
       &.status-missing,
