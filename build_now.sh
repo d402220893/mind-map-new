@@ -161,6 +161,10 @@ if [ -z "$SKIP_NSIS" ]; then
   #    实测 normal→压缩 18 分钟无产出；store→54 秒完成，安装包仅大 ~1MB，完全可接受。
   # ⚠️ 不套 timeout：timeout 杀不死 app-builder 子进程（会留下僵死 PID 需手动 taskkill），
   #    且会误判为构建失败。store 模式已足够快，无需超时。
+  # ⚠️ 出包前先强删 dist-electron2（.NET Directory::Delete）：若该目录是上次失败残留，
+  #    electron-builder 的 EnsureEmptyDir 删旧 win-unpacked/resources/app.asar 时会被
+  #    Defender 只读锁卡死（packaging 阶段无产出僵死）。清干净后 store 模式 ~42 秒完成。
+  powershell -NoProfile -Command "if (Test-Path 'E:/03_学习文件/mind-map-main/electron-app/dist-electron2') { [System.IO.Directory]::Delete('E:/03_学习文件/mind-map-main/electron-app/dist-electron2', \$true) }" >> "$LOG" 2>&1 || true
   npm run dist -- --config.directories.output=dist-electron2 --config.compression=store >> "$LOG" 2>&1
   RC=$?
   echo "builder rc=$RC at $(date +%T)" | tee -a "$LOG"
