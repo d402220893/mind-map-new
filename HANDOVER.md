@@ -1369,3 +1369,46 @@ onChange → mdDoc.setContent + scheduleSave
 4. ⏳ 重启后真机点测四件事（待用户/下一位验证）：① 点 .smm 正常打开；② 加引用后备注里显示被引用内容；③ md 编辑器有光标可直接输入；④ Ctrl+Z 只撤销一次编辑、不清空全文。
 5. ⏳ 提交本次改动：`git add` + `git commit`（4 bug 源码 + 新建 `mdHistory.js` + 4 个测试文件 + HANDOVER.md §32.4/§32.5/§32.6 状态更新）。
 
+---
+
+## 33. 2026-09-21：v2.0.11 遗留 4 bug 二次定位并真正修复 → 出包 v2.0.12
+
+> 状态：**4 个 bug 真根因全部坐实并修复 + 补回归测试（`web && npm test` 973/973 全绿，check-arch EXIT 0，pureRatio 0.7141）+ 出包 v2.0.12 部署 D 盘**。
+> 触发：用户装 v2.0.11 后回贴「4 个 bug 依旧」，逐条复现并推翻了 v2.0.11 的根因假设。
+
+### 33.1 为什么 v2.0.11 没修好（逐条对照 §32.4）
+| # | v2.0.11 的做法 | 为什么无效 |
+|---|---|---|
+| ①/③ | 去掉 `openMindMap` 里 `if (!decoded.ok) return decoded` 的提前返回 | 那只是"永远打不开"的一层；**真正的格式错配没动**——见 §33.2 |
+| ② | 给 `refData.addRef` 补 `title`/`cachedContent` 字段 | 字段补对了，但 `setNodeRefs` 因读 `node.data`（实例上恒 `undefined`）**首行就 return false，一个字节都没写** → 补的字段根本没落地 |
+| ④ | `clearHistoryBaseline` 用 `Array.isArray(st.done)` 找插件 + dispatch `{recreate:true}` | 两处都错：`HistoryState.done` 是 Branch 实例（非数组）→ 插件永不匹配；`{recreate:true}` 在 `applyTransaction` 里返回 `undefined`，并未清栈 |
+
+### 33.2 四个真根因与修复（v2.0.12）
+1. **Bug①/③（文件树双击 .smm 报错 + 内容不对）＝ .smm 落盘格式与解码器错配**
+   - 本应用保存 .smm 的真实格式是 `{ app:'smm-multisheet', version:1, activeId, sheets:[{id,name,data}] }`（`api/index.js#getSheetsContainer`）。
+   - 但 `smmCodec.decode`/`decodeSmm` 只认 `{type:'smms',data:{sheets}}` / `{type:'mindmap',data}` / 裸节点 → 打开自家文件时把**整个容器对象当成一个节点**：
+     `loadSheetsContainer` 拿到 `sheets:[{id:'root',data:<容器>}]` → `setData(<容器>)` → simple-mind-map `handleData` 执行 `data.data.expand`（`data.data` 为 `undefined`）→ **TypeError 弹窗（①）**；能渲染时则是错乱内容（③）。
+   - 修复：`smmCodec` 新增 `containerSheets()`/`isContainerObj()`，`decode`+`decodeSmm` **同时认 `app` 与 `type` 两种容器形态**；`api` 新增 `normalizeSheetsContainer()`，`isSheetsFile` 兼容 `type:'smms'`，`Edit.vue` 打开对话框 / 导入两条路径统一归一化（消除 refService 快照写回把文件改写成 `type:'smms'` 后的二次错配）。
+2. **Bug④（Ctrl+Z 清空全文）＝ 清历史基线从未真正生效**（见 §33.1 表）
+   - 修复：`isHistoryState()` 按 Branch 形判定（`eventCount` 数字 + `popEvent` 函数）；用插件自带 `spec.state.init()` 取**真正的空 HistoryState**（`new HistoryState(Branch.empty, Branch.empty, null, 0, -1)`）再 `setMeta(key, { historyState })`；无 `state.init` 时从当前实例反推类兜底；两者都不可得则返回 false 不动作。
+3. **Bug②（添加引用后不显示引用块）＝ refData 读错节点数据层**
+   - 运行时节点是 `MindMapNode` 实例：数据在 `node.nodeData.data`，只有 `getData()/setData()` 访问器，**实例上没有 `.data` 属性**。
+   - `refData` 一律读 `node.data` → `getNodeRefs` 恒 `[]`、`setNodeRefs` 首行 `if (!node || !node.data) return false` → 引用写不进也读不出，RefBlock 永远不渲染。
+   - 单测用假节点 `{ data: {} }` 恰好有 `.data`，故**测试全绿却线上失效**（典型"假绿")。
+   - 修复：新增 `nodeDataOf(node)`（实例走 `getData()`，裸节点走 `node.data`）；写实例时走官方 `setData({_mindlink})`（合并进 `nodeData.data`，进历史 + 触发 `data_change` → 保存随图落盘），裸节点直接写 `node.data`。`refService.writeNodeSnapshot` 传的裸节点路径行为不变。
+
+### 33.3 测试与门禁
+- 改写 `tests/pure/mdHistory.test.mjs`（11 例：主路径/兜底/旧错误假设被拒/isHistoryState 单测），复刻 prosemirror-history 的 **Branch 非数组**形状。
+- `tests/pure/smmCodec.test.mjs` +11 例（app 容器解码/兜底 activeId/decode·pickActiveData 一致/isContainerObj/containerSheets/单图不受影响）。
+- `tests/pure/refData.test.mjs` +12 例（MindMapNode 实例读写/无 .data 前提断言/setData 调用/去重回填/剥离 refId/保留其它字段）。
+- `cd web && npm test` → **973/973 全绿**；`check-arch` EXIT 0（`api.exports 37/0 missing`，pureRatio 0.7141 ≥ 0.70）。
+
+### 33.4 出包与部署（v2.0.12）
+- 版本号先行 bump（`electron-app/package.json` 2.0.11 → 2.0.12，同步 `make_installer.nsi`）后再 `SKIP_BUMP=1 bash build_now.sh`，使 `build-info.json` 与发布版本**不再落后一位**（修正 §32.5 的指纹瑕疵）。
+- 部署真源仍为 `D:\Program Files (x86)\思绪思维导图\resources\app\`（Electron 优先级 app/ > app.asar，两处同步）。
+- 产物：`electron-app/dist-electron2/思绪思维导图 Setup.exe`。
+
+### 33.5 交接给下一位 / 待用户真机验证
+- ⏳ 重启后点测：① 文件树双击 .smm 正常打开且内容正确；② 节点加引用后备注弹窗出现引用块并显示被引用内容；③ md 编辑器 Ctrl+Z 只撤销本次编辑、**不清空全文**。
+- ⚠️ 遗留（非本轮）：`refData` 的同类取值假设若在别处仍写 `node.data` 需一并排查；`electron-app/tests` 7 项 asar 路径漂移（硬编码 `dist-electron/`，产出已改 `dist-electron2`）仍未对齐。
+
