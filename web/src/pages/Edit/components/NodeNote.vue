@@ -295,9 +295,10 @@ export default {
     handleShowNodeNote(node) {
       this.$bus.$emit('startTextEdit')
       // 关键修复：打开"修改备注"对话框时立即关闭所有右侧侧栏（包括"备注"侧栏），
-      // 避免用户在同一个屏幕上看到"备注侧栏 + 修改备注对话框"两份重复视图。
-      // 复现路径见 template-bindings.test.mjs [sidebar 重复弹出] 案例。
+      // 并隐藏画布上的备注内容浮层（NodeNoteContentShow），避免同一屏出现
+      // "编辑弹窗 + 画布浮层"两份重复视图（用户感知为"两个窗口"）。
       this.$bus.$emit('closeSideBar')
+      this.$bus.$emit('hideNoteContent')
       if (node) {
         this.appointNode = node
         this.note = node.getData('note') || ''

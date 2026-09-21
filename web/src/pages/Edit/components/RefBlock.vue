@@ -245,28 +245,31 @@ export default {
 </script>
 
 <style lang="less" scoped>
+// 与编辑器融为一体：不再用独立紫色卡片，仅顶部一条分隔线，
+// 内容区读起来像「引用备注」，不像第二个输入框 / 第二个窗口。
 .refBlock {
-  border: 1px solid var(--mm-ref-border, #7c3aed);
-  border-radius: 8px;
-  background: var(--mm-ref-bg, #f3f0ff);
-  color: var(--mm-ref-text, #4c1d95);
-  padding: 8px;
-  margin-bottom: 10px;
+  border: none;
+  border-top: 1px solid var(--macos-divider, #e4e7ed);
+  background: transparent;
+  color: var(--macos-text);
+  padding: 6px 2px 0;
+  margin: 0;
   position: relative;
 
   &.status-missing,
   &.status-file-missing,
   &.status-ambiguous {
-    border-left: 4px solid var(--macos-danger, #f56c6c);
+    border-left: 3px solid var(--macos-danger, #f56c6c);
+    padding-left: 8px;
   }
 
   .rbWarn {
-    font-size: 12px;
-    padding: 4px 6px;
-    margin-bottom: 6px;
-    border-radius: 4px;
-    background: var(--mm-warn-bg, #fef3c7);
-    color: var(--mm-warn-text, #92400e);
+    font-size: 11px;
+    color: var(--macos-text-2);
+    margin-bottom: 4px;
+    // 去黄块，改为低调的纯文本提示（编辑引用 = 直接改 md 源）
+    background: transparent;
+    padding: 0;
   }
 
   .rbHead {
@@ -279,11 +282,14 @@ export default {
       overflow: hidden;
       white-space: nowrap;
       text-overflow: ellipsis;
+      color: var(--macos-accent);
+      font-weight: 600;
     }
     .rbBadge {
       padding: 1px 6px;
       border-radius: 8px;
-      background: rgba(124, 58, 237, 0.12);
+      font-size: 11px;
+      background: rgba(124, 58, 237, 0.1);
       &.stale,
       &.missing,
       &.file-missing,
@@ -295,6 +301,8 @@ export default {
     .rbCount {
       cursor: pointer;
       text-decoration: underline dotted;
+      font-size: 11px;
+      color: var(--macos-text-2);
     }
   }
 
@@ -335,52 +343,56 @@ export default {
     }
   }
 
+  // 工具栏改为无边框的轻量文字链接，与编辑区观感一致（不再像独立按钮组）
   .rbTools {
     display: flex;
     flex-wrap: wrap;
-    gap: 6px;
-    margin: 6px 0;
+    gap: 12px;
+    margin: 4px 0;
     .rbBtn {
-      font-size: 12px;
-      padding: 2px 6px;
-      border-radius: 4px;
+      font-size: 11px;
+      padding: 0;
+      border: none;
+      background: transparent;
+      color: var(--macos-accent);
       cursor: pointer;
-      border: 1px solid rgba(124, 58, 237, 0.3);
       &:hover {
-        background: rgba(124, 58, 237, 0.12);
+        text-decoration: underline;
       }
       &.danger {
-        border-color: rgba(245, 108, 108, 0.5);
         color: var(--macos-danger, #f56c6c);
       }
     }
   }
 
   .rbImpact {
-    font-size: 12px;
-    padding: 4px 6px;
-    margin-bottom: 6px;
-    border-radius: 4px;
-    background: var(--mm-warn-bg, #fef3c7);
-    color: var(--mm-warn-text, #92400e);
+    font-size: 11px;
+    margin-bottom: 4px;
+    color: var(--macos-text-2);
+    background: transparent;
+    padding: 0;
   }
 
   .rbBody {
     .rbTextarea {
       width: 100%;
-      min-height: 120px;
+      min-height: 80px;
       font-size: 12px;
       line-height: 1.6;
       padding: 6px;
       border-radius: 4px;
-      border: 1px solid var(--mm-ref-border, #7c3aed);
+      border: 1px solid var(--macos-border);
       background: #fff;
       color: #222;
       outline: none;
       resize: vertical;
     }
+    // 内容读起来像「引用备注」（左侧细线 + 弱化色），不像输入框
     .rbContent {
       margin: 0;
+      padding-left: 8px;
+      border-left: 2px solid var(--macos-divider, #e4e7ed);
+      color: var(--macos-text-2);
       max-height: 200px;
       overflow: auto;
       white-space: pre-wrap;
@@ -414,7 +426,7 @@ export default {
   .rbRebound {
     margin-top: 4px;
     font-size: 11px;
-    color: var(--mm-ref-text, #4c1d95);
+    color: var(--macos-text-2);
   }
 }
 

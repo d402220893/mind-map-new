@@ -11,6 +11,15 @@ module.exports = {
   lintOnSave: false,
   productionSourceMap: false,
   filenameHashing: false,
+  // 串行构建（BUILD_LOW_MEM=1）：关闭 babel 的 thread-loader 并行，
+  // 与下方 chainWebpack 里 terser parallel:false 配合，让整条编译链不产生任何
+  // jest-worker / thread-loader 子进程 → 从原理上消除"杀软实时扫描拦截 worker 导致
+  // 构建死锁（有时 2 分钟、有时 20 分钟超时）"。牺牲速度换确定性。
+  // 默认（非低内存）保持 Vue CLI 原行为：多核时启用 thread-loader。
+  parallel:
+    process.env.BUILD_LOW_MEM === '1'
+      ? false
+      : require('os').cpus().length > 1,
   transpileDependencies: ['yjs', 'lib0', 'quill', 'mp4-muxer'],
   chainWebpack: config => {
     // 移除 preload 插件
