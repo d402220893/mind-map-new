@@ -380,7 +380,6 @@ export default {
     },
     openNodeHit(hit) {
       if (!this.mindMap || !hit.uid) return
-      this.$bus.$emit('show_search') // 关闭可能打开的搜索弹窗，避免冲突
       this.mindMap.execCommand('GO_TARGET_NODE', hit.uid)
     },
     openHit(hit) {
