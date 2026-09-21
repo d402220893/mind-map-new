@@ -90,12 +90,20 @@ echo "=== [1/5] vue build ===" | tee -a "$LOG"
 cd /e/03_学习文件/mind-map-main/web
 # 清 webpack 缓存：陈旧缓存会导致 Edit.vue 等改动未重编译，产出"假新包"（时间戳新但内容旧），
 # 是本项目"改了没生效"的高频根因。每次构建强制清，牺牲少量增量速度换取可部署性。
-echo "--- 清 webpack 缓存 (node_modules/.cache) ---" | tee -a "$LOG"
 # 用 PowerShell .NET 直删绕开 WorkBuddy safe-delete shim：
 # node fs.rmSync 删大目录时会被 shim 拦成「重定向到回收站/等待确认」，曾导致构建僵在 [1/5]、
 # 日志停在「清缓存」之后不再前进（2026-09-15 排查：缓存目录已消失但 bash 再没走到下一步）。
 # .NET Directory::Delete 是原生删除，不经 node shim，稳定可靠。
-powershell -NoProfile -Command "if (Test-Path 'E:/03_学习文件/mind-map-main/web/node_modules/.cache') { [System.IO.Directory]::Delete('E:/03_学习文件/mind-map-main/web/node_modules/.cache', \$true); 'cache cleared' } else { 'no cache' }" >> "$LOG" 2>&1 || echo "清缓存失败(忽略)" | tee -a "$LOG"
+# SKIP_CACHE_CLEAR=1 跳过清缓存：用 warm babel/webpack 缓存大幅减少文件 I/O，降低被杀软实时扫描
+# 逐个扣住文件导致构建卡死的暴露面（2026-09-21 vue build 主进程被 Defender 扣死 13min 零推进后引入）。
+# 安全性：babel/vue-loader 缓存按内容哈希失效，改动文件仍会重编译；且 [2/5] 有 guard-assert
+# 校验关键修复确已编入 bundle，缓存真陈旧会让构建**报错**而非产出"假新包"。仅小改动迭代时用。
+if [ "$SKIP_CACHE_CLEAR" = "1" ]; then
+  echo "--- 跳过清 webpack 缓存 (SKIP_CACHE_CLEAR=1，warm 缓存降 I/O) ---" | tee -a "$LOG"
+else
+  echo "--- 清 webpack 缓存 (node_modules/.cache) ---" | tee -a "$LOG"
+  powershell -NoProfile -Command "if (Test-Path 'E:/03_学习文件/mind-map-main/web/node_modules/.cache') { [System.IO.Directory]::Delete('E:/03_学习文件/mind-map-main/web/node_modules/.cache', \$true); 'cache cleared' } else { 'no cache' }" >> "$LOG" 2>&1 || echo "清缓存失败(忽略)" | tee -a "$LOG"
+fi
 # vue build 用 node 包装，带可靠硬超时：msys 的 timeout 对 Windows node 子进程树（webpack worker）
 # 无法真正终止，会随管道 EOF 永久挂起 → 整链卡死在 [1/5]。run_vue_build.js 超时后
 # 用 taskkill /T /F 杀整个进程树并 exit 2（下方判定为 VUE BUILD FAILED），保证绝不无限卡。
