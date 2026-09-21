@@ -48,13 +48,27 @@ export default {
     const sheets = (container && container.sheets) || []
     const active = sheets.find(s => s.id === (this.sheetId || container.activeId)) || sheets[0]
     // ⚠️ 用 readonly:true 新建独立实例（不复用主画布实例，避免状态串）
-    this.mm = new MindMap({
-      el: this.$refs.host,
-      data: (active && active.data) || { root: { data: { text: '' }, children: [] } },
-      readonly: true,
-      fit: true,
-      enableFreeDrag: false
-    })
+    // 构造兜底：simple-mind-map 在容器宽高为 0 时会 throw（'容器元素el的宽高不能为0'）。
+    // 本组件 mounted 里有 await 读文件，期间可能被卸载 / 容器离开文档流 → 尺寸变 0；
+    // 这里兜住并落到 err 提示，不再让异常冒到全局「启动时有 N 项异常」横幅。
+    try {
+      const host = this.$refs.host
+      const rect = host && host.getBoundingClientRect()
+      if (!rect || rect.width <= 0 || rect.height <= 0) {
+        this.err = '预览容器不可见'
+        return
+      }
+      this.mm = new MindMap({
+        el: host,
+        data: (active && active.data) || { root: { data: { text: '' }, children: [] } },
+        readonly: true,
+        fit: true,
+        enableFreeDrag: false
+      })
+    } catch (e) {
+      this.err = (e && e.message) || '预览初始化失败'
+      this.mm = null
+    }
   },
   beforeUnmount() {
     if (this.mm) {

@@ -129,6 +129,28 @@ test('[dirty 误报] Edit.vue loadSheetData 用 node_tree_render_end 兜底，�
   )
   // bindSaveEvent 中 dirty 守卫仍以 _isLoading 为准
   assert.ok(/if\s*\(this\._isLoading\)\s*return/.test(vue), 'bindSaveEvent 仍应保留 _isLoading 守卫')
+  // 2026-09-21 启动异常「容器元素el的宽高不能为0」：Index.vue 用 v-show 保留导图实例，
+  // 激活页是 Markdown 时导图容器 display:none → 宽高 0 → simple-mind-map 构造抛错。
+  // 修复：容器不可见时延后创建（ResizeObserver 等尺寸就绪），数据入口先挂起、就绪后补执行。
+  assert.ok(/initWhenReady\s*\(\)\s*\{/.test(vue), 'Edit.vue 应有 initWhenReady 容器可见性守卫')
+  assert.ok(/new ResizeObserver/.test(vue), 'initWhenReady 应用 ResizeObserver 等容器尺寸就绪')
+  assert.ok(
+    /mounted\(\)\s*\{[\s\S]{0,200}?this\.initWhenReady\(\)/.test(vue),
+    'mounted 应走 initWhenReady（不得在容器可能隐藏时直接 init）'
+  )
+  assert.ok(
+    (vue.match(/if \(this\.deferUntilReady\(/g) || []).length >= 2,
+    'loadSheetData 与 setData 都应通过 deferUntilReady 挂起未就绪期的数据调用'
+  )
+  assert.ok(/flushPendingReadyCall/.test(vue), '实例就绪后应 flushPendingReadyCall 补执行挂起调用')
+  assert.ok(
+    /if \(this\.mindMap\) this\.mindMap\.destroy\(\)/.test(vue),
+    'beforeUnmount 的 destroy 必须判空（容器一直不可见时从未创建实例）'
+  )
+  // md 内嵌 .smm 预览同样兜底，避免同类异常冒到全局报错横幅
+  const preview = read(new URL('pages/Edit/components/MindMapPreview.vue', SRC))
+  assert.ok(/catch \(e\)/.test(preview), 'MindMapPreview 的 new MindMap 应 try/catch 兜底')
+  assert.ok(/getBoundingClientRect\(\)/.test(preview), 'MindMapPreview 构造前应校验容器尺寸非 0')
 })
 
 // ===== 修复：右侧 SidebarTrigger 上下黑框（MED）=====

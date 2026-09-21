@@ -308,7 +308,7 @@ export default {
   mounted() {
     showLoading()
     this.getData()
-    this.init()
+    this.initWhenReady()
     this.$bus.$on('execCommand', this.execCommand)
     this.$bus.$on('paddingChange', this.onPaddingChange)
     this.$bus.$on('export', this.export)
@@ -407,7 +407,12 @@ export default {
       this.autosaveScheduler.cancel()
       this.autosaveScheduler = null
     }
-    this.mindMap.destroy()
+    // 容器一直不可见时 mindMap 从未创建（见 initWhenReady）→ destroy 必须判空
+    if (this._mmReadyRO) {
+      this._mmReadyRO.disconnect()
+      this._mmReadyRO = null
+    }
+    if (this.mindMap) this.mindMap.destroy()
   },
   methods: {
     onLocalStorageExceeded() {
@@ -743,6 +748,9 @@ export default {
     // simple-mind-map 的 data_change 事件是在渲染后才触发的异步事件，
     // 用 setTimeout(80) 经常在事件到达前就放行，导致切换文件后被误标 dirty。
     loadSheetData(data) {
+      // 实例未就绪（以 md 页启动 → 导图容器 display:none，initWhenReady 延后建实例）时
+      // 先把数据暂存，建好实例后由 flushPendingReadyCall 补载，避免 this.mindMap 为 null 抛 TypeError
+      if (this.deferUntilReady(() => this.loadSheetData(data))) return
       this._isLoading = true
       // 载入前先登记「整个工作簿」的图片 key，并补全本表被引用却缺失的 key。
       // 老文件里可能残留跨工作表复制留下的悬空 key（表现为图片显示"加载失败"占位图），
@@ -1435,8 +1443,62 @@ export default {
       }
     },
 
+    // 实例未就绪期间（见 initWhenReady）到达的数据调用：暂存最后一次，就绪后补执行一次。
+    // 返回 true 表示调用方应立即 return（数据已挂起）。
+    deferUntilReady(fn) {
+      if (this.mindMap) return false
+      this._pendingReadyCall = fn
+      return true
+    },
+
+    // 实例创建完成后补执行被挂起的数据调用（只补最后一次，语义与"以最新数据为准"一致）
+    flushPendingReadyCall() {
+      const fn = this._pendingReadyCall
+      this._pendingReadyCall = null
+      if (typeof fn === 'function') fn()
+    },
+
+    // 建实例 + 补执行挂起的数据调用（两者必须成对，勿只调 init）
+    initNow() {
+      this.init()
+      this.flushPendingReadyCall()
+    },
+
+    // 容器可见性守卫：Index.vue 用 v-show 保留导图实例（切回不重建画布），因此本组件
+    // 在「激活页是 Markdown」时同样处于挂载状态，但外层 .editWrap 是 display:none →
+    // 画布容器 getBoundingClientRect 宽高均为 0，而 simple-mind-map 构造时
+    // （getElRectInfo）把 0 尺寸当致命错误：throw new Error('容器元素el的宽高不能为0')
+    // → 每次以 md 页启动都弹「启动时有 1 项异常」。故容器不可见时不创建，
+    // 等尺寸就绪（切回导图页）再建。
+    initWhenReady() {
+      if (this.mindMap) return
+      const el = this.$refs.mindMapContainer
+      if (!el) return this.initNow()
+      const rect = el.getBoundingClientRect()
+      if (rect.width > 0 && rect.height > 0) return this.initNow()
+      // 容器不可见：本轮不建实例，先收掉 mounted 为画布开的全局 loading 遮罩
+      //（md 页有自己的骨架屏，留着画布遮罩会盖住编辑器）
+      hideLoading()
+      // display:none → 可见时 ResizeObserver 会回调（尺寸由 0 变为实际值）
+      if (this._mmReadyRO) return
+      this._mmReadyRO = new ResizeObserver(() => {
+        const r = el.getBoundingClientRect()
+        if (r.width > 0 && r.height > 0) {
+          if (this._mmReadyRO) {
+            this._mmReadyRO.disconnect()
+            this._mmReadyRO = null
+          }
+          // 切回导图页：补一次画布加载态，渲染结束由 node_tree_render_end 收尾
+          showLoading()
+          this.initWhenReady()
+        }
+      })
+      this._mmReadyRO.observe(el)
+    },
+
     // 初始化
     init() {
+      if (this.mindMap) return
       let hasFileURL = this.hasFileURL()
       let { root, layout, theme, view } = this.mindMapData
       const config = this.mindMapConfig
@@ -1652,6 +1714,8 @@ export default {
 
     // 动态设置思维导图数据
     setData(data) {
+      // 同 loadSheetData：实例未就绪时暂存，就绪后补执行（从 md 页导入/打开文件会走这里）
+      if (this.deferUntilReady(() => this.setData(data))) return
       this.handleShowLoading()
       let rootNodeData = null
       if (data.root) {
