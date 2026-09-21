@@ -745,11 +745,17 @@ export default {
 // Vue 会编译成后代选择器 `.workspacePanel .wsPill[data-v-x]`，与 Teleport 后的
 // DOM 结构不匹配，规则整条失效 → 蓝块无宽高无背景，用户看不到任何隐藏入口
 // （2026-09-21「加一个蓝色的块，隐藏文件树栏」的真根因）。
+// ⚠️ 尺寸口径 = 右侧「实际可见」的蓝缝，不是右侧的 CSS 尺寸：
+// 右侧 SidebarTrigger 的 .toggleShowBtn 虽是 35×60 的方块，但它与白色侧栏卡片
+// 同为 z-index:0 且 DOM 在其前 → 被卡片盖住，常态只露出 6px 宽的缝，悬停才滑出 18px。
+// 左侧 .wsPill 是 z-index:3000 的独立元素、无遮挡，若照抄 35×60 会整块露出来，
+// 观感比右侧大得多（2026-09-21 用户反馈「太大了，和右边工具栏的一样就行」）。
+// 故这里直接按可见尺寸复刻：常态 6px 细缝、悬停滑出到 18px。
 .wsPill {
   position: fixed;
   top: 50%;
   transform: translateY(-50%);
-  width: 35px;
+  width: 6px; // 常态 = 右侧可见蓝缝宽度
   height: 60px;
   background: #409eff;
   cursor: pointer;
@@ -759,25 +765,30 @@ export default {
   justify-content: center;
   border-top-right-radius: 10px;
   border-bottom-right-radius: 10px;
-  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.18);
   user-select: none;
-  transition: left 0.2s ease, background 0.15s ease;
+  transition: width 0.12s ease, background 0.12s ease;
 
-  // 展开态：文件栏宽 240px，蓝块紧贴其右缘（不遮挡文件树文字）
+  // 展开态：文件栏宽 240px，蓝缝紧贴其右缘（不遮挡文件树内容）
   left: 240px;
 
   &:hover {
+    width: 18px; // 悬停滑出（与右侧 hover 时露出的宽度一致）
     background: #66b1ff;
   }
 
   .wsPillIcon {
     color: #fff;
     font-size: 12px;
+    opacity: 0; // 6px 细缝放不下 12px 图标，滑出后再显示
     transform: rotateZ(180deg); // 箭头朝左 = 点击收起文件栏
-    transition: transform 0.1s;
+    transition: opacity 0.1s, transform 0.1s;
   }
 
-  // 收起态：文件栏宽 0，蓝块贴屏幕左缘，箭头朝右 = 点击展开
+  &:hover .wsPillIcon {
+    opacity: 1;
+  }
+
+  // 收起态：文件栏宽 0，蓝缝贴屏幕左缘，箭头朝右 = 点击展开
   &.collapsed {
     left: 0;
     .wsPillIcon {

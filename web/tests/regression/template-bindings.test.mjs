@@ -422,7 +422,26 @@ test('[live搜索] mindMap 实例经 mindmap-inited 事件广播（$refs 非响�
 test('[蓝色竖条] wsPill 与右侧 SidebarTrigger 同款外观', () => {
   const vue = read(new URL('pages/Edit/components/WorkspacePanel.vue', SRC))
   assert.ok(/iconjiantouyou/.test(vue), 'wsPill 应使用与右侧一致的箭头图标 iconjiantouyou')
-  assert.ok(/width:\s*35px/.test(vue), 'wsPill 应与右侧同宽(35px)')
+  // ⚠️ 尺寸口径 = 右侧「实际可见」的蓝缝，不是右侧 CSS 里的 35×60：
+  //    右侧 toggleShowBtn 被白色侧栏卡片盖住，常态只露 6px、hover 滑出 18px。
+  //    左侧 wsPill 无遮挡（z-index:3000），照抄 35×60 会整块露出 → 用户反馈「太大了」。
+  assert.ok(
+    /^\s*width:\s*6px/m.test(vue),
+    'wsPill 常态宽度应为 6px（= 右侧实际可见蓝缝宽度），不得用 35px 整块外露'
+  )
+  assert.ok(
+    /&:hover\s*\{[^}]*width:\s*18px/s.test(vue),
+    'wsPill 悬停应滑出到 18px（与右侧 hover 可见宽度一致）'
+  )
+  assert.ok(
+    /\.wsPillIcon\s*\{[^}]*opacity:\s*0/s.test(vue),
+    '6px 细缝放不下图标：常态图标 opacity:0，悬停滑出后再显示'
+  )
+  assert.ok(
+    /&:hover\s+\.wsPillIcon\s*\{[^}]*opacity:\s*1/s.test(vue),
+    '悬停时图标应显现'
+  )
+  assert.ok(!/box-shadow/.test(vue.slice(vue.lastIndexOf('<style lang="less">'))), '蓝缝不应带阴影（与右侧无阴影观感一致）')
   assert.ok(/border-top-right-radius:\s*10px/.test(vue), '蓝条圆角应与右侧一致(10px)')
   assert.ok(/<Teleport to="body">/.test(vue), '蓝条必须 Teleport 到 body（否则被 fixed 画布盖住，收起后找不到）')
   assert.ok(/z-index:\s*3000/.test(vue), '蓝条 z-index 必须高于画布')
