@@ -13,6 +13,10 @@ contextBridge.exposeInMainWorld('smmApi', {
   // 直接写入已有路径（覆盖保存用，异步）
   writeFile: (filePath, content) =>
     ipcRenderer.invoke('smm:write-file', { filePath, content }),
+  // md 编辑器「另存为」：通用文本保存对话框 { content, defaultPath, title, filters } → { canceled, filePath, error }
+  saveTextDialog: payload => ipcRenderer.invoke('smm:save-text', payload),
+  // md 编辑器「打开」：通用单文件选择（只回路径）{ title, filters } → { canceled, filePath }
+  pickFile: opts => ipcRenderer.invoke('smm:pick-file', opts),
   // 同步覆盖写入（供渲染进程 beforeunload 在同步上下文中落盘；
   // 异步 invoke 在窗口关闭前往往来不及完成导致丢文件，故此处用 sendSync）
   writeFileSync: (filePath, content) =>

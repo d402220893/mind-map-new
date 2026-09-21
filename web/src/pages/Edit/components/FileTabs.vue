@@ -275,9 +275,11 @@ export default {
     height: 100%;
     flex: 1;
     min-width: 0;
-    overflow-x: auto;
-    overflow-y: hidden;
-    padding: 0 120px 0 8px;
+    // ⚠️ 不用横向滚动 + 右 padding 的方案：Chrome 横向滚动容器会吞掉右 padding，
+    //    标签溢出时钻到窗口控制按钮底下。改 margin-right 预留按钮区 + 标签自身收缩。
+    overflow: hidden;
+    padding: 0 8px;
+    margin-right: 120px;
     white-space: nowrap;
     -webkit-app-region: no-drag;
 
@@ -301,7 +303,9 @@ export default {
     background: transparent;
     border: 1px solid transparent;
     font-size: 13px;
-    flex-shrink: 0;
+    // 标签可收缩（最小让位到只剩图标+省略号），不再 flex-shrink:0 硬撑出滚动条
+    flex: 0 1 auto;
+    min-width: 0;
     transition: background 0.15s ease, color 0.15s ease, box-shadow 0.15s ease;
 
     &:hover {
@@ -320,12 +324,14 @@ export default {
       margin-right: 5px;
       font-size: 12px;
       line-height: 1;
+      flex-shrink: 0;
     }
 
     .fileName {
       overflow: hidden;
       text-overflow: ellipsis;
       white-space: nowrap;
+      min-width: 0;
     }
 
     .dirtyDot {
@@ -358,6 +364,7 @@ export default {
       text-align: center;
       border-radius: 50%;
       font-size: 14px;
+      flex-shrink: 0;
       color: rgba(0, 0, 0, 0.45);
       transition: background 0.15s ease, color 0.15s ease;
 

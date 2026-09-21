@@ -136,6 +136,41 @@ ipcMain.handle('smm:write-file', async (e, { filePath, content }) => {
   }
 })
 
+// md 编辑器「另存为」：通用文本保存对话框（filters/defaultPath 由调用方给）
+ipcMain.handle('smm:save-text', async (e, { content, defaultPath, title, filters } = {}) => {
+  const win = BrowserWindow.fromWebContents(e.sender) || BrowserWindow.getFocusedWindow() || mainWindow
+  const result = await dialog.showSaveDialog(win, {
+    title: title || '另存为',
+    defaultPath: defaultPath || '未命名.md',
+    filters: filters || [
+      { name: 'Markdown (*.md)', extensions: ['md', 'markdown'] },
+      { name: '所有文件', extensions: ['*'] }
+    ]
+  })
+  if (result.canceled || !result.filePath) return { canceled: true }
+  try {
+    fs.writeFileSync(result.filePath, content, 'utf8')
+    return { canceled: false, filePath: result.filePath }
+  } catch (err) {
+    return { canceled: false, filePath: result.filePath, error: err.message }
+  }
+})
+
+// md 编辑器「打开」：通用单文件选择对话框（只回路径；读取走 smm:read-text 链路，统一编码检测）
+ipcMain.handle('smm:pick-file', async (e, { title, filters } = {}) => {
+  const win = BrowserWindow.fromWebContents(e.sender) || BrowserWindow.getFocusedWindow() || mainWindow
+  const res = await dialog.showOpenDialog(win, {
+    title: title || '打开文件',
+    properties: ['openFile'],
+    filters: filters || [
+      { name: 'Markdown / 思绪文件', extensions: ['md', 'markdown', 'smm'] },
+      { name: '所有文件', extensions: ['*'] }
+    ]
+  })
+  if (res.canceled || !res.filePaths || !res.filePaths[0]) return { canceled: true }
+  return { canceled: false, filePath: res.filePaths[0] }
+})
+
 // 同步覆盖写入（渲染进程 beforeunload 同步落盘用；sendSync 调用，
 // 必须用 event.returnValue 返回结果，确保窗口关闭前写盘已完成）
 ipcMain.on('smm:write-file-sync', (event, { filePath, content }) => {
@@ -207,7 +242,10 @@ function isIgnored(name, ignore) {
 
 // 1 选择目录（只读对话框）
 ipcMain.handle('smm:pick-directory', async (e, { title } = {}) => {
-  const res = await dialog.showOpenDialog({ title: title || '选择工作区目录', properties: ['openDirectory'] })
+  // ⚠️ 必须传父窗口：无边框窗口下不带 win 的对话框可能跑到主窗口**后面**，
+  //    用户看不见也关不掉 → 之后每次点击都被这个隐藏弹窗挡着，表现为"只能弹一次"。
+  const win = BrowserWindow.fromWebContents(e.sender) || BrowserWindow.getFocusedWindow() || mainWindow
+  const res = await dialog.showOpenDialog(win, { title: title || '选择工作区目录', properties: ['openDirectory'] })
   if (res.canceled || !res.filePaths || !res.filePaths[0]) return { canceled: true, dirPath: null }
   return { canceled: false, dirPath: res.filePaths[0] }
 })
@@ -436,7 +474,8 @@ ipcMain.handle('smm:import-file', async (e, { exts, title } = {}) => {
     { name: `思维导图文件 (${allLabel})`, extensions: extList },
     { name: '所有文件', extensions: ['*'] }
   ]
-  const res = await dialog.showOpenDialog({
+  const win = BrowserWindow.fromWebContents(e.sender) || BrowserWindow.getFocusedWindow() || mainWindow
+  const res = await dialog.showOpenDialog(win, {
     title: title || '导入思维导图文件',
     properties: ['openFile'],
     filters

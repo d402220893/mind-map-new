@@ -30,7 +30,10 @@
         <span class="tbBtn" title="大纲" @click="toggleOutline">目录</span>
       </div>
       <div class="tbGroup right">
+        <span class="tbBtn" title="新建 md 文件" @click="newMd">新建</span>
+        <span class="tbBtn" title="打开文件" @click="openFile">打开</span>
         <span class="tbBtn" title="保存 Ctrl+S" @click="save">保存</span>
+        <span class="tbBtn" title="另存为" @click="saveAs">另存为</span>
         <span class="tbBtn" title="折叠工具栏 Ctrl+Shift+T" @click="collapsed = true">›</span>
       </div>
     </template>
@@ -39,6 +42,9 @@
 </template>
 
 <script>
+import { addWorkbook, switchWorkbook } from '@/api'
+import { shell, openPath, mdDoc } from '@/utils/workspaceBridge'
+
 export default {
   name: 'MdToolbar',
   data() {
@@ -67,8 +73,28 @@ export default {
     save() {
       this.$bus.$emit('md:save')
     },
+    saveAs() {
+      this.$bus.$emit('md:saveAs')
+    },
     toggleOutline() {
       this.$bus.$emit('toggle-md-outline')
+    },
+    // 新建未命名 md 标签（保存时走另存为落盘）
+    newMd() {
+      const wb = addWorkbook({ name: '未命名', filePath: '', kind: 'markdown' })
+      mdDoc.setContent(wb.id, '')
+      switchWorkbook(wb.id)
+      this.$bus.$emit('workbook-list-changed')
+      this.$bus.$emit('workbook-switched', wb.id)
+    },
+    // 打开文件（.md/.smm 均可，按扩展名自动分派到对应编辑器）
+    async openFile() {
+      const r = await shell.pickFile({ title: '打开文件' })
+      if (!r || r.canceled || !r.filePath) return
+      const res = await openPath(r.filePath)
+      if (!res.ok) {
+        this.$message.error('打开失败：' + (res.error && (res.error.message || res.error.code)))
+      }
     }
   }
 }

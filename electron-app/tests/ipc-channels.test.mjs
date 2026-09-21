@@ -60,6 +60,18 @@ test('read-text 有 8MB 上限且超限返回 E_TOO_LARGE', () => {
   assert.ok(mainSrc.includes("code: 'E_TOO_LARGE'"))
 })
 
+// 无边框窗口下不带父窗口的对话框会跑到主窗口后面：用户看不见也关不掉，
+// 之后每次点击都被隐藏弹窗挡着（表现为"打开文件夹只能弹一次"）。
+test('文件/目录对话框必须传父窗口（pick-directory/pick-file/save-text/import-file）', () => {
+  const handlers = ['smm:pick-directory', 'smm:pick-file', 'smm:save-text', 'smm:import-file']
+  for (const h of handlers) {
+    const i = mainSrc.indexOf(`ipcMain.handle('${h}'`)
+    assert.ok(i >= 0, `main.js 缺少 ${h} 的 handler`)
+    const body = mainSrc.slice(i, i + 700)
+    assert.ok(/showOpenDialog\(win|showSaveDialog\(win/.test(body), `${h} 的对话框必须传父窗口 win`)
+  }
+})
+
 test('write-binary 有 10MB 上限', () => {
   assert.ok(/MAX_BINARY_BYTES\s*=\s*10\s*\*\s*1024\s*\*\s*1024/.test(mainSrc))
 })

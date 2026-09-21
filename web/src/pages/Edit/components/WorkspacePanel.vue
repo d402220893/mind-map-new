@@ -63,39 +63,47 @@
           <span class="wsLink" @click="clearSearch">清除</span>
         </div>
 
-        <!-- 导图（.smm）节点/备注/引用命中 -->
+        <!-- 导图（.smm）节点/备注/引用命中：可独立折叠分区（紫色系） -->
         <template v-if="smmResults && smmResults.length">
-          <div class="wsGroupSub">🧠 导图内容</div>
-          <div
-            v-for="(hit, i) in smmResults"
-            :key="'smm' + i + hit.uid"
-            class="wsHit"
-            @click="openNodeHit(hit)"
-          >
-            <div class="wsHitFile">
-              {{ hit.fileName }}<template v-if="hit.sheetName"> · {{ hit.sheetName }}</template>
-            </div>
-            <div class="wsHitLine">{{ hit.path }}</div>
-            <div class="wsHitLine">{{ hit.preview }}</div>
+          <div class="wsGroupSub smm" @click="collapseSmm = !collapseSmm">
+            <span class="wsCaret">{{ collapseSmm ? '▸' : '▾' }}</span>🧠 导图内容（{{ smmResults.length }}）
           </div>
+          <template v-if="!collapseSmm">
+            <div
+              v-for="(hit, i) in smmResults"
+              :key="'smm' + i + hit.uid"
+              class="wsHit"
+              @click="openNodeHit(hit)"
+            >
+              <div class="wsHitFile">
+                {{ hit.fileName }}<template v-if="hit.sheetName"> · {{ hit.sheetName }}</template>
+              </div>
+              <div class="wsHitLine">{{ hit.path }}</div>
+              <div class="wsHitLine">{{ hit.preview }}</div>
+            </div>
+          </template>
         </template>
 
-        <!-- md 全文命中 -->
+        <!-- md 全文命中：可独立折叠分区（蓝色系）；文件名不带路径，文件间横线分隔 -->
         <template v-if="searchResults && searchResults.length">
-          <div class="wsGroupSub">📄 文档全文</div>
-          <div
-            v-for="hit in searchResults"
-            :key="hit.rel + hit.hits[0].line"
-            class="wsHit"
-            @click="openHit(hit)"
-          >
-            <div class="wsHitFile">{{ hit.rel }}</div>
-            <div
-              v-for="(h, i) in hit.hits.slice(0, 3)"
-              :key="i"
-              class="wsHitLine"
-            >L{{ h.line }}：{{ h.text }}</div>
+          <div class="wsGroupSub md" @click="collapseMd = !collapseMd">
+            <span class="wsCaret">{{ collapseMd ? '▸' : '▾' }}</span>📄 文档全文（{{ searchResults.length }}）
           </div>
+          <template v-if="!collapseMd">
+            <div
+              v-for="hit in searchResults"
+              :key="hit.rel"
+              class="wsHit"
+              @click="openHit(hit)"
+            >
+              <div class="wsHitFile">{{ baseNameOf(hit.rel) }}</div>
+              <div
+                v-for="(h, i) in hit.hits.slice(0, 3)"
+                :key="i"
+                class="wsHitLine"
+              >L{{ h.line }}：{{ h.text }}</div>
+            </div>
+          </template>
         </template>
 
         <div
@@ -175,6 +183,8 @@ export default {
       ctxMenu: null,
       activePath: '',
       collapsedDirs: [], // 已折叠目录（正斜杠归一化路径），按工作区 root 持久化到 localStorage
+      collapseSmm: false, // 搜索结果「导图内容」分区折叠
+      collapseMd: false, // 搜索结果「文档全文」分区折叠
       unsubs: [],
       rebuiltTimer: null,
       liveMindMap: null // mindMap 实例（经 mindmap-inited 事件广播；prop 可能为 null）
@@ -278,6 +288,8 @@ export default {
       try {
         const saved = JSON.parse(localStorage.getItem('wsCollapsedDirs:' + this.root) || '[]')
         this.collapsedDirs = Array.isArray(saved) ? saved : []
+        // 记住上次打开的文件夹（启动时 main.js 据此自动恢复）
+        localStorage.setItem('wsLastRoot', this.root)
       } catch (e) {
         this.collapsedDirs = []
       }
@@ -475,6 +487,10 @@ export default {
     },
     isDirCollapsed(path) {
       return this.collapsedDirs.includes(String(path).replace(/\\/g, '/'))
+    },
+    // 搜索结果只显示文件名（不带路径）
+    baseNameOf(p) {
+      return String(p || '').replace(/\\/g, '/').split('/').pop() || ''
     },
     async openFile(f) {
       const r = await openPath(f.path)
@@ -677,24 +693,50 @@ export default {
       }
     }
     .wsGroupSub {
-      padding: 2px 8px;
-      font-size: 11px;
+      display: flex;
+      align-items: center;
+      gap: 2px;
+      padding: 5px 8px;
+      margin: 4px 6px 2px;
+      border-radius: 6px;
+      font-size: 12px;
       font-weight: 600;
-      color: var(--macos-text-2);
+      cursor: pointer;
+      user-select: none;
+      // 两个分区高对比配色：导图=紫、文档=蓝
+      &.smm {
+        color: #7c3aed;
+        background: rgba(124, 58, 237, 0.12);
+        &:hover { background: rgba(124, 58, 237, 0.2); }
+      }
+      &.md {
+        color: #0969da;
+        background: rgba(9, 105, 218, 0.10);
+        &:hover { background: rgba(9, 105, 218, 0.18); }
+      }
     }
     .wsHit {
-      padding: 4px 8px;
+      padding: 6px 10px;
       cursor: pointer;
+      // 不同文件之间用横线分隔
+      & + .wsHit {
+        border-top: 1px solid var(--macos-divider);
+      }
       &:hover {
         background-color: var(--macos-hover);
       }
       .wsHitFile {
         font-size: 12px;
+        font-weight: 600;
         color: var(--macos-accent);
+        line-height: 1.7;
+        letter-spacing: 0.3px;
       }
       .wsHitLine {
         font-size: 11px;
         color: var(--macos-text-2);
+        line-height: 1.8;
+        letter-spacing: 0.3px;
         overflow: hidden;
         white-space: nowrap;
         text-overflow: ellipsis;

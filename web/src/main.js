@@ -21,7 +21,8 @@ import {
   tabsAdapter,
   getServices,
   startEventBridge,
-  startFsBridge
+  startFsBridge,
+  openWorkspace
 } from '@/utils/workspaceBridge'
 import { nsHas } from '@/utils/lateBind.js'
 // import VConsole from 'vconsole'
@@ -246,6 +247,18 @@ function wireServices() {
     startFsBridge()
   } catch (e) {
     recordError('startFsBridge', e)
+  }
+  // 启动恢复上次打开的工作区文件夹（openWorkspace 内部会广播 workspace-opened；
+  // IPC 往返必然晚于 Vue 挂载完成，WorkspacePanel 的监听已就绪）
+  try {
+    const lastRoot = localStorage.getItem('wsLastRoot')
+    if (lastRoot && services.workspaceService) {
+      openWorkspace(lastRoot).then(r => {
+        if (!r || !r.ok) localStorage.removeItem('wsLastRoot')
+      }).catch(() => {})
+    }
+  } catch (e) {
+    recordError('restoreLastWorkspace', e)
   }
   // 运行时补挂：Tab 适配器（服务层 open 一个文件 → 既有 workbook 状态机）
   try {

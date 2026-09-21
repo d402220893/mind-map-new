@@ -27,7 +27,8 @@ import 'prismjs/components/prism-json'
 import 'prismjs/components/prism-yaml'
 import 'prismjs/components/prism-markdown'
 import { markRaw, createApp } from 'vue'
-import { mdDoc, navigate, getServices, resolveAbsLink, openPath } from '@/utils/workspaceBridge'
+import { mdDoc, navigate, getServices, resolveAbsLink, openPath, shell, baseName } from '@/utils/workspaceBridge'
+import { renameWorkbook, setCurrentFilePath, markDirty } from '@/api'
 import { clearHistoryBaseline } from '@/utils/mdHistory'
 import MindMapPreview from './MindMapPreview.vue'
 
@@ -67,6 +68,7 @@ export default {
     this.$bus.$on('md-scroll-to-anchor', this.scrollToAnchor)
     this.$bus.$on('md:scroll-to-anchor', this.scrollToAnchor)
     this.$bus.$on('md:save', this.saveNow)
+    this.$bus.$on('md:saveAs', this.saveAs)
     this.$bus.$on('md:insert', this.onInsert)
   },
   beforeUnmount() {
@@ -74,6 +76,7 @@ export default {
     this.$bus.$off('md-scroll-to-anchor', this.scrollToAnchor)
     this.$bus.$off('md:scroll-to-anchor', this.scrollToAnchor)
     this.$bus.$off('md:save', this.saveNow)
+    this.$bus.$off('md:saveAs', this.saveAs)
     this.$bus.$off('md:insert', this.onInsert)
     this.detachDomHandlers()
     this.unmountEmbeds()
@@ -230,7 +233,8 @@ export default {
     },
 
     saveNow() {
-      if (!this.filePath) return
+      // 未落盘的新建文件：保存 = 另存为
+      if (!this.filePath) return this.saveAs()
       return mdDoc.save(this.tabId, this.filePath).then(r => {
         if (!r.ok) {
           // ⚠️ 失败时**不能**清脏标记：否则界面显示"已保存"，用户关窗即丢改动。
@@ -251,6 +255,39 @@ export default {
     forceEdit() {
       this.forcedEdit = true
       this.readonly = false
+    },
+
+    // 另存为：把当前内容写到新路径，并把本 tab 重新绑定到该文件
+    // （疑似非 UTF-8 只读文件的逃生通道也是它——写到新文件不破坏原文件）
+    async saveAs() {
+      if (!this.editor) return
+      const content = this.editor.getMarkdown()
+      const r = await shell.saveTextDialog({
+        content,
+        defaultPath: this.filePath || '未命名.md',
+        title: '另存为'
+      })
+      if (!r || r.canceled || r.ok === false) return
+      if (r.error) {
+        this.$message.error('另存失败：' + r.error)
+        return
+      }
+      const newPath = r.filePath
+      const newName = baseName(newPath).replace(/\.(md|markdown)$/i, '')
+      renameWorkbook(this.tabId, newName, newPath)
+      setCurrentFilePath(newPath)
+      mdDoc.setContent(this.tabId, content)
+      const saved = await mdDoc.save(this.tabId, newPath)
+      if (!saved.ok) {
+        this.$message.error('保存失败：' + ((saved.error && (saved.error.message || saved.error.code)) || '未知错误'))
+        return
+      }
+      markDirty(this.tabId, false)
+      this.readonly = false
+      this.encodingSuspect = false
+      this.$bus.$emit('md:dirty', { tabId: this.tabId, dirty: false })
+      this.$bus.$emit('workbook-list-changed')
+      this.$message.success('已另存为：' + baseName(newPath))
     },
 
     // ── 工具栏命令（MdToolbar 通过 bus 下发）──
@@ -432,5 +469,35 @@ body:not(.isDark) .mdEditor .toastui-editor-ww-container .toastui-editor {
 }
 body.isDark .mdEditor .toastui-editor-defaultUI {
   background: rgba(255, 255, 255, 0.92);
+}
+
+// ── Typora（github 主题）风格排版 ─────────────────────────────────
+// 字体栈/字号/行高两种模式通用；文字色只钉在浅色模式，深色仍走变量
+.mdEditor .toastui-editor-contents {
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Helvetica Neue', Arial,
+    'PingFang SC', 'Hiragino Sans GB', 'Microsoft YaHei', sans-serif;
+  font-size: 16px;
+  line-height: 1.6;
+}
+.mdEditor .toastui-editor-contents code,
+.mdEditor .toastui-editor-contents pre {
+  font-family: ui-monospace, SFMono-Regular, 'SF Mono', Consolas, 'Liberation Mono', Menlo, monospace;
+}
+body:not(.isDark) .mdEditor .toastui-editor-contents {
+  color: #24292f;
+}
+body:not(.isDark) .mdEditor .toastui-editor-contents h1,
+body:not(.isDark) .mdEditor .toastui-editor-contents h2,
+body:not(.isDark) .mdEditor .toastui-editor-contents h3,
+body:not(.isDark) .mdEditor .toastui-editor-contents h4,
+body:not(.isDark) .mdEditor .toastui-editor-contents h5,
+body:not(.isDark) .mdEditor .toastui-editor-contents h6 {
+  color: #1f2328;
+}
+body:not(.isDark) .mdEditor .toastui-editor-contents a {
+  color: #0969da;
+}
+body:not(.isDark) .mdEditor .toastui-editor-contents blockquote {
+  color: #59636e;
 }
 </style>

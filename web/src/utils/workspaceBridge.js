@@ -320,6 +320,9 @@ export const shell = {
     try { return a.writeFileSync(abs, data) } catch (e) { return { ok: false, error: e.message } }
   },
   saveWorkbook(data, defaultPath) { return hostCall('saveWorkbook', [data, defaultPath]) },
+  // md 编辑器「另存为」/「打开」通用对话框
+  saveTextDialog(payload) { return hostCall('saveTextDialog', [payload]) },
+  pickFile(opts) { return hostCall('pickFile', [opts]) },
   openWorkbookDialog() { return hostCall('openWorkbookDialog', []) },
   importFileDialog(exts) { return hostCall('importFileDialog', [exts]) },
   renameFile(from, to) { return hostCall('renameFile', [from, to]) },

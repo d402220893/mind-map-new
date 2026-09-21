@@ -16,6 +16,52 @@ test('[侧栏透明度] Sidebar.vue 已绑定 sidebarOpacity', () => {
   assert.ok(/sidebarOpacity/.test(vue), 'Sidebar.vue 应包含 sidebarOpacity 绑定')
 })
 
+test('[标签栏溢出] FileTabs 标签可收缩 + 右边距预留窗口按钮区（不再横向滚动钻到按钮下）', () => {
+  const vue = read(new URL('pages/Edit/components/FileTabs.vue', SRC))
+  assert.ok(/flex:\s*0 1 auto/.test(vue), 'fileTab 应可收缩(flex:0 1 auto)，不再 flex-shrink:0 硬撑')
+  assert.ok(/margin-right:\s*120px/.test(vue), 'fileTabsInner 应用 margin-right 预留窗口按钮区')
+  assert.ok(!/overflow-x:\s*auto/.test(vue), '不得再用 overflow-x:auto（Chrome 横向滚动容器吞右 padding → 标签钻到按钮下）')
+  assert.ok(/\.fileName\s*\{[^}]*min-width:\s*0/s.test(vue), 'fileName 应 min-width:0 才能收缩出省略号')
+})
+
+test('[md 页菜单] MdToolbar 补齐新建/打开/另存为，MdEditor 实现 saveAs 与无路径保存兜底', () => {
+  const tb = read(new URL('pages/Edit/components/MdToolbar.vue', SRC))
+  assert.ok(/@click="newMd"/.test(tb), 'MdToolbar 应有「新建」按钮')
+  assert.ok(/@click="openFile"/.test(tb), 'MdToolbar 应有「打开」按钮')
+  assert.ok(/@click="saveAs"/.test(tb), 'MdToolbar 应有「另存为」按钮')
+  assert.ok(/kind:\s*'markdown'/.test(tb), '新建应建 markdown 类型 tab')
+  assert.ok(/shell\.pickFile/.test(tb), '打开应走 shell.pickFile 通用文件对话框')
+  const ed = read(new URL('pages/Edit/components/MdEditor.vue', SRC))
+  assert.ok(/async saveAs\(\)/.test(ed), 'MdEditor 应实现 saveAs')
+  assert.ok(/if \(!this\.filePath\) return this\.saveAs\(\)/.test(ed), '未落盘文件保存应兜底到另存为')
+  assert.ok(/shell\.saveTextDialog/.test(ed), 'saveAs 应走 shell.saveTextDialog 保存对话框')
+  assert.ok(/renameWorkbook\(this\.tabId/.test(ed), 'saveAs 后应把 tab 重绑定到新文件')
+  const main = read(new URL('main.js', APP))
+  assert.ok(/ipcMain\.handle\('smm:save-text'/.test(main), 'main.js 应有 smm:save-text 通道')
+  assert.ok(/ipcMain\.handle\('smm:pick-file'/.test(main), 'main.js 应有 smm:pick-file 通道')
+  const preload = read(new URL('preload.js', APP))
+  assert.ok(/saveTextDialog/.test(preload) && /pickFile/.test(preload), 'preload 应暴露 saveTextDialog/pickFile')
+})
+
+test('[md 排版] MdEditor 默认字体对齐 Typora（github 主题）', () => {
+  const vue = read(new URL('pages/Edit/components/MdEditor.vue', SRC))
+  assert.ok(/font-size:\s*16px/.test(vue), '正文应 16px')
+  assert.ok(/line-height:\s*1\.6/.test(vue), '行高应 1.6')
+  assert.ok(/PingFang SC/.test(vue) && /Microsoft YaHei/.test(vue), '应使用系统中文字体栈')
+  assert.ok(/#24292f/.test(vue), '浅色模式正文色应对齐 Typora #24292f')
+  assert.ok(/#0969da/.test(vue), '链接色应对齐 Typora #0969da')
+  assert.ok(/body:not\(\.isDark\)/.test(vue), '文字色只钉浅色模式（深色仍走变量）')
+})
+
+test('[启动恢复工作区] main.js 启动时恢复上次打开的文件夹', () => {
+  const main = read(new URL('main.js', new URL('../../src/', import.meta.url)))
+  assert.ok(/localStorage\.getItem\('wsLastRoot'\)/.test(main), '启动应读取 wsLastRoot')
+  assert.ok(/openWorkspace\(lastRoot\)/.test(main), '启动应 openWorkspace(lastRoot) 自动恢复')
+  assert.ok(/localStorage\.removeItem\('wsLastRoot'\)/.test(main), '恢复失败应清除失效记录')
+  const vue = read(new URL('pages/Edit/components/WorkspacePanel.vue', SRC))
+  assert.ok(/localStorage\.setItem\('wsLastRoot', this\.root\)/.test(vue), '打开工作区时应持久化 wsLastRoot')
+})
+
 test('[快捷键守卫] Edit.vue 接入 shouldFireGlobalShortcut', () => {
   const vue = read(new URL('pages/Edit/components/Edit.vue', SRC))
   assert.ok(/shouldFireGlobalShortcut/.test(vue), 'Edit.vue 应调用 shouldFireGlobalShortcut')
@@ -451,6 +497,13 @@ test('[统一搜索] WorkspacePanel 去掉模式切换，单框同搜 md+smm', (
   assert.ok(/kw \|\| !this\.isDirCollapsed\(n\.path\)/.test(vue), '无过滤词时折叠目录不递归子级；搜索时自动展开')
   assert.ok(/wsCollapsedDirs:/.test(vue), '折叠状态应按工作区 root 持久化到 localStorage')
   assert.ok(/class="wsCaret"/.test(vue), '目录行应有折叠箭头 wsCaret')
+  // 搜索结果分区：导图/文档独立折叠 + 高对比配色；命中只显示文件名、文件间横线分隔、间距加大
+  assert.ok(/collapseSmm/.test(vue) && /collapseMd/.test(vue), '两个搜索分区应独立折叠(collapseSmm/collapseMd)')
+  assert.ok(/&\.smm\s*\{[^}]*#7c3aed/s.test(vue), '导图分区应紫色系高对比')
+  assert.ok(/&\.md\s*\{[^}]*#0969da/s.test(vue), '文档分区应蓝色系高对比')
+  assert.ok(/baseNameOf\(hit\.rel\)/.test(vue), 'md 命中应只显示文件名不带路径')
+  assert.ok(/& \+ \.wsHit\s*\{[^}]*border-top/s.test(vue), '不同文件命中之间应有横线分隔')
+  assert.ok(/\.wsHitLine\s*\{[^}]*line-height:\s*1\.8/s.test(vue), '命中行行高应加大到 1.8')
 })
 
 test('[live搜索] mindMap 实例经 mindmap-inited 事件广播（$refs 非响应式 prop 恒 null）', () => {
