@@ -25,21 +25,24 @@
       </div>
     </div>
 
-    <!-- 引用块列表（§7.14 / §8.3）：位于编辑器上方，自有备注在下方 -->
-    <div class="refArea">
-      <RefBlock
-        v-for="r in refs"
-        :key="r.refId || r.sectionId"
-        :ref-obj="r"
-        :node="targetNode"
-        :node-link="nodeLink"
-        @conflict="onConflict"
-        @unref="onUnref"
-        @reselect="onReselect"
-      />
-    </div>
+    <!-- 引用块与编辑器合并为同一个框：引用块嵌在编辑器边框内顶部，不再像"第二个输入框" -->
+    <div class="noteBox">
+      <!-- 引用块列表（§7.14 / §8.3）：位于编辑器上方，自有备注在下方 -->
+      <div class="refArea" v-if="refs.length">
+        <RefBlock
+          v-for="r in refs"
+          :key="r.refId || r.sectionId"
+          :ref-obj="r"
+          :node="targetNode"
+          :node-link="nodeLink"
+          @conflict="onConflict"
+          @unref="onUnref"
+          @reselect="onReselect"
+        />
+      </div>
 
-    <div class="noteEditor" ref="noteEditor" @keyup.stop @keydown.stop></div>
+      <div class="noteEditor" ref="noteEditor" @keyup.stop @keydown.stop></div>
+    </div>
     <!--
       F1：单栏实时渲染（wysiwyg 单栏，不再左右分栏）
       - Toast UI 自带顶部工具栏已经有 </> 按钮（插入代码块 + 语言选择对话框）
@@ -419,7 +422,7 @@ export default {
   }
 
   .refArea {
-    margin-bottom: 8px;
+    margin-bottom: 0;
   }
 }
 </style>
@@ -473,6 +476,40 @@ export default {
   .toastui-editor-ww-container .toastui-editor-page-container {
     background: transparent;
   }
+
+  // ============================================================
+  // 引用块 + 编辑器合并为"一个框"（2026-09-21 反馈：不要两个对话框观感）。
+  // 外框统一持有边框/底色；引用块去自有紫色边框（只留底部分隔线），
+  // Toast UI 编辑器去自带边框，融入外框。
+  // ============================================================
+  .noteBox {
+    border: 1px solid var(--macos-border);
+    border-radius: var(--macos-radius-sm);
+    background: rgba(255, 255, 255, 0.45);
+    overflow: hidden;
+
+    .refBlock {
+      border: none;
+      border-radius: 0;
+      background: transparent;
+      margin-bottom: 0;
+      padding: 6px 8px;
+      border-bottom: 1px solid var(--macos-divider, #e4e7ed);
+
+      // 失效引用仍保留红色左条警示
+      &.status-missing,
+      &.status-file-missing,
+      &.status-ambiguous {
+        border-left: 4px solid var(--macos-danger, #f56c6c);
+      }
+    }
+
+    // 编辑器并入外框：去掉自带边框与底色（层级更高，压过上方 .toastui-editor-defaultUI 规则）
+    .toastui-editor-defaultUI {
+      border: none;
+      background: transparent;
+    }
+  }
 }
 
 // 正文文字色随主题（仅浅色模式覆盖；暗色模式内容面保持浅色，
@@ -488,6 +525,11 @@ body:not(.isDark) .nodeNoteDialog {
 // 暗色模式：Toast UI 图标 sprite 是深色，内容面保持浅色才可读
 // （仅把框变薄，不把内容面翻成深色，避免图标不可见）
 body.isDark .nodeNoteDialog .toastui-editor-defaultUI {
+  background: rgba(255, 255, 255, 0.92);
+}
+
+// 暗色模式：合并框同步保持浅色底（引用块透明区也落在浅底上，紫色引用文字可读）
+body.isDark .nodeNoteDialog .noteBox {
   background: rgba(255, 255, 255, 0.92);
 }
 </style>

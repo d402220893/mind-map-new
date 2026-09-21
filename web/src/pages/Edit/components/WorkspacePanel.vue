@@ -1,13 +1,17 @@
 <template>
   <div class="workspacePanel" :class="{ isDark: isDark, collapsed: collapsed }">
-    <div
-      class="wsPill"
-      :class="{ collapsed: collapsed }"
-      @click="toggleCollapsed"
-      :title="collapsed ? '展开文件栏' : '收起文件栏'"
-    >
-      <span class="iconfont iconjiantouyou wsPillIcon"></span>
-    </div>
+    <!-- 折叠蓝条：Teleport 到 body。画布 .editContainer 是 position:fixed 铺满窗口且 DOM 在
+         面板之后，若 pill 留在面板内会被画布整体盖住（收起态只露几 px → "隐藏后找不到"） -->
+    <Teleport to="body">
+      <div
+        class="wsPill"
+        :class="{ collapsed: collapsed }"
+        @click="toggleCollapsed"
+        :title="collapsed ? '展开文件栏' : '收起文件栏'"
+      >
+        <span class="iconfont iconjiantouyou wsPillIcon"></span>
+      </div>
+    </Teleport>
     <div class="wsHeader">
       <span class="wsTitle" :title="root || ''">
         📁 {{ root ? baseOf(root) : '未打开工作区' }}
@@ -170,7 +174,8 @@ export default {
       ctxMenu: null,
       activePath: '',
       unsubs: [],
-      rebuiltTimer: null
+      rebuiltTimer: null,
+      liveMindMap: null // mindMap 实例（经 mindmap-inited 事件广播；prop 可能为 null）
     }
   },
   computed: {
@@ -214,6 +219,8 @@ export default {
     this.$bus.$on('workspace-opened', this.onWorkspaceOpened)
     this.$bus.$on('workbook-list-changed', this.syncActive)
     this.$bus.$on('workbook-switched', this.syncActive)
+    // mindMap 实例就绪广播（Edit.vue 创建后 emit；prop 经 computed 读 $refs 会恒 null）
+    this.$bus.$on('mindmap-inited', this.onMindmapInited)
     // 索引重建进度（§8.7）：L3 不 emit，由 workspaceService.progressRelay 上抛，
     // 经 workspaceBridge 转到 $bus；这里只消费。
     this.$bus.$on('index:rebuilding', this.onIndexProgress)
@@ -233,6 +240,7 @@ export default {
     this.$bus.$off('workspace-opened', this.onWorkspaceOpened)
     this.$bus.$off('workbook-list-changed', this.syncActive)
     this.$bus.$off('workbook-switched', this.syncActive)
+    this.$bus.$off('mindmap-inited', this.onMindmapInited)
     this.$bus.$off('index:rebuilding', this.onIndexProgress)
     if (this.rebuiltTimer) clearTimeout(this.rebuiltTimer)
     ;(this.unsubs || []).forEach(fn => {
@@ -242,6 +250,13 @@ export default {
     })
   },
   methods: {
+    onMindmapInited(mm) {
+      this.liveMindMap = mm || null
+    },
+    // 可用的 mindMap 实例：优先 bus 广播的实时实例，prop 兜底
+    activeMind() {
+      return this.liveMindMap || this.mindMap || null
+    },
     baseOf(p) {
       return String(p || '').replace(/\\/g, '/').split('/').filter(Boolean).pop() || p
     },
@@ -355,9 +370,11 @@ export default {
       const hits = []
       const svc = getServices()
       const files = this.collectSmmFiles()
+      // 有 live 实例时当前激活导图走内存实时数据（含未保存改动），读盘分支跳过；
+      // 无 live 实例（mindMap 尚未初始化完成）时退回读盘，避免"当前文件必搜不到"
+      const liveAvailable = !!this.activeMind()
       for (const f of files) {
-        // 当前激活导图走内存实时数据（含未保存改动），读盘分支跳过
-        if (this.activePath && this.samePath(f.path, this.activePath)) continue
+        if (liveAvailable && this.activePath && this.samePath(f.path, this.activePath)) continue
         try {
           const rd = await svc.workspaceService.readText(f.path)
           if (!rd || !rd.ok) continue
@@ -382,7 +399,8 @@ export default {
     // 遍历当前 mindMap 实例（MindMapNode 实例树，走 getData 访问器）
     walkLiveNodes(q) {
       const needle = String(q || '').trim().toLowerCase()
-      const root = this.mindMap && this.mindMap.renderer && this.mindMap.renderer.root
+      const mm = this.activeMind()
+      const root = mm && mm.renderer && mm.renderer.root
       if (!needle || !root) return []
       const results = []
       const walk = node => {
@@ -417,8 +435,9 @@ export default {
     openNodeHit(hit) {
       // 当前已打开文件的节点：直接画布内定位；其余先打开对应文件
       const isCurrent = hit.live || (hit.file && this.activePath && this.samePath(hit.file, this.activePath))
-      if (isCurrent && hit.uid && this.mindMap) {
-        this.mindMap.execCommand('GO_TARGET_NODE', hit.uid)
+      const mm = this.activeMind()
+      if (isCurrent && hit.uid && mm) {
+        mm.execCommand('GO_TARGET_NODE', hit.uid)
         return
       }
       if (hit.file) this.openFile({ path: hit.file, name: hit.fileName })
@@ -514,29 +533,31 @@ export default {
     }
   }
 
-  // 左侧蓝色竖条（与右侧 SidebarTrigger 的 toggleShowBtn 同款交互/外观）：
-  // 宽 28px 大部分藏起、只露出一条蓝缝，悬停时滑出更多；白色小箭头指示方向。
+  // 左侧蓝色竖条（与右侧 SidebarTrigger 的 toggleShowBtn 完全同款）：
+  // 35px 宽 / 60px 高 / #409eff / 圆角 10px；常态只露出一条蓝缝，悬停滑出更多；白色小箭头指示方向。
+  // ⚠️ 已 Teleport 到 body + z-index 3000：画布 .editContainer 是 position:fixed 铺满窗口
+  //    且 DOM 在面板之后，pill 若留在面板层叠上下文内会被画布盖住（收起态 → "隐藏后找不到"）。
   .wsPill {
     position: fixed;
     top: 50%;
     transform: translateY(-50%);
-    width: 28px;
+    width: 35px;
     height: 60px;
     background: #409eff;
     cursor: pointer;
-    z-index: 100;
+    z-index: 3000;
     display: flex;
     align-items: center;
+    justify-content: flex-end;
+    padding-right: 4px;
     transition: left 0.2s ease;
     border-top-right-radius: 10px;
     border-bottom-right-radius: 10px;
 
-    // 展开态：面板可见，蓝条贴在面板右缘（240px），露出 ~6px，箭头朝左（点击收起）
-    left: 234px;
-    justify-content: flex-end;
-    padding-right: 2px;
+    // 展开态：面板可见（宽 240px），蓝条贴面板右缘只露出 6px，箭头朝左（点击收起）
+    left: 211px;
     &:hover {
-      left: 226px; // 悬停滑出更多（露出 ~14px）
+      left: 223px; // 悬停滑出更多（露出 ~18px）
     }
     .wsPillIcon {
       color: #fff;
@@ -545,11 +566,11 @@ export default {
       transition: transform 0.1s;
     }
 
-    // 收起态：面板隐藏，蓝条贴屏幕左缘，露出 ~10px，箭头朝右（点击展开）
+    // 收起态：面板隐藏，蓝条贴屏幕左缘露出 8px，箭头朝右（点击展开）
     &.collapsed {
-      left: -18px;
+      left: -27px;
       &:hover {
-        left: -8px; // 悬停滑出更多（露出 ~20px）
+        left: -17px; // 悬停滑出更多（露出 ~18px）
       }
       .wsPillIcon {
         transform: rotateZ(0deg);

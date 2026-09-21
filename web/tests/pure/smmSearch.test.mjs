@@ -112,3 +112,50 @@ test('searchSmmContainer 非容器输入返回空', () => {
   assert.deepStrictEqual(searchSmmContainer(null, 'x'), [])
   assert.deepStrictEqual(searchSmmContainer({}, 'x'), [])
 })
+
+// ── 追加：live 搜索同构场景（裸节点 getData 双形态 + 路径/preview 细节）──
+test('searchMindTree path 只含命中节点的祖先链', () => {
+  const hits = searchMindTree(TREE, '普通节点')
+  assert.strictEqual(hits.length, 1)
+  assert.strictEqual(hits[0].path, '根节点 > 光模块分类 > 普通节点')
+  assert.strictEqual(hits[0].preview, '普通节点')
+})
+
+test('searchMindTree preview 优先 note，其次引用，最后 text', () => {
+  const withNote = node('标题', { uid: 'n1', note: '这是备注' })
+  assert.strictEqual(searchMindTree(withNote, '标题')[0].preview, '这是备注')
+  const withRef = node('标题2', {
+    uid: 'n2',
+    _mindlink: { refs: [{ title: '章节', cachedContent: '引用正文缓存' }] }
+  })
+  // preview 取 refText（title+正文合并），须包含正文缓存
+  const pv = searchMindTree(withRef, '标题2')[0].preview
+  assert.ok(pv.includes('引用正文缓存'))
+})
+
+test('searchMindTree preview 超长走 truncate（默认 80 字）', () => {
+  const longText = '长'.repeat(120)
+  const hits = searchMindTree(node(longText, { uid: 'n3' }), longText.slice(0, 4))
+  assert.strictEqual(hits.length, 1)
+  assert.strictEqual(hits[0].preview.length, 81)
+  assert.ok(hits[0].preview.endsWith('…'))
+})
+
+test('nodeSearchText refs 缺失 title 时仅用 cachedContent', () => {
+  const r = nodeSearchText({
+    text: 't',
+    _mindlink: { refs: [{ cachedContent: '只有缓存正文' }] }
+  })
+  assert.ok(r.hay.includes('只有缓存正文'))
+  assert.ok(!r.refText.includes('undefined'))
+})
+
+test('nodeSearchText _mindlink.refs 非数组时不抛且忽略', () => {
+  const r = nodeSearchText({ text: 't', _mindlink: { refs: 'broken' } })
+  assert.strictEqual(r.refText, '')
+  assert.strictEqual(r.text, 't')
+})
+
+test('searchSmmContainer sheets 为空数组返回空', () => {
+  assert.deepStrictEqual(searchSmmContainer({ activeId: 's1', sheets: [] }, 'x'), [])
+})

@@ -1577,6 +1577,10 @@ export default {
           })
         }
       })
+      // 广播 mindMap 实例：WorkspacePanel 的 live 搜索需要访问实时节点树。
+      // ⚠️ 不能用 Index.vue computed 读 $refs.editComp.mindMap —— $refs 非响应式，
+      //    computed 首次求值（mindMap 尚未创建）后恒为 null → 当前打开的脑图永远搜不到。
+      this.$bus.$emit('mindmap-inited', this.mindMap)
       this.loadPlugins()
       // 转发事件
       ;[

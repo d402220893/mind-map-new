@@ -332,6 +332,15 @@ test('[引用块折叠] RefBlock 默认折叠预览，可展开', () => {
   assert.ok(/展开全部/.test(vue), '应有展开全部/收起切换')
 })
 
+test('[引用块合并框] NodeNote 引用块与编辑器合并为一个框', () => {
+  const vue = read(new URL('pages/Edit/components/NodeNote.vue', SRC))
+  assert.ok(/class="noteBox"/.test(vue), '应有 noteBox 统一外框包裹 refArea + noteEditor')
+  assert.ok(/v-if="refs\.length"/.test(vue), '无引用时 refArea 不应占位')
+  assert.ok(/\.noteBox/.test(vue), '应有 noteBox 合并样式')
+  assert.ok(/\.refBlock\s*\{[^}]*border:\s*none/s.test(vue), 'noteBox 内引用块应去自有边框')
+  assert.ok(/\.toastui-editor-defaultUI\s*\{[^}]*border:\s*none/s.test(vue), 'noteBox 内编辑器应去自带边框')
+})
+
 test('[统一搜索] WorkspacePanel 去掉模式切换，单框同搜 md+smm', () => {
   const vue = read(new URL('pages/Edit/components/WorkspacePanel.vue', SRC))
   assert.ok(!/searchMode/.test(vue), '不得再保留 searchMode 模式切换')
@@ -343,11 +352,24 @@ test('[统一搜索] WorkspacePanel 去掉模式切换，单框同搜 md+smm', (
   assert.ok(/decodeSmm/.test(vue), '应用 decodeSmm 解析 smm 容器')
 })
 
+test('[live搜索] mindMap 实例经 mindmap-inited 事件广播（$refs 非响应式 prop 恒 null）', () => {
+  const edit = read(new URL('pages/Edit/components/Edit.vue', SRC))
+  assert.ok(/\$bus\.\$emit\('mindmap-inited', this\.mindMap\)/.test(edit), 'Edit.vue 创建 mindMap 后应广播 mindmap-inited')
+  const vue = read(new URL('pages/Edit/components/WorkspacePanel.vue', SRC))
+  assert.ok(/\$bus\.\$on\('mindmap-inited'/.test(vue), 'WorkspacePanel 应监听 mindmap-inited')
+  assert.ok(/liveMindMap/.test(vue), '应有 liveMindMap 存实例')
+  assert.ok(/activeMind\(\)/.test(vue), '应经 activeMind() 取可用实例')
+  assert.ok(/liveAvailable/.test(vue), '无 live 实例时磁盘搜索不应跳过当前文件')
+})
+
 test('[蓝色竖条] wsPill 与右侧 SidebarTrigger 同款外观', () => {
   const vue = read(new URL('pages/Edit/components/WorkspacePanel.vue', SRC))
   assert.ok(/iconjiantouyou/.test(vue), 'wsPill 应使用与右侧一致的箭头图标 iconjiantouyou')
-  assert.ok(/width:\s*28px/.test(vue), 'wsPill 应为 28px 悬停滑出式蓝条')
+  assert.ok(/width:\s*35px/.test(vue), 'wsPill 应与右侧同宽(35px)悬停滑出式蓝条')
   assert.ok(/border-top-right-radius:\s*10px/.test(vue), '蓝条圆角应与右侧一致(10px)')
+  assert.ok(/<Teleport to="body">/.test(vue), '蓝条必须 Teleport 到 body（否则被 fixed 画布盖住，收起后找不到）')
+  assert.ok(/z-index:\s*3000/.test(vue), '蓝条 z-index 必须高于画布')
+  assert.ok(/left:\s*-27px/.test(vue), '收起态应贴左缘露出 8px 蓝缝')
 })
 
 test('[错误诊断] renderer.log 改写到 userData（Program Files 不可写）', () => {
