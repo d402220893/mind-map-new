@@ -118,6 +118,103 @@ test('⑩ extractLegacyRefs 纯解析：坏 JSON 保留原样', () => {
 
 test('⑪ 注册表顺序与 id 完整', () => {
   assert.deepStrictEqual(MIGRATIONS.map(m => m.id), [
-    'm001_index_v0_to_v1', 'm002_mindlink_legacy_note', 'm003_meta_schema'
+    'm001_index_v0_to_v1', 'm002_mindlink_legacy_note', 'm003_meta_schema', 'm004_note_ref_exclusive'
   ])
+})
+
+// ── m004：v1.5 note+refs 共存 → v1.6 二选一互斥（§v1.6 四）──
+
+// 造一个「note 非空 + refs 非空 + 无 mode」的共存 .smm
+function conflictedSmm() {
+  return encode(null, {
+    sheets: [{
+      id: 'r',
+      data: { id: 'r', data: { text: 'root' }, children: [{ id: 'n1', data: { text: '任务', note: '旧备注', _mindlink: { refs: [{ file: 'a.md', sectionId: 's1' }] } }, children: [] }] }
+    }],
+    activeId: 'r'
+  })
+}
+
+test('⑫ m004 幂等：meta 已标 migrated_v1_6 → 整步跳过（不改 .smm 不写盘）', async () => {
+  const smm = conflictedSmm()
+  const { fsApi, workspaceIndex, ctx } = setup({
+    meta: { v: 1, lastOpenedTabs: [], settings: {}, migrated_v1_6: true },
+    tree: ['map.smm'], files: { [ROOT + '/map.smm']: smm }
+  })
+  const r = await runMigrations(ctx, { meta: { v: 1, lastOpenedTabs: [], settings: {}, migrated_v1_6: true } })
+  assert.ok(r.ok)
+  assert.strictEqual(fsApi.files.get(ROOT + '/map.smm'), smm, '已迁移过不得再动 .smm')
+  assert.strictEqual(workspaceIndex.calls.write.length, 0, '不得写索引')
+})
+
+test('⑬ m004 无共存节点：直接打标 migrated_v1_6（不再每次扫描）', async () => {
+  const { workspaceIndex, ctx } = setup({ meta: { v: 1, lastOpenedTabs: [], settings: {} }, tree: [] })
+  const r = await runMigrations(ctx, { meta: { v: 1, lastOpenedTabs: [], settings: {} } })
+  assert.ok(r.ok, JSON.stringify(r.error))
+  assert.ok(r.data.applied.includes('m004_note_ref_exclusive'))
+  assert.strictEqual(workspaceIndex.calls.write.length, 1, '应写一次 meta.json')
+  assert.strictEqual(workspaceIndex.calls.write[0][1].migrated_v1_6, true)
+})
+
+test('⑭ m004 用户选「保留引用」：note 置 null + mode=ref + refs 原样', async () => {
+  const { fsApi, ctx } = setup({
+    meta: { v: 1, lastOpenedTabs: [], settings: {} }, tree: ['map.smm'], files: { [ROOT + '/map.smm']: conflictedSmm() },
+    confirm: async (p) => (p.kind === 'migrateNoteRefExclusive' ? 'ref' : true)
+  })
+  const r = await runMigrations(ctx, { meta: { v: 1, lastOpenedTabs: [], settings: {} } })
+  assert.ok(r.ok, JSON.stringify(r.error))
+  const { sheets } = decodeSmm(fsApi.files.get(ROOT + '/map.smm'))
+  const n1 = sheets[0].data.children[0]
+  assert.strictEqual(n1.data.note, null, 'note 应置 null（保留字段）')
+  assert.strictEqual(n1.data._mindlink.mode, 'ref')
+  assert.strictEqual(n1.data._mindlink.refs.length, 1, 'refs 应原样保留')
+  // 快照备份存在
+  assert.ok([...fsApi.files.keys()].some(k => k.includes('/backup/m004_note_ref_exclusive/') && k.endsWith('/map.smm')), '应有迁移前备份')
+})
+
+test('⑮ m004 用户拒绝：.smm 原样不动、meta 不打标（下次再问）', async () => {
+  const smm = conflictedSmm()
+  const { fsApi, workspaceIndex, ctx } = setup({
+    meta: { v: 1, lastOpenedTabs: [], settings: {} }, tree: ['map.smm'], files: { [ROOT + '/map.smm']: smm },
+    confirm: async () => false
+  })
+  const r = await runMigrations(ctx, { meta: { v: 1, lastOpenedTabs: [], settings: {} } })
+  assert.ok(r.ok)
+  assert.strictEqual(fsApi.files.get(ROOT + '/map.smm'), smm, '用户拒绝不得改写 .smm')
+  assert.strictEqual(workspaceIndex.calls.write.length, 0, '用户拒绝不得打标')
+})
+
+test('⑯ m004 逐个确认（each）：按单节点选择分流保留', async () => {
+  const smm = encode(null, {
+    sheets: [{
+      id: 'r',
+      data: {
+        id: 'r', data: { text: 'root' },
+        children: [
+          { id: 'n1', data: { text: 'A', note: '备注A', _mindlink: { refs: [{ file: 'a.md' }] } }, children: [] },
+          { id: 'n2', data: { text: 'B', note: '备注B', _mindlink: { refs: [{ file: 'b.md' }] } }, children: [] }
+        ]
+      }
+    }],
+    activeId: 'r'
+  })
+  const answers = [] // 逐个确认的应答记录：n1 保留引用，n2 保留备注
+  const { fsApi, ctx } = setup({
+    meta: { v: 1, lastOpenedTabs: [], settings: {} }, tree: ['map.smm'], files: { [ROOT + '/map.smm']: smm },
+    confirm: async (p) => {
+      if (p.kind === 'migrateNoteRefExclusive') return 'each'
+      answers.push(p.text)
+      return p.text === 'A' // A=true→保引用；B=false→保备注
+    }
+  })
+  const r = await runMigrations(ctx, { meta: { v: 1, lastOpenedTabs: [], settings: {} } })
+  assert.ok(r.ok, JSON.stringify(r.error))
+  assert.deepStrictEqual(answers, ['A', 'B'], '应逐个询问两个节点')
+  const { sheets } = decodeSmm(fsApi.files.get(ROOT + '/map.smm'))
+  const [n1, n2] = sheets[0].data.children
+  assert.strictEqual(n1.data._mindlink.mode, 'ref')
+  assert.strictEqual(n1.data.note, null)
+  assert.strictEqual(n2.data._mindlink.mode, 'note')
+  assert.deepStrictEqual(n2.data._mindlink.refs, [])
+  assert.strictEqual(n2.data.note, '备注B')
 })

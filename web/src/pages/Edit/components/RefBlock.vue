@@ -1,8 +1,5 @@
 <template>
   <div class="refBlock" :class="['status-' + status]">
-    <!-- 黄色警告条（§8.3，G2/F4） -->
-    <div class="rbWarn">⚠️ 下方引用块为「章节引用」，编辑它 = 直接修改 md 源文件</div>
-
     <div class="rbHead">
       <span class="rbTitle">
         🔗 引用自 {{ refObj.file }}
@@ -16,6 +13,10 @@
         @click="showPopover = !showPopover"
         >被 {{ backlinks }} 处引用</span
       >
+      <!-- v1.6：头部 ✏️ 直达编辑（只读渲染，点此进入编辑态） -->
+      <span class="rbEditBtn" :class="{ on: editing }" @click="toggleEdit">{{
+        editing ? '✓ 完成' : '✏️'
+      }}</span>
     </div>
 
     <!-- 反链浮层（§7.14 H2） -->
@@ -27,15 +28,8 @@
       </div>
     </div>
 
-    <div class="rbTools">
-      <span class="rbBtn" @click="openFile">↗ 打开源文件</span>
-      <span class="rbBtn" @click="toggleEdit">{{ editing ? '完成' : '✏️ 编辑' }}</span>
-      <span class="rbBtn" @click="refresh">🔄 刷新</span>
-      <span class="rbBtn danger" @click="unref">🔗 解除引用</span>
-      <span v-if="nodeLink" class="rbBtn" @click="jumpLink">↗ 跳转到 link</span>
-      <span v-if="status === 'missing'" class="rbBtn" @click="reselect">重新选择章节</span>
-      <span v-if="status === 'missing'" class="rbBtn" @click="toNote">转为备注内容</span>
-    </div>
+    <!-- 编辑态才显示警示（只读浏览时不占视觉） -->
+    <div v-if="editing" class="rbWarn">⚠️ 下方引用块为「章节引用」，编辑它 = 直接修改 md 源文件</div>
 
     <!-- 连带影响提示：首次进入编辑态且被多处引用（§7.14 F4） -->
     <div v-if="editing && backlinks > 1 && !impactShown" class="rbImpact">
@@ -58,6 +52,17 @@
         </span>
       </template>
     </div>
+
+    <!-- 底部轻量操作行（文字链接） -->
+    <div class="rbTools">
+      <span class="rbBtn" @click="openFile">↗ 打开源文件</span>
+      <span class="rbBtn" @click="refresh">🔄 刷新</span>
+      <span class="rbBtn danger" @click="unref">🔗 解除引用</span>
+      <span v-if="nodeLink" class="rbBtn" @click="jumpLink">↗ 跳转到 link</span>
+      <span v-if="status === 'missing'" class="rbBtn" @click="reselect">重新选择章节</span>
+      <span v-if="status === 'missing'" class="rbBtn" @click="toNote">转为备注内容</span>
+    </div>
+
     <div class="rbFoot" v-if="editing">
       <span class="rbState">{{ committing ? '提交中…' : '未提交' }}</span>
     </div>
@@ -245,29 +250,30 @@ export default {
 </script>
 
 <style lang="less" scoped>
-// 与编辑器融为一体：不再用独立紫色卡片，仅顶部一条分隔线，
-// 内容区读起来像「引用备注」，不像第二个输入框 / 第二个窗口。
+// v1.6 视觉弱化（§v1.6 2.4）：去掉四边边框（"像输入框"的主因），
+// 改为左侧 4px 紫色竖线 + 浅紫背景，读作「引用」而非「第二个输入框」。
 .refBlock {
   border: none;
-  border-top: 1px solid var(--macos-divider, #e4e7ed);
-  background: transparent;
+  border-left: 4px solid rgba(124, 58, 237, 0.55);
+  border-radius: 6px;
+  background: rgba(124, 58, 237, 0.06);
   color: var(--macos-text);
-  padding: 6px 2px 0;
+  padding: 8px 10px;
   margin: 0;
   position: relative;
 
+  // 失效引用：左竖线变红警示
   &.status-missing,
   &.status-file-missing,
   &.status-ambiguous {
-    border-left: 3px solid var(--macos-danger, #f56c6c);
-    padding-left: 8px;
+    border-left-color: var(--macos-danger, #f56c6c);
+    background: rgba(245, 108, 108, 0.07);
   }
 
   .rbWarn {
     font-size: 11px;
     color: var(--macos-text-2);
     margin-bottom: 4px;
-    // 去黄块，改为低调的纯文本提示（编辑引用 = 直接改 md 源）
     background: transparent;
     padding: 0;
   }
@@ -303,6 +309,24 @@ export default {
       text-decoration: underline dotted;
       font-size: 11px;
       color: var(--macos-text-2);
+    }
+    // v1.6：头部 ✏️ 编辑按钮（圆形热点，编辑态高亮）
+    .rbEditBtn {
+      cursor: pointer;
+      font-size: 13px;
+      line-height: 1;
+      padding: 3px 6px;
+      border-radius: 5px;
+      color: var(--macos-text-2);
+      user-select: none;
+      &:hover {
+        background: rgba(124, 58, 237, 0.12);
+        color: var(--macos-accent);
+      }
+      &.on {
+        background: rgba(124, 58, 237, 0.16);
+        color: var(--macos-accent);
+      }
     }
   }
 

@@ -332,25 +332,49 @@ test('[引用块折叠] RefBlock 默认折叠预览，可展开', () => {
   assert.ok(/展开全部/.test(vue), '应有展开全部/收起切换')
 })
 
-test('[引用块合并框] NodeNote 引用块与编辑器合并为一个框', () => {
+test('[备注二选一] NodeNote 写备注/引用章节互斥，永不共存', () => {
   const vue = read(new URL('pages/Edit/components/NodeNote.vue', SRC))
-  assert.ok(/class="noteBox"/.test(vue), '应有 noteBox 统一外框包裹 refArea + noteEditor')
-  assert.ok(/v-if="refs\.length"/.test(vue), '无引用时 refArea 不应占位')
-  assert.ok(/\.noteBox/.test(vue), '应有 noteBox 合并样式')
-  assert.ok(/\.refBlock\s*\{[^}]*border:\s*none/s.test(vue), 'noteBox 内引用块应去自有边框')
-  assert.ok(/\.toastui-editor-defaultUI\s*\{[^}]*border:\s*none/s.test(vue), 'noteBox 内编辑器应去自带边框')
-  // 2026-09-21 二次反馈：引用块须在编辑器"下方"（工具栏保持框顶），分隔线在引用块顶部
-  const iEditor = vue.indexOf('class="noteEditor"')
+  // v1.6：标题行二选一模式切换（写备注 | 引用章节）
+  assert.ok(/class="modeSwitch"/.test(vue), '应有 modeSwitch 模式切换控件')
+  assert.ok(/switchMode\('note'\)/.test(vue) && /switchMode\('ref'\)/.test(vue), '两个模式按钮都应绑定 switchMode')
+  // 条件渲染：弹窗内任意时刻只显示其一（v-if mode === 'note' / v-else）
+  assert.ok(/v-if="mode === 'note'"/.test(vue), "note 区域应 v-if mode==='note' 条件渲染")
+  assert.ok(/mode === 'ref'/.test(vue), '应有 ref 模式分支')
+  // 禁止"引用块和备注同屏显示"：refArea 不得再嵌在 noteBox 内（noteBox 只包编辑器）
+  const iNoteBox = vue.indexOf('.noteBox {')
   const iRefArea = vue.indexOf('class="refArea"')
-  assert.ok(iEditor > -1 && iRefArea > -1 && iEditor < iRefArea, 'refArea 必须位于 noteEditor 之后（工具栏在框的最顶部）')
-  assert.ok(/\.refBlock\s*\{[^}]*border-top:\s*1px/s.test(vue), '引用块应只保留顶部分隔线（附在编辑区底部）')
-  assert.ok(!/\.refBlock\s*\{[^}]*border-bottom:\s*1px/s.test(vue), '引用块不应再有底部分隔线')
-  // 2026-09-21 三次反馈：编辑器不得固定大高度（500px 空内容会把引用条顶到底部、读作上下两个框），
-  // 改为自适应内容高度 + 上下界（空内容有落点、过长内部滚动）。
+  assert.ok(iNoteBox > -1 && iRefArea > -1, 'noteBox 与 refArea 应同时存在')
+  // 切换时的二次确认文案（§v1.6 2.3）
+  assert.ok(/切换会清空当前备注文字/.test(vue), 'note→ref 应有清空备注确认')
+  assert.ok(/切换会删除当前引用/.test(vue), 'ref→note 应有删除引用确认')
+  assert.ok(/源 md 文件不受影响/.test(vue), '确认文案应说明源文件不受影响')
+  // 保存按模式分流（§v1.6 三）
+  assert.ok(/setMode\(node, 'note'\)/.test(vue), "confirm note 模式应 setMode(node,'note')")
+  assert.ok(/setMode\(node, 'ref'\)/.test(vue), "confirm ref 模式应 setMode(node,'ref')")
+  // 关闭防丢（§v1.6 三）：未保存改动须确认
+  assert.ok(/放弃修改/.test(vue), '取消时应弹「放弃修改」确认')
+  // ref 模式空态（§v1.6 2.2）
+  assert.ok(/尚未引用任何章节/.test(vue), 'ref 模式无引用应显示空态')
+  assert.ok(/class="refEmpty"/.test(vue), '空态应有 refEmpty 容器')
+  // 编辑器自适应高度保留（v2.0.19 修复不回退）
   assert.ok(/height:\s*'auto'/.test(vue), '编辑器应 height:auto 自适应内容，不得固定 500px')
   assert.ok(!/height:\s*'500px'/.test(vue), '编辑器不应再固定 500px 高度')
   assert.ok(/\.toastui-editor-ww-container\s*\{[^}]*min-height/s.test(vue), '编辑区应有 min-height 保底编辑落点')
   assert.ok(/\.toastui-editor-ww-container\s*\{[^}]*max-height/s.test(vue), '编辑区应有 max-height 过长内部滚动')
+})
+
+test('[引用块视觉弱化] RefBlock 左紫竖线+浅紫底，去四边框', () => {
+  const vue = read(new URL('pages/Edit/components/RefBlock.vue', SRC))
+  // 去四边框（"像输入框"主因）→ 左侧 4px 紫竖线 + 浅紫底（§v1.6 2.4）
+  assert.ok(/\.refBlock\s*\{[^}]*border:\s*none/s.test(vue), '引用块应去掉四边边框')
+  assert.ok(/\.refBlock\s*\{[^}]*border-left:\s*4px[^;]*124,\s*58,\s*237/s.test(vue), '引用块应有左侧 4px 紫色竖线')
+  assert.ok(/\.refBlock\s*\{[^}]*background:\s*rgba\(124,\s*58,\s*237,\s*0\.0\d\)/s.test(vue), '引用块应有浅紫背景')
+  // 头部 ✏️ 编辑按钮（只读渲染，点此进入编辑）
+  assert.ok(/rbEditBtn/.test(vue), '头部应有 ✏️ 编辑按钮')
+  assert.ok(/toggleEdit/.test(vue), '✏️ 按钮应绑定 toggleEdit')
+  // 警示只在编辑态显示（只读浏览不占视觉）
+  assert.ok(/v-if="editing"[^>]*class="rbWarn"|class="rbWarn"[^>]*v-if="editing"|v-if="editing"\s*class="rbWarn"/.test(vue), 'rbWarn 应仅在编辑态渲染')
+  // 展开预览契约见上方「[引用块折叠]」既有用例，此处不重复
 })
 
 test('[统一搜索] WorkspacePanel 去掉模式切换，单框同搜 md+smm', () => {

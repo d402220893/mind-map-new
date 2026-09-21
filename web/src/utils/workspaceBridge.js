@@ -182,6 +182,13 @@ export function listSections(file) {
 export function getRefs(node) {
   return services.refService.getNodeRefs(node)
 }
+// v1.6 备注互斥模式（note | ref）
+export function getMode(node) {
+  return services.refService.getMode(node)
+}
+export function setMode(node, mode) {
+  return services.refService.setMode(node, mode)
+}
 export function addRef(node, spec) {
   return services.refService.addRef(node, spec)
 }

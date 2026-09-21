@@ -6,8 +6,9 @@ import { ok, fail, err, rootOf, appendLog, CURRENT_INDEX_SCHEMA } from './_util.
 import { m001 } from './m001_index_v0_to_v1.js'
 import { m002 } from './m002_mindlink_legacy_note.js'
 import { m003 } from './m003_meta_schema.js'
+import { m004 } from './m004_note_ref_exclusive.js'
 
-export const MIGRATIONS = [m001, m002, m003]
+export const MIGRATIONS = [m001, m002, m003, m004]
 export { CURRENT_INDEX_SCHEMA }
 
 export async function runMigrations(ctx, { dryRun = false, target = null, meta = null } = {}) {

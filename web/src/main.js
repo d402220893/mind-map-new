@@ -257,15 +257,43 @@ function wireServices() {
   } catch (e) {
     recordError('fileRouter.setTabs', e)
   }
-  // 运行时补挂：建索引确认（走原生确认框，用户拒绝则降级为只读索引）
+  // 运行时补挂：确认钩子（建索引 / m004 互斥迁移选择，按 payload.kind 分支）
   try {
     if (services.workspaceService && typeof services.workspaceService.setConfirm === 'function') {
-      services.workspaceService.setConfirm(({ dirPath }) =>
-        window.confirm(
+      services.workspaceService.setConfirm((payload) => {
+        const kind = payload && payload.kind
+        // v1.6 m004：note+refs 共存迁移（三选一：保引用 / 保备注 / 逐个确认）
+        if (kind === 'migrateNoteRefExclusive') {
+          const c1 = window.confirm(
+            '检测到 ' + (payload.count || 0) + ' 个节点同时存在「备注」和「章节引用」' +
+            '（v1.5 遗留数据）。\n\n是否迁移为二选一模式？\n（取消 = 本次跳过，下次打开再询问）'
+          )
+          if (!c1) return false
+          const each = window.confirm(
+            '统一处理还是逐个确认？\n\n【确定】统一处理\n【取消】逐个确认（每个节点单独选择）'
+          )
+          if (each) {
+            const keepRef = window.confirm(
+              '统一保留哪个？\n\n【确定】保留章节引用（清空备注文字）\n【取消】保留备注文字（删除引用）'
+            )
+            return keepRef ? 'ref' : 'note'
+          }
+          return 'each'
+        }
+        // v1.6 m004 逐个确认：单个节点保留哪一方
+        if (kind === 'migrateNoteRefEach') {
+          return window.confirm(
+            '节点「' + (payload.text || payload.nodeId || '') + '」\n' +
+            '备注 ' + (payload.noteLen || 0) + ' 字 / 引用 ' + (payload.refCount || 0) + ' 条\n\n' +
+            '【确定】保留章节引用（清空备注）\n【取消】保留备注文字（删除引用）'
+          )
+        }
+        // 默认：建索引确认（用户拒绝则降级为只读索引）
+        return window.confirm(
           '该文件夹尚未建立 .mindlink 索引。\n是否现在建立？（建立后支持 md ↔ 导图 双链、引用同步与全文搜索）\n\n' +
-            dirPath
+            (payload && payload.dirPath)
         )
-      )
+      })
     } else {
       recordError('workspaceService.setConfirm', new Error('workspaceService.setConfirm 不存在'))
     }

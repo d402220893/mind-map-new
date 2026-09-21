@@ -1,6 +1,6 @@
 import { test } from 'node:test'
 import assert from 'node:assert'
-import { getNodeRefs, setNodeRefs, addRef, removeRef, updateRefSnapshot, parseLegacyRefs, nodeDataOf } from '../../src/services/refData.js'
+import { getNodeRefs, setNodeRefs, addRef, removeRef, updateRefSnapshot, parseLegacyRefs, nodeDataOf, getMode, setMode } from '../../src/services/refData.js'
 
 // 裸节点（.smm / JSON 解码产物）：数据挂在 node.data
 function node() { return { data: {} } }
@@ -416,4 +416,88 @@ test('setNodeRefs：既无 getData 又无 data → false（不抛）', () => {
 test('getNodeRefs：无数据层的节点/实例返回 []', () => {
   assert.deepStrictEqual(getNodeRefs({}), [])
   assert.deepStrictEqual(getNodeRefs({ getData: () => null }), [])
+})
+
+
+// ── v1.6 备注互斥模式（getMode / setMode，§v1.6 一）──────────────────
+
+test('getMode：无 _mindlink 无 note → note（默认）', () => {
+  assert.strictEqual(getMode(node()), 'note')
+})
+
+test('getMode：有 note 无 refs → note', () => {
+  const n = node(); n.data.note = '内容'
+  assert.strictEqual(getMode(n), 'note')
+})
+
+test('getMode：无 note 有 refs → ref', () => {
+  const n = node(); addRef(n, { file: 'a.md', sectionId: 's1' })
+  assert.strictEqual(getMode(n), 'ref')
+})
+
+test('getMode：note 与 refs 共存（v1.5 遗留）→ ref（保留引用）', () => {
+  const n = node(); n.data.note = '旧备注'; addRef(n, { file: 'a.md', sectionId: 's1' })
+  assert.strictEqual(getMode(n), 'ref')
+})
+
+test('getMode：显式 mode 优先于推断', () => {
+  const n = node(); addRef(n, { file: 'a.md', sectionId: 's1' })
+  n.data._mindlink.mode = 'note'
+  assert.strictEqual(getMode(n), 'note')
+})
+
+test('getMode：mode=note 但 refs 非空仍读 note（mode 是唯一真源）', () => {
+  const n = node(); n.data._mindlink = { mode: 'note', refs: [{ file: 'a.md' }] }
+  assert.strictEqual(getMode(n), 'note')
+})
+
+test('setMode(note)：清空 refs、note 不动', () => {
+  const n = node(); n.data.note = '保留'; addRef(n, { file: 'a.md', sectionId: 's1' })
+  assert.strictEqual(setMode(n, 'note'), true)
+  assert.strictEqual(n.data._mindlink.mode, 'note')
+  assert.deepStrictEqual(getNodeRefs(n), [])
+  assert.strictEqual(n.data.note, '保留')
+})
+
+test('setMode(ref)：note 置 null（字段保留不 delete）', () => {
+  const n = node(); n.data.note = '旧文字'
+  setMode(n, 'ref')
+  assert.strictEqual(n.data._mindlink.mode, 'ref')
+  assert.strictEqual('note' in n.data, true, 'note 字段必须保留')
+  assert.strictEqual(n.data.note, null)
+})
+
+test('setMode：非法 mode 返回 false', () => {
+  const n = node()
+  assert.strictEqual(setMode(n, 'both'), false)
+  assert.strictEqual(setMode(n, undefined), false)
+})
+
+test('setMode：无数据层节点返回 false（不抛）', () => {
+  assert.strictEqual(setMode({}, 'note'), false)
+})
+
+test('运行时实例：getMode/setMode 双形态生效', () => {
+  const inst = mindMapNode()
+  inst.nodeData.data.note = 'x'
+  assert.strictEqual(getMode(inst), 'note')
+  setMode(inst, 'ref')
+  assert.strictEqual(inst.nodeData.data._mindlink.mode, 'ref')
+  assert.strictEqual(inst.nodeData.data.note, null)
+})
+
+test('addRef 自动切到 ref 模式（§v1.6 一）', () => {
+  const n = node(); n.data.note = '已有备注'
+  addRef(n, { file: 'a.md', sectionId: 's1' })
+  assert.strictEqual(n.data._mindlink.mode, 'ref')
+  assert.strictEqual(getMode(n), 'ref')
+})
+
+test('setMode(note) 后再 addRef：回到 ref 且 refs 就位', () => {
+  const n = node(); addRef(n, { file: 'a.md', sectionId: 's1' })
+  setMode(n, 'note')
+  assert.deepStrictEqual(getNodeRefs(n), [])
+  addRef(n, { file: 'b.md', sectionId: 's2' })
+  assert.strictEqual(getMode(n), 'ref')
+  assert.strictEqual(getNodeRefs(n).length, 1)
 })

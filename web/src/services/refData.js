@@ -32,6 +32,44 @@ export function getNodeRefs(node) {
   return ml.refs.map((r, i) => ({ ...r, refId: r.refId || ('r' + i) }))
 }
 
+// ── v1.6 备注互斥模式（note | ref，二选一不共存）──────────────────
+// 语义：mode='note' → data.note 有值、refs 恒为空；
+//       mode='ref'  → data.note 为 null、refs 有值（或空数组表示待选）。
+// 兼容旧数据（无 mode 字段）推断规则（§v1.6 一）：
+//   有 note 无 refs → 'note'；无 note 有 refs → 'ref'；
+//   两者都有 → 'ref'（保留引用，丢弃 note）；两者都无 → 'note'。
+export function getMode(node) {
+  const data = nodeDataOf(node) || {}
+  const ml = data[REF_KEY]
+  if (ml && (ml.mode === 'note' || ml.mode === 'ref')) return ml.mode
+  const hasRefs = !!(ml && Array.isArray(ml.refs) && ml.refs.length)
+  return hasRefs ? 'ref' : 'note'
+}
+
+// 权威切换（§v1.6 一/三）：切到 'note' 清空 refs；切到 'ref' 把 note 置 null
+// （保留字段本身，仅置空值——不 delete data.note）。
+// ⚠️ 只改 .smm 内元数据，绝不触碰 .md 源文件。
+export function setMode(node, mode) {
+  const data = nodeDataOf(node)
+  if (!data) return false
+  if (mode !== 'note' && mode !== 'ref') return false
+  const ml = { v: 1, ...(data[REF_KEY] || {}), mode }
+  if (mode === 'note') ml.refs = []
+  // 单次原子 patch：_mindlink（mode + refs）与 note 同批写入，
+  // 实例走官方 setData（进历史/随图落盘），裸节点直挂 node.data。
+  const patch = { [REF_KEY]: ml }
+  if (mode === 'ref') patch.note = null
+  if (typeof node.setData === 'function') {
+    try { node.setData(patch) } catch (e) { Object.assign(data, patch) }
+  } else {
+    Object.assign(data, patch)
+  }
+  if (node && typeof node.reRender === 'function') {
+    try { node.reRender() } catch (e) {}
+  }
+  return true
+}
+
 export function setNodeRefs(node, refs) {
   const data = nodeDataOf(node)
   if (!data) return false
@@ -41,6 +79,8 @@ export function setNodeRefs(node, refs) {
     const { refId, ...rest } = r
     return rest
   })
+  // v1.6：refs 非空 ⇒ 必为 ref 模式（addRef 的自动切换由此生效）
+  if (ml.refs.length && ml.mode !== 'ref') ml.mode = 'ref'
   // 实例：走官方 setData（合并进 nodeData.data，并进历史/触发 data_change → 保存时随图落盘）。
   // 裸节点：直接挂到 node.data（decodeSmm 产物的场景，无实例方法）。
   if (typeof node.setData === 'function') {

@@ -2,7 +2,7 @@
 // 永不触发章节写盘（章节写盘唯一入口是 revisionService.commitEdit）；不 import revisionService（破 v1.0 双向环）。
 // 允许写 .smm 节点数据（A4），但仍不写 .md。
 import { ok, fail, err } from './errors.js'
-import { getNodeRefs, setNodeRefs, addRef, removeRef, updateRefSnapshot, parseLegacyRefs } from './refData.js'
+import { getNodeRefs, setNodeRefs, addRef, removeRef, updateRefSnapshot, parseLegacyRefs, getMode, setMode } from './refData.js'
 import { decodeSmm, encode } from './smmCodec.js'
 import { parseSections, samePath } from './sectionParser.js'
 import { contentHashOf } from './hash.js'
@@ -19,6 +19,9 @@ export const createRefService = (ctx = {}) => {
   function setNodeRefs_(node, refs) { return setNodeRefs(node, refs) }
   function addRef_(node, spec) { return addRef(node, spec) }
   function removeRef_(node, refId) { return removeRef(node, refId) }
+  // v1.6 备注互斥模式（note | ref）：读推断 + 权威切换（L1 refData 纯函数转发）
+  function getMode_(node) { return getMode(node) }
+  function setMode_(node, mode) { return setMode(node, mode) }
 
   // 反链查询（§7.6）。sectionId 语义（v1.5 I4）：
   //   undefined → 该文件的**全部**引用（syncRefSnapshots 整文件分支用）
@@ -203,6 +206,7 @@ export const createRefService = (ctx = {}) => {
   const parseLegacyRefs_ = (note) => parseLegacyRefs(note)
   return {
     getNodeRefs: getNodeRefs_, setNodeRefs: setNodeRefs_, addRef: addRef_, removeRef: removeRef_,
+    getMode: getMode_, setMode: setMode_,
     findBacklinks, rebuildIndex, checkValidity,
     syncRefSnapshots, calibratePendingSnapshots, parseLegacyRefs: parseLegacyRefs_,
     updateRefSnapshot

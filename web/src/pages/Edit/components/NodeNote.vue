@@ -1,41 +1,64 @@
 <template>
   <el-dialog
     class="nodeNoteDialog"
-    :title="$t('nodeNote.title')"
     v-model="dialogVisible"
     :width="isMobile ? '90%' : '50%'"
     :top="isMobile ? '20px' : '15vh'"
     :close-on-click-modal="false"
   >
-    <!-- 工具栏：代码块语言 + 插入代码块 + 引用操作 -->
-    <div class="noteToolbar">
-      <div class="toolGroup">
-        <select v-model="codeLang" class="codeLangSelect" title="代码块语言">
-          <option v-for="l in codeLangs" :key="l" :value="l">{{ l }}</option>
-        </select>
-        <el-button size="small" type="primary" @click="insertCodeBlock"
-          >插入代码块</el-button
-        >
+    <!-- 标题行：标题 + 二选一模式切换（v1.6：写备注 / 引用章节，永不共存） -->
+    <template #header>
+      <div class="noteHeader">
+        <span class="noteTitle">{{ $t('nodeNote.title') }}</span>
+        <div class="modeSwitch" role="tablist">
+          <button
+            class="modeBtn"
+            :class="{ active: mode === 'note' }"
+            role="tab"
+            :aria-selected="mode === 'note'"
+            @click="switchMode('note')"
+          >✏️ 写备注</button>
+          <button
+            class="modeBtn"
+            :class="{ active: mode === 'ref' }"
+            role="tab"
+            :aria-selected="mode === 'ref'"
+            @click="switchMode('ref')"
+          >🔗 引用章节</button>
+        </div>
       </div>
-      <div class="toolGroup">
-        <el-button size="small" @click="pickVisible = true"
-          >🔗 引用文档章节</el-button
-        >
-        <el-button size="small" @click="refreshAll">🔄 刷新</el-button>
+    </template>
+
+    <!-- ═══ 模式一：写备注（Toast UI 编辑器，内容绑定 data.note）═══ -->
+    <template v-if="mode === 'note'">
+      <div class="noteToolbar">
+        <div class="toolGroup">
+          <select v-model="codeLang" class="codeLangSelect" title="代码块语言">
+            <option v-for="l in codeLangs" :key="l" :value="l">{{ l }}</option>
+          </select>
+          <el-button size="small" type="primary" @click="insertCodeBlock"
+            >插入代码块</el-button
+          >
+        </div>
       </div>
-    </div>
 
-    <!--
-      引用块与编辑器合并为同一个框（2026-09-21 二次反馈修订）：
-      引用块放在编辑器"下方"——工具栏保持在框的最顶部（经典编辑器观感），
-      引用内容像邮件引用/附件条一样附在编辑区底部，同一个外框、一条分隔线。
-      （此前放工具栏上方，用户仍感知为"上面一个框、下面一个框"）
-    -->
-    <div class="noteBox">
-      <div class="noteEditor" ref="noteEditor" @keyup.stop @keydown.stop></div>
+      <div class="noteBox">
+        <div class="noteEditor" ref="noteEditor" @keyup.stop @keydown.stop></div>
+      </div>
+    </template>
 
-      <!-- 引用块列表（§7.14 / §8.3）：位于编辑器下方，附在同一外框底部 -->
-      <div class="refArea" v-if="refs.length">
+    <!-- ═══ 模式二：引用章节（RefBlock 只读渲染，头部 ✏️ 进入编辑）═══ -->
+    <template v-else>
+      <div class="noteToolbar">
+        <div class="toolGroup">
+          <el-button size="small" @click="pickVisible = true"
+            >🔗 引用文档章节</el-button
+          >
+          <el-button size="small" @click="refreshAll">🔄 刷新</el-button>
+        </div>
+      </div>
+
+      <div class="refArea">
         <RefBlock
           v-for="r in refs"
           :key="r.refId || r.sectionId"
@@ -46,15 +69,23 @@
           @unref="onUnref"
           @reselect="onReselect"
         />
+        <!-- 空态：尚未引用任何章节 -->
+        <div v-if="!refs.length" class="refEmpty">
+          <div class="refEmptyIcon">🔗</div>
+          <div class="refEmptyText">尚未引用任何章节</div>
+          <el-button size="small" type="primary" @click="pickVisible = true"
+            >选择章节引用</el-button
+          >
+        </div>
       </div>
-    </div>
+    </template>
+
     <!--
       F1：单栏实时渲染（wysiwyg 单栏，不再左右分栏）
       - Toast UI 自带顶部工具栏已经有 </> 按钮（插入代码块 + 语言选择对话框）
       - codeSyntaxHighlight 插件按语言实时上色代码块
       - 图片粘贴为 data URL 内嵌，渲染为真 <img>
       - 图片双击由全局 NoteImgLightbox 拦截打开缩放查看器
-      - 顶部仅保留一行紧凑工具栏，不再有多余输入框
     -->
     <template #footer>
       <span class="dialog-footer">
@@ -118,7 +149,9 @@ import {
   addRef,
   removeRef,
   refreshAllRefs,
-  resolveConflict
+  resolveConflict,
+  getMode,
+  setMode
 } from '@/utils/workspaceBridge'
 
 // 节点备注内容设置
@@ -128,6 +161,8 @@ export default {
   data() {
     return {
       dialogVisible: false,
+      // v1.6 互斥模式：'note'（写备注）| 'ref'（引用章节），弹窗内任意时刻只显示其一
+      mode: 'note',
       note: '',
       activeNodes: [],
       editor: null,
@@ -183,7 +218,16 @@ export default {
       }
     },
     targetNode() {
+      // 弹窗打开期间目标节点变化（画布另选节点）：模式/引用/编辑器全部跟随新节点
       this.loadRefs()
+      this.mode = this.targetNode ? getMode(this.targetNode) : 'note'
+      if (this.dialogVisible) {
+        if (this.mode === 'note') {
+          this.$nextTick(() => this.initEditor())
+        } else {
+          this.destroyEditor()
+        }
+      }
     }
   },
   created() {
@@ -211,9 +255,52 @@ export default {
     },
 
     // ── 章节引用 ──────────────────────────────────────────────
+    // 只加载 refs；mode 是弹窗局部状态（可能已切换未提交），由 handleShowNodeNote /
+    // targetNode watch 负责重置——不能在这里覆盖，否则 switchMode 的局部切换会被打回。
     loadRefs() {
       const n = this.targetNode
       this.refs = n ? readRefs(n) || [] : []
+    },
+
+    // ── v1.6 模式切换（带二次确认，§v1.6 2.3）─────────────────
+    async switchMode(m) {
+      if (m === this.mode) return
+      if (m === 'ref') {
+        // 写备注 → 引用章节：备注非空须确认（清空 N 字）
+        const md = this.editor ? this.editor.getMarkdown() || '' : this.note || ''
+        const n = md.trim().length
+        if (n > 0) {
+          const yes = await this.$confirm(
+            `切换会清空当前备注文字（${n} 字），是否继续？`,
+            '切换为「引用章节」',
+            { type: 'warning' }
+          ).catch(() => false)
+          if (!yes) return
+        }
+        this.note = md // 暂存（切回时不丢）
+        this.destroyEditor()
+        this.mode = 'ref'
+        this.loadRefs()
+      } else {
+        // 引用章节 → 写备注：refs 非空须确认（源 md 文件不受影响）
+        if (this.refs.length) {
+          const yes = await this.$confirm(
+            '切换会删除当前引用（源 md 文件不受影响），是否继续？',
+            '切换为「写备注」',
+            { type: 'warning' }
+          ).catch(() => false)
+          if (!yes) return
+        }
+        this.mode = 'note'
+        this.$nextTick(() => this.initEditor())
+      }
+    },
+
+    destroyEditor() {
+      if (this.editor) {
+        try { this.editor.destroy() } catch (e) { /* 元素已卸载等，忽略 */ }
+        this.editor = null
+      }
     },
 
     async onPick(spec) {
@@ -303,10 +390,18 @@ export default {
         this.appointNode = node
         this.note = node.getData('note') || ''
       }
+      // v1.6：按 _mindlink.mode 决定弹窗打开时的模式（旧数据走推断规则）
+      this.mode = this.targetNode ? getMode(this.targetNode) : 'note'
+      this.loadRefs()
       this.dialogVisible = true
-      this.$nextTick(() => {
-        this.initEditor()
-      })
+      // 编辑器只在 note 模式渲染（v-if）；ref 模式下不创建
+      if (this.mode === 'note') {
+        this.$nextTick(() => {
+          this.initEditor()
+        })
+      } else {
+        this.destroyEditor()
+      }
     },
 
     initEditor() {
@@ -369,25 +464,53 @@ export default {
       }
     },
 
-    cancel() {
+    // 关闭弹窗（无确认，供 confirm 提交后走）
+    closeDialog() {
       this.dialogVisible = false
       if (this.appointNode) {
         this.appointNode = null
         this.updateNoteInfo()
       }
+      // 关闭时编辑器留在内存（下次打开复用实例）；mode 复位由下次打开决定
     },
 
+    // 取消：有未保存改动须确认（§v1.6 三「关闭」）。ref 模式的增删引用是实时生效的，
+    // 无"未保存"概念；note 模式比对编辑器与打开时的内容。
+    async cancel() {
+      if (this.mode === 'note' && this.editor) {
+        const md = this.editor.getMarkdown() || ''
+        if (md !== (this.note || '')) {
+          const yes = await this.$confirm(
+            '备注内容已修改但尚未保存，放弃修改？',
+            '放弃修改',
+            { type: 'warning' }
+          ).catch(() => false)
+          if (!yes) return
+        }
+      }
+      this.closeDialog()
+    },
+
+    // 确认：按当前模式提交（§v1.6 三「保存」）
     confirm() {
-      this.note = this.editor.getMarkdown()
-      if (this.appointNode) {
-        this.appointNode.setNote(this.note)
-      } else {
-        this.activeNodes.forEach(node => {
+      const nodes = this.appointNode
+        ? [this.appointNode]
+        : this.activeNodes.slice()
+      if (this.mode === 'note') {
+        // mode='note'：写 data.note，refs 清空
+        this.note = this.editor ? this.editor.getMarkdown() : this.note
+        nodes.forEach(node => {
           node.setNote(this.note)
+          setMode(node, 'note')
+        })
+      } else {
+        // mode='ref'：引用块内的编辑由 RefBlock 自身 blur 即提交（commitEdit），
+        // 此处只落互斥元数据：note 置 null、mode='ref'（refs 已实时写入）
+        nodes.forEach(node => {
+          setMode(node, 'ref')
         })
       }
-
-      this.cancel()
+      this.closeDialog()
     }
   }
 }
@@ -400,11 +523,56 @@ export default {
     color: #dcdfe6;
   }
 
-  // 顶部紧凑工具栏：语言选择 + 插入代码块 + 引用操作（替代原来的独立语言条）
+  // ── v1.6 标题行：标题 + 二选一模式切换（写备注 / 引用章节）──
+  .noteHeader {
+    display: flex;
+    align-items: center;
+    gap: 16px;
+
+    .noteTitle {
+      font-size: 16px;
+      font-weight: 600;
+      color: var(--macos-text);
+    }
+
+    .modeSwitch {
+      display: inline-flex;
+      padding: 2px;
+      border-radius: 8px;
+      background: var(--macos-hover, rgba(0, 0, 0, 0.05));
+      gap: 2px;
+
+      .modeBtn {
+        border: none;
+        background: transparent;
+        padding: 4px 14px;
+        font-size: 12px;
+        line-height: 18px;
+        border-radius: 6px;
+        color: var(--macos-text-2);
+        cursor: pointer;
+        white-space: nowrap;
+        transition: all 0.15s ease;
+
+        &:hover {
+          color: var(--macos-text);
+        }
+
+        &.active {
+          background: var(--macos-bg-glass-strong, #fff);
+          color: var(--macos-accent, #409eff);
+          font-weight: 600;
+          box-shadow: 0 1px 3px rgba(0, 0, 0, 0.12);
+        }
+      }
+    }
+  }
+
+  // 顶部紧凑工具栏（note 模式：语言选择+插入代码块；ref 模式：引用文档章节+刷新）
   .noteToolbar {
     display: flex;
     align-items: center;
-    justify-content: space-between;
+    justify-content: flex-start;
     gap: 8px;
     margin-bottom: 8px;
 
@@ -430,8 +598,32 @@ export default {
     }
   }
 
+  // ref 模式：引用块列表容器（无外框，块自带左紫竖线+浅紫底）
   .refArea {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
     margin-bottom: 0;
+  }
+
+  // ref 模式空态
+  .refEmpty {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 8px;
+    padding: 28px 0 20px;
+    border-radius: var(--macos-radius-sm, 8px);
+    background: var(--macos-hover, rgba(0, 0, 0, 0.03));
+
+    .refEmptyIcon {
+      font-size: 26px;
+      opacity: 0.6;
+    }
+    .refEmptyText {
+      font-size: 13px;
+      color: var(--macos-text-2);
+    }
   }
 }
 </style>
@@ -487,9 +679,8 @@ export default {
   }
 
   // ============================================================
-  // 引用块 + 编辑器合并为"一个框"（2026-09-21 二次反馈修订：引用块移到编辑器下方）。
-  // 外框统一持有边框/底色；引用块去自有紫色边框，附在编辑区底部
-  // （只留顶部分隔线，工具栏始终在框的最顶部），编辑器去自带边框融入外框。
+  // v1.6 二选一：noteBox 只在「写备注」模式包裹编辑器（引用块在
+  // ref 模式独立平铺，不再与编辑器同框）。
   // ============================================================
   .noteBox {
     border: 1px solid var(--macos-border);
@@ -497,23 +688,7 @@ export default {
     background: rgba(255, 255, 255, 0.45);
     overflow: hidden;
 
-    .refBlock {
-      border: none;
-      border-radius: 0;
-      background: transparent;
-      margin-bottom: 0;
-      padding: 6px 8px;
-      border-top: 1px solid var(--macos-divider, #e4e7ed);
-
-      // 失效引用仍保留红色左条警示
-      &.status-missing,
-      &.status-file-missing,
-      &.status-ambiguous {
-        border-left: 4px solid var(--macos-danger, #f56c6c);
-      }
-    }
-
-    // 编辑器并入外框：去掉自带边框与底色（层级更高，压过上方 .toastui-editor-defaultUI 规则）
+    // 编辑器融入外框：去掉自带边框与底色（层级更高，压过上方 .toastui-editor-defaultUI 规则）
     .toastui-editor-defaultUI {
       border: none;
       background: transparent;
