@@ -38,13 +38,15 @@ export default {
   created() {
     document[fullscrrenEvent] = () => {
       setTimeout(() => {
-        this.mindMap.resize()
+        // mindMap prop 经 mindmap-inited 广播赋值，md 页启动时实例未建（null），必须判空
+        if (this.mindMap) this.mindMap.resize()
       }, 1000)
     }
   },
   methods: {
     // 全屏查看
     toFullscreenShow() {
+      if (!this.mindMap) return
       fullScreen(this.mindMap.el)
     },
 

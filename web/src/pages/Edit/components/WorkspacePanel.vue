@@ -115,7 +115,8 @@
           @click="onFileClick(f)"
           @contextmenu.prevent="onCtx($event, f)"
         >
-          <span class="wsIcon">{{ f.isDir ? '📁' : iconOf(f.name) }}</span>
+          <span class="wsCaret">{{ f.isDir ? (isDirCollapsed(f.path) ? '▸' : '▾') : '' }}</span>
+          <span class="wsIcon">{{ f.isDir ? (isDirCollapsed(f.path) ? '📁' : '📂') : iconOf(f.name) }}</span>
           <span class="wsName">{{ f.name }}</span>
           <span v-if="isDirtyTab(f.path)" class="wsDot" title="未保存">●</span>
         </div>
@@ -173,6 +174,7 @@ export default {
       collapsed: false,
       ctxMenu: null,
       activePath: '',
+      collapsedDirs: [], // 已折叠目录（正斜杠归一化路径），按工作区 root 持久化到 localStorage
       unsubs: [],
       rebuiltTimer: null,
       liveMindMap: null // mindMap 实例（经 mindmap-inited 事件广播；prop 可能为 null）
@@ -197,7 +199,8 @@ export default {
           const hit = !kw || name.toLowerCase().includes(kw)
           if (hit || n.isDir) {
             out.push({ ...n, depth })
-            if (n.isDir) walk(n.children, depth + 1)
+            // 目录折叠：无过滤词时跳过其子级；有过滤词时自动展开（保持命中可见）
+            if (n.isDir && (kw || !this.isDirCollapsed(n.path))) walk(n.children, depth + 1)
           }
         }
       }
@@ -271,6 +274,13 @@ export default {
       this.root = data.root
       this.tree = data.tree || []
       this.indexStatus = data.indexStatus || 'ok'
+      // 恢复该工作区的目录折叠状态
+      try {
+        const saved = JSON.parse(localStorage.getItem('wsCollapsedDirs:' + this.root) || '[]')
+        this.collapsedDirs = Array.isArray(saved) ? saved : []
+      } catch (e) {
+        this.collapsedDirs = []
+      }
     },
     // 折叠开关：必须向父级广播，否则 fixed 定位的画布不会让位（Index.vue 用 wsCollapsed 做 offset）
     toggleCollapsed() {
@@ -450,8 +460,21 @@ export default {
       this.openFile({ path: abs, name: hit.rel })
     },
     onFileClick(f) {
-      if (f.isDir) return
+      if (f.isDir) return this.toggleDir(f.path)
       this.openFile(f)
+    },
+    // 目录折叠/展开（路径统一为正斜杠，避免 Windows 反斜杠导致判定不一致）
+    toggleDir(path) {
+      const p = String(path).replace(/\\/g, '/')
+      const i = this.collapsedDirs.indexOf(p)
+      if (i >= 0) this.collapsedDirs.splice(i, 1)
+      else this.collapsedDirs.push(p)
+      try {
+        localStorage.setItem('wsCollapsedDirs:' + this.root, JSON.stringify(this.collapsedDirs))
+      } catch (e) {}
+    },
+    isDirCollapsed(path) {
+      return this.collapsedDirs.includes(String(path).replace(/\\/g, '/'))
     },
     async openFile(f) {
       const r = await openPath(f.path)
@@ -690,6 +713,14 @@ export default {
       }
       &.active {
         background-color: var(--macos-hover-strong);
+      }
+      .wsCaret {
+        flex: none;
+        width: 12px;
+        font-size: 10px;
+        color: var(--macos-text-secondary, #999);
+        text-align: center;
+        user-select: none;
       }
       .wsIcon {
         flex: none;

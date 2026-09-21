@@ -441,7 +441,8 @@ export default {
     },
 
     handleResize() {
-      this.mindMap.resize()
+      // 实例可能尚未创建（md 页启动时画布隐藏、initWhenReady 延后），窗口 resize/全屏切换都会触发这里
+      if (this.mindMap) this.mindMap.resize()
     },
 
     // 显示loading

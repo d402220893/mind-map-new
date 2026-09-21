@@ -151,6 +151,20 @@ test('[dirty 误报] Edit.vue loadSheetData 用 node_tree_render_end 兜底，�
   const preview = read(new URL('pages/Edit/components/MindMapPreview.vue', SRC))
   assert.ok(/catch \(e\)/.test(preview), 'MindMapPreview 的 new MindMap 应 try/catch 兜底')
   assert.ok(/getBoundingClientRect\(\)/.test(preview), 'MindMapPreview 构造前应校验容器尺寸非 0')
+  // 实例未就绪期（mindMap=null）的连带空指针：窗口 resize / 全屏切换都会触达 resize
+  assert.ok(
+    /handleResize\(\)\s*\{[\s\S]{0,200}?if \(this\.mindMap\) this\.mindMap\.resize\(\)/.test(vue),
+    'handleResize 必须判空（md 页启动时实例未建，窗口 resize/全屏会触发）'
+  )
+  const fullscreen = read(new URL('pages/Edit/components/Fullscreen.vue', SRC))
+  assert.ok(
+    /if \(this\.mindMap\) this\.mindMap\.resize\(\)/.test(fullscreen),
+    'Fullscreen 的 fullscreenchange 回调必须判空（mindMap prop 经事件广播，可能为 null）'
+  )
+  assert.ok(
+    /toFullscreenShow\(\)\s*\{\s*if \(!this\.mindMap\) return/.test(fullscreen),
+    'toFullscreenShow 必须在实例未建时直接返回（否则 fullScreen(this.mindMap.el) 抛错）'
+  )
 })
 
 // ===== 修复：右侧 SidebarTrigger 上下黑框（MED）=====
@@ -429,6 +443,14 @@ test('[统一搜索] WorkspacePanel 去掉模式切换，单框同搜 md+smm', (
   assert.ok(/collectSmmFiles/.test(vue), '应实现 collectSmmFiles 收集工作区 smm')
   assert.ok(/searchSmmContainer/.test(vue), '应复用 utils/smmSearch 的 searchSmmContainer')
   assert.ok(/decodeSmm/.test(vue), '应用 decodeSmm 解析 smm 容器')
+  // 目录折叠：点击目录行 toggleDir 切换 collapsedDirs，flatFiles 跳过折叠目录子级，状态按工作区持久化
+  assert.ok(/collapsedDirs:\s*\[\]/.test(vue), '应有 collapsedDirs 状态')
+  assert.ok(/toggleDir\(/.test(vue), '应实现 toggleDir 折叠切换')
+  assert.ok(/isDirCollapsed\(/.test(vue), '应实现 isDirCollapsed 判定')
+  assert.ok(/if \(f\.isDir\) return this\.toggleDir\(f\.path\)/.test(vue), '点击目录行应切换折叠而非无反应')
+  assert.ok(/kw \|\| !this\.isDirCollapsed\(n\.path\)/.test(vue), '无过滤词时折叠目录不递归子级；搜索时自动展开')
+  assert.ok(/wsCollapsedDirs:/.test(vue), '折叠状态应按工作区 root 持久化到 localStorage')
+  assert.ok(/class="wsCaret"/.test(vue), '目录行应有折叠箭头 wsCaret')
 })
 
 test('[live搜索] mindMap 实例经 mindmap-inited 事件广播（$refs 非响应式 prop 恒 null）', () => {
