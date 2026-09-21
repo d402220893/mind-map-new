@@ -1,8 +1,27 @@
 import { test } from 'node:test'
 import assert from 'node:assert'
-import { getNodeRefs, setNodeRefs, addRef, removeRef, updateRefSnapshot, parseLegacyRefs } from '../../src/services/refData.js'
+import { getNodeRefs, setNodeRefs, addRef, removeRef, updateRefSnapshot, parseLegacyRefs, nodeDataOf } from '../../src/services/refData.js'
 
+// 裸节点（.smm / JSON 解码产物）：数据挂在 node.data
 function node() { return { data: {} } }
+
+// ⚠️ 复刻 simple-mind-map 的运行时节点实例 MindMapNode：
+//   数据在 node.nodeData.data，官方访问器是 getData(key) / setData(patch)，
+//   实例上**没有** .data 属性 —— 这正是 §32.4 Bug② 的根因（旧实现读 node.data 恒 undefined，
+//   于是 getNodeRefs 恒 []、setNodeRefs 恒 false，引用写不进也读不出）。
+function mindMapNode() {
+  const nodeData = { data: {}, children: [] }
+  const patches = []
+  return {
+    nodeData,
+    _patches: patches,
+    getData(key) { return key ? nodeData.data[key] : nodeData.data },
+    setData(patch) {
+      patches.push(patch)
+      Object.keys(patch).forEach(k => { nodeData.data[k] = patch[k] })
+    }
+  }
+}
 
 test('getNodeRefs 空节点返回 []', () => {
   assert.deepStrictEqual(getNodeRefs(node()), [])
@@ -284,4 +303,85 @@ test('removeRef 按 refId 精确删除，不影响同 file 的其它引用', () 
   const left = getNodeRefs(n)
   assert.strictEqual(left.length, 1)
   assert.strictEqual(left[0].sectionId, 'secA')
+})
+
+// ── §32.4 Bug②：运行时节点实例（MindMapNode）也能读写引用 ──────────────
+// 旧实现一律读 node.data，而实例没有 .data → 引用永远写不进 / 读不出。
+
+test('nodeDataOf：实例走 getData()，裸节点走 node.data，两者皆无返回 null', () => {
+  const inst = mindMapNode()
+  assert.strictEqual(nodeDataOf(inst), inst.nodeData.data)
+  const raw = node()
+  assert.strictEqual(nodeDataOf(raw), raw.data)
+  assert.strictEqual(nodeDataOf({}), null)
+  assert.strictEqual(nodeDataOf(null), null)
+})
+
+test('运行时节点实例上确实没有 .data（回归根因前提）', () => {
+  const inst = mindMapNode()
+  assert.strictEqual(inst.data, undefined, 'MindMapNode 实例不得有 .data（旧假设即错在此）')
+})
+
+test('addRef 对运行时节点实例生效：写进 nodeData.data._mindlink.refs 并调用 setData', () => {
+  const inst = mindMapNode()
+  assert.deepStrictEqual(getNodeRefs(inst), [], '初始无引用')
+  const r = addRef(inst, {
+    file: 'a.md',
+    sectionId: 's1',
+    sectionPath: ['需求分析'],
+    title: '需求分析',
+    cachedContent: '# 需求分析\n正文'
+  })
+  assert.ok(r && r.file === 'a.md')
+  // 落到实例真实数据层（存档时 copyNodeTree 读的就是 nodeData.data）
+  assert.ok(inst.nodeData.data._mindlink && Array.isArray(inst.nodeData.data._mindlink.refs))
+  assert.strictEqual(inst.nodeData.data._mindlink.refs[0].title, '需求分析')
+  assert.strictEqual(inst.nodeData.data._mindlink.refs[0].cachedContent, '# 需求分析\n正文')
+  // 通过官方 setData 写入（进历史 / 触发 data_change）
+  assert.ok(inst._patches.length >= 1, '必须调用 node.setData')
+  // 读回可见 —— 这就是"添加引用后能看到引用块"的关键
+  assert.strictEqual(getNodeRefs(inst).length, 1)
+  assert.strictEqual(getNodeRefs(inst)[0].refId, 'r0')
+})
+
+test('运行时实例：addRef 去重 + title 回填', () => {
+  const inst = mindMapNode()
+  addRef(inst, { file: 'a.md', sectionId: 's1' })
+  addRef(inst, { file: 'a.md', sectionId: 's1', title: '回填标题' })
+  assert.strictEqual(getNodeRefs(inst).length, 1)
+  assert.strictEqual(getNodeRefs(inst)[0].title, '回填标题')
+})
+
+test('运行时实例：removeRef / updateRefSnapshot 生效', () => {
+  const inst = mindMapNode()
+  const a = addRef(inst, { file: 'a.md', sectionId: 's1' })
+  assert.strictEqual(updateRefSnapshot(inst, a.refId, { baseHash: 'h1', baseRev: 2 }), true)
+  assert.strictEqual(getNodeRefs(inst)[0].baseHash, 'h1')
+  assert.strictEqual(removeRef(inst, a.refId), true)
+  assert.deepStrictEqual(getNodeRefs(inst), [])
+})
+
+test('运行时实例：setNodeRefs 落盘时剥离 refId（不持久化）', () => {
+  const inst = mindMapNode()
+  setNodeRefs(inst, [{ file: 'a.md', sectionId: 's1', refId: 'keep' }])
+  assert.strictEqual(inst.nodeData.data._mindlink.refs[0].refId, undefined)
+  assert.strictEqual(getNodeRefs(inst)[0].refId, 'r0')
+})
+
+test('运行时实例：setNodeRefs 保留 _mindlink 其它字段', () => {
+  const inst = mindMapNode()
+  inst.nodeData.data._mindlink = { foo: 1 }
+  setNodeRefs(inst, [{ file: 'a.md', sectionId: 's1' }])
+  assert.strictEqual(inst.nodeData.data._mindlink.foo, 1)
+})
+
+test('setNodeRefs：既无 getData 又无 data → false（不抛）', () => {
+  assert.strictEqual(setNodeRefs({}, []), false)
+  assert.strictEqual(setNodeRefs({ getData: () => null }, []), false)
+  assert.strictEqual(setNodeRefs(null, []), false)
+})
+
+test('getNodeRefs：无数据层的节点/实例返回 []', () => {
+  assert.deepStrictEqual(getNodeRefs({}), [])
+  assert.deepStrictEqual(getNodeRefs({ getData: () => null }), [])
 })

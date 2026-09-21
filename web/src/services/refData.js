@@ -1,23 +1,53 @@
 // L1 纯函数：引用元数据增删改查（节点 data._mindlink.refs 上操作，无 IO）。
 // 零依赖、无副作用；node 由调用方传入（L4 refService 转发）。
+//
+// ⚠️ 节点有两种形态，取值/写入方式不同（§32.4 Bug② 根因）：
+//   ① simple-mind-map 运行时节点实例（MindMapNode）：数据在 `node.nodeData.data`，
+//      官方访问器是 `node.getData()` / `node.setData(patch)`；实例上**没有** `.data` 属性！
+//   ② .smm / JSON 解码出的**裸节点对象**：数据直接挂在 `node.data`
+//      （refService.writeNodeSnapshot / calibratePendingSnapshots 传的就是这种）。
+// 历史 bug：本模块一律读 `node.data`，运行时传入实例时它恒为 undefined →
+//   getNodeRefs 永远返回 []、setNodeRefs 第一行就 `return false` → 引用既写不进也读不出，
+//   "添加引用后备注区不显示引用块" 即由此而来（单测用 { data:{} } 假节点，掩盖了此差异）。
 const REF_KEY = '_mindlink'
 
+// 取"数据层"（text / note / _mindlink 所在的对象）。找不到返回 null。
+export function nodeDataOf(node) {
+  if (!node || typeof node !== 'object') return null
+  // ① 实例：官方读访问器（getData() 无参返回整个 data 对象）
+  if (typeof node.getData === 'function') {
+    let d = null
+    try { d = node.getData() } catch (e) { d = null }
+    return d && typeof d === 'object' ? d : null
+  }
+  // ② 裸节点：数据在 node.data
+  if (node.data && typeof node.data === 'object') return node.data
+  return null
+}
+
 export function getNodeRefs(node) {
-  const data = (node && node.data) || {}
+  const data = nodeDataOf(node) || {}
   const ml = data[REF_KEY]
   if (!ml || !Array.isArray(ml.refs)) return []
   return ml.refs.map((r, i) => ({ ...r, refId: r.refId || ('r' + i) }))
 }
 
 export function setNodeRefs(node, refs) {
-  if (!node || !node.data) return false
-  const ml = node.data[REF_KEY] || {}
+  const data = nodeDataOf(node)
+  if (!data) return false
+  const ml = data[REF_KEY] || {}
   // 写入时剥离内部 refId（仅运行时标识，不持久化）
   ml.refs = (refs || []).map(r => {
     const { refId, ...rest } = r
     return rest
   })
-  node.data[REF_KEY] = ml
+  // 实例：走官方 setData（合并进 nodeData.data，并进历史/触发 data_change → 保存时随图落盘）。
+  // 裸节点：直接挂到 node.data（decodeSmm 产物的场景，无实例方法）。
+  if (typeof node.setData === 'function') {
+    try { node.setData({ [REF_KEY]: ml }) } catch (e) { data[REF_KEY] = ml }
+  } else {
+    data[REF_KEY] = ml
+  }
   return true
 }
 

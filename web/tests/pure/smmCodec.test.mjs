@@ -1,9 +1,13 @@
 import { test } from 'node:test'
 import assert from 'node:assert'
-import { encode, decode, decodeSmm, pickActiveData, extractImages } from '../../src/services/smmCodec.js'
+import { encode, decode, decodeSmm, pickActiveData, extractImages, isContainerObj, containerSheets } from '../../src/services/smmCodec.js'
 
 function container(sheets, activeId) {
   return JSON.stringify({ type: 'smms', data: { sheets, activeId } })
+}
+// ⚠️ 本应用实际保存 .smm 的格式（api/index.js#getSheetsContainer）——与 type:'smms' 不同！
+function appContainer(sheets, activeId) {
+  return JSON.stringify({ app: 'smm-multisheet', version: 1, activeId, sheets })
 }
 const SHEETS = [
   { id: 's1', data: { id: 'r1', data: { text: 'A' }, children: [] } },
@@ -361,4 +365,75 @@ test('extractImages 也识别直接传 node.data（image 在顶层）的形态',
 test('encode 的 JSON 可被 JSON.parse 回读（产物必须是合法 JSON）', () => {
   assert.doesNotThrow(() => JSON.parse(encode(null, { sheets: MULTI_SHEETS, activeId: 's1' })))
   assert.doesNotThrow(() => JSON.parse(encode({ id: 'r', children: [] })))
+})
+
+// ── §32.4 Bug①/③：本应用保存的 app:'smm-multisheet' 格式必须能解码 ──────────
+// 历史 bug：decode/decodeSmm 只认 type:'smms'/'mindmap'，打开本应用自己保存的 .smm 时
+// 把整个容器对象误当单个节点 → 加载报错 / 内容错乱。
+
+test('decodeSmm 认 app:"smm-multisheet"（本应用保存格式）→ 原样返回 sheets+activeId', () => {
+  const r = decodeSmm(appContainer(MULTI_SHEETS, 's2'))
+  assert.strictEqual(r.sheets.length, 2)
+  assert.deepStrictEqual(r.sheets.map(s => s.id), ['s1', 's2'])
+  assert.strictEqual(r.sheets[0].name, '一', '工作表名必须保留')
+  assert.strictEqual(r.activeId, 's2')
+})
+
+test('decodeSmm app 容器缺 activeId → 兜底首个', () => {
+  const r = decodeSmm(appContainer(MULTI_SHEETS))
+  assert.strictEqual(r.activeId, 's1')
+})
+
+test('decodeSmm app 容器 activeId 指向不存在 → 兜底首个（不返回 null）', () => {
+  const r = decodeSmm(appContainer(MULTI_SHEETS, 'ghost'))
+  assert.strictEqual(r.activeId, 'ghost')
+  assert.strictEqual(r.sheets[0].id, 's1')
+})
+
+test('decode 认 app:"smm-multisheet" → active 表的数据（不是整个容器）', () => {
+  const d = decode(appContainer(MULTI_SHEETS, 's2'))
+  assert.strictEqual(d.id, 'r2')
+  assert.strictEqual(d.text, undefined, '不能把容器对象当节点返回')
+})
+
+test('pickActiveData 认 app:"smm-multisheet" → active 表数据', () => {
+  assert.strictEqual(pickActiveData(appContainer(MULTI_SHEETS, 's2')).id, 'r2')
+})
+
+test('app 容器往返：decodeSmm → 逐表数据可被 extractImages 正确遍历', () => {
+  const t = appContainer([
+    { id: 's1', name: '一', data: { id: 'r1', data: {}, children: [{ data: { image: 'k1' }, children: [] }] } }
+  ], 's1')
+  const { sheets } = decodeSmm(t)
+  assert.deepStrictEqual(extractImages(sheets[0].data), ['k1'])
+})
+
+test('decode / pickActiveData 对同一 app 容器结果一致', () => {
+  const t = appContainer(MULTI_SHEETS, 's2')
+  assert.deepStrictEqual(decode(t), pickActiveData(t))
+})
+
+test('isContainerObj 同时认 app 与 type 两种容器形态', () => {
+  assert.strictEqual(isContainerObj(JSON.parse(appContainer(MULTI_SHEETS, 's1'))), true)
+  assert.strictEqual(isContainerObj(JSON.parse(container(MULTI_SHEETS, 's1'))), true)
+  assert.strictEqual(isContainerObj({ type: 'mindmap', data: { id: 'r' } }), false)
+  assert.strictEqual(isContainerObj({ id: 'r', children: [] }), false)
+  assert.strictEqual(isContainerObj(null), false)
+})
+
+test('containerSheets 归一化两种容器为 {sheets, activeId}，非容器返回 null', () => {
+  const a = containerSheets(JSON.parse(appContainer(MULTI_SHEETS, 's2')))
+  assert.strictEqual(a.activeId, 's2')
+  assert.strictEqual(a.sheets.length, 2)
+  const b = containerSheets(JSON.parse(container(MULTI_SHEETS, 's2')))
+  assert.strictEqual(b.activeId, 's2')
+  assert.strictEqual(b.sheets.length, 2)
+  assert.strictEqual(containerSheets({ type: 'mindmap', data: { id: 'r' } }), null)
+  assert.strictEqual(containerSheets(null), null)
+})
+
+test('单图（mindmap/mindmap 裸节点）不受 app 容器分支影响（仍包成单 sheet root）', () => {
+  const d = decodeSmm(JSON.stringify({ type: 'mindmap', data: { id: 'root', children: [] } }))
+  assert.strictEqual(d.sheets.length, 1)
+  assert.strictEqual(d.activeId, 'root')
 })

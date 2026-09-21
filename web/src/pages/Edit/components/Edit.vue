@@ -126,7 +126,7 @@ import {
   renameSheet as apiRenameSheet,
   getSheetsContainer,
   loadSheetsContainer,
-  isSheetsFile,
+  normalizeSheetsContainer,
   getCurrentFilePath,
   setCurrentFilePath,
   getWorkbookList,
@@ -913,14 +913,16 @@ export default {
     // 绝不覆盖当前正在编辑的活跃文件。
     // container 可为多工作表容器，或单图 mindmap 数据（root / content.root）。
     importSheets(container, name) {
-      // 归一化：单图数据（非多工作表容器）包成单个 sheet
-      let c = container
-      if (!isSheetsFile(c)) {
+      // 归一化：多工作表容器（app / type 两种形态）统一为同一形状；
+      // 单图数据（非容器）包成单个 sheet。⚠️ 必须用原始 container 取单图数据，
+      // 不能对归一化结果（可能为 null）取。
+      let c = normalizeSheetsContainer(container)
+      if (!c) {
         c = {
           app: 'smm-multisheet',
           version: 1,
           sheets: [
-            { name: name || 'Sheet1', data: this.extractMindmapData(c) }
+            { name: name || 'Sheet1', data: this.extractMindmapData(container) }
           ]
         }
       }
@@ -1055,14 +1057,12 @@ export default {
           return true
         }
       }
-      // 归一化为多工作表容器（单图文件包成单个 Sheet1）
-      const container = isSheetsFile(data)
-        ? data
-        : {
-            app: 'smm-multisheet',
-            version: 1,
-            sheets: [{ name: 'Sheet1', data: this.extractMindmapData(data) }]
-          }
+      // 归一化为多工作表容器（app / type 两种容器形态皆可；单图文件包成单个 Sheet1）
+      const container = normalizeSheetsContainer(data) || {
+        app: 'smm-multisheet',
+        version: 1,
+        sheets: [{ name: 'Sheet1', data: this.extractMindmapData(data) }]
+      }
       const baseName = (filePath || '未命名')
         .split(/[\\/]/)
         .pop()

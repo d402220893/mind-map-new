@@ -261,14 +261,30 @@ export const loadSheetsContainer = container => {
   return true
 }
 
-// 是否为多工作表文件
+// 归一化多工作表容器：认两种形态，统一成 { app:'smm-multisheet', version, activeId, sheets }。
+//   ① 本应用保存：{ app:'smm-multisheet', version:1, activeId, sheets:[{id,name,data}] }
+//   ② 快照写回/旧容器：{ type:'smms', data:{ sheets:[{id,data}], activeId } }
+//      （refService.writeNodeSnapshot 回写 .smm 时用 smmCodec.encode 产出此形态）
+// 非容器返回 null（调用方按"单图/未知"处理）。
+// ⚠️ 同源 bug（§32.4 Bug①/③）在打开对话框路径的翻版：只认 ① 会把 ② 误当单图 →
+//    sheets 丢失、内容错乱。这里统一归一化，两条打开路径（文件树 / 对话框）行为一致。
+export const normalizeSheetsContainer = data => {
+  if (!data || typeof data !== 'object') return null
+  if (data.app === 'smm-multisheet' && Array.isArray(data.sheets)) return data
+  if (data.type === 'smms' && data.data && Array.isArray(data.data.sheets)) {
+    const sheets = data.data.sheets
+    const activeId =
+      data.data.activeId && sheets.find(s => s.id === data.data.activeId)
+        ? data.data.activeId
+        : (sheets[0] && sheets[0].id)
+    return { app: 'smm-multisheet', version: 1, activeId, sheets }
+  }
+  return null
+}
+
+// 是否为多工作表文件（两种容器形态皆算）
 export const isSheetsFile = data => {
-  return (
-    data &&
-    typeof data === 'object' &&
-    data.app === 'smm-multisheet' &&
-    Array.isArray(data.sheets)
-  )
+  return normalizeSheetsContainer(data) !== null
 }
 
 // ===== 多文件（workbook）管理接口（委托给纯状态机 workbookState）=====
