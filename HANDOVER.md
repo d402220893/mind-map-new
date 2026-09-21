@@ -1412,3 +1412,37 @@ onChange → mdDoc.setContent + scheduleSave
 - ⏳ 重启后点测：① 文件树双击 .smm 正常打开且内容正确；② 节点加引用后备注弹窗出现引用块并显示被引用内容；③ md 编辑器 Ctrl+Z 只撤销本次编辑、**不清空全文**。
 - ⚠️ 遗留（非本轮）：`refData` 的同类取值假设若在别处仍写 `node.data` 需一并排查；`electron-app/tests` 7 项 asar 路径漂移（硬编码 `dist-electron/`，产出已改 `dist-electron2`）仍未对齐。
 
+
+## 34. 2026-09-21（续）：引用后节点无"备注标识"/无法预览 → 出包 v2.0.13
+
+> 状态：**根因坐实并修复 + 补回归测试（`web && npm test` 976/976 全绿，check-arch EXIT 0）+ 出包 v2.0.13 部署 D 盘**。
+> 触发：用户复现"插入引用后，节点上仍然没有备注的标识，也无法预览"。
+
+### 34.1 真根因（两处，均在 v2.0.12 修复盲区）
+
+1. **备注图标只在 `data.note` 存在时才渲染**（simple-mind-map `nodeCreateContents.js` 的 `createNoteNode`：`if (!this.getData('note')) return null`）。
+   本项目把"引用"存到节点 `data._mindlink.refs`（与 `note` 并列的元数据，见 §32.4 引用系统），**并不写 `data.note`**。
+   → 插入引用后 `data.note` 仍为空 → 节点不渲染备注图标 → 既无"标识"也无悬停预览入口。
+2. **`SET_NODE_DATA` 命令只合并数据、不重绘**：`Render.setNodeData`（`Render.js:1980`）仅 `Object.keys(data).forEach(... node.nodeData.data[k]=...)`，无 `reRender`。
+   `refData.setNodeRefs` 用 `node.setData({_mindlink})` 写入 → 即使 `createNoteNode` 已会认 refs，节点也**不会自动重绘**，"标识"仍不出现。
+   （对照：`setNote` 走 `SET_NODE_NOTE` → `setNodeDataRender` → `reRenderNodeCheckChange` → `node.reRender()`，所以普通备注能即时出现。）
+
+### 34.2 修复
+
+1. **给 simple-mind-map 打补丁**（`scripts/patch-smm-note-indicator.js`，幂等；`build_now.sh [0.8/5]` 在 vue build 前重放）：
+   `createNoteNode` 改为 `note = getData('note'); ml = getData('_mindlink'); refs = ml?.refs||[]; if (!note && !refs.length) return null`。
+   因 `node_modules` 不入库、`npm install` 会覆盖，故每次出包前重放（fork `0.14.0-fix.3` 本地无源码，长期应把此改动落到 fork 再发版）。
+2. **`refData.setNodeRefs` 写入后主动 `node.reRender()`**：触发该节点重绘 → `createNoteNode` 重跑 → 引用增删后"备注标识"即时出现/消失。
+   仅对运行时 `MindMapNode` 实例生效（`typeof node.reRender === 'function'` 守卫）；裸节点（快照写回场景）无 `reRender`，跳过。
+3. **`Edit.vue customNoteContentShow.show` 合并 `data.note` 与 `_mindlink.refs`**：仅引用、无 note 的节点悬停也能预览被引用内容（标题 + 缓存正文，渲染为引用块）。
+
+### 34.3 验证
+
+- `tests/pure/refData.test.mjs` +3 例：`addRef`/`removeRef` 对运行时实例触发 `reRender`、`removeRef` 再重绘一次、裸节点不抛。
+- `cd web && npm test` → **976/976 全绿**；`check-arch` EXIT 0。
+- 部署后请在真机点测：① 选中节点 → 引用文档章节 → 节点出现备注图标；② 悬停/双击该图标 → 浮层显示被引用内容（标题 + 正文）；③ 取消引用 → 图标消失。
+
+### 34.4 出包与部署（v2.0.13）
+- 版本号先行 bump（`electron-app/package.json` 2.0.12 → 2.0.13，同步 `make_installer.nsi`）后 `SKIP_BUMP=1 bash build_now.sh`。
+- 部署真源：`D:\Program Files (x86)\思绪思维导图\resources\app\`（app/ > app.asar 两处同步）。
+- 产物：`electron-app/dist-electron2/思绪思维导图 Setup.exe`。
