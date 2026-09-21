@@ -1,5 +1,8 @@
 <template>
   <div class="workspacePanel" :class="{ isDark: isDark, collapsed: collapsed }">
+    <div class="wsPill" :class="{ collapsed: collapsed }" @click="toggleCollapsed" title="展开 / 收起">
+      <span class="wsPillIcon">{{ collapsed ? '»' : '«' }}</span>
+    </div>
     <div class="wsHeader">
       <span class="wsTitle" :title="root || ''">
         📁 {{ root ? baseOf(root) : '未打开工作区' }}
@@ -8,9 +11,6 @@
         <span class="wsBtn" title="刷新" @click="refresh">🔄</span>
         <span class="wsBtn" title="打开文件夹" @click="openFolder">📂</span>
         <span class="wsBtn" title="在资源管理器中显示" @click="revealRoot">↗</span>
-        <span class="wsBtn" title="收起 / 展开" @click="toggleCollapsed">{{
-          collapsed ? '»' : '«'
-        }}</span>
       </span>
     </div>
 
@@ -24,9 +24,21 @@
       <input
         v-model="query"
         class="wsInput"
-        placeholder="全文搜索（回车）"
-        @keyup.enter="runFullText"
+        :placeholder="searchMode === 'nodes' ? '搜索节点 / 备注（回车）' : '全文搜索（回车）'"
+        @keyup.enter="runSearch"
       />
+      <div class="wsSearchTabs">
+        <span
+          class="wsTab"
+          :class="{ active: searchMode === 'files' }"
+          @click="searchMode = 'files'; onFilter()"
+        >文件</span>
+        <span
+          class="wsTab"
+          :class="{ active: searchMode === 'nodes' }"
+          @click="searchMode = 'nodes'; onFilter()"
+        >节点/备注</span>
+      </div>
     </div>
 
     <!-- 索引降级提示（§8.7 错误态：内联可操作） -->
@@ -46,11 +58,11 @@
     </div>
 
     <div v-else class="wsBody customScrollbar">
-      <!-- 搜索结果 -->
+      <!-- 文件搜索结果 -->
       <template v-if="searchResults">
         <div class="wsGroupTitle">
-          搜索结果（{{ searchResults.length }}）
-          <span class="wsLink" @click="searchResults = null">清除</span>
+          文件搜索结果（{{ searchResults.length }}）
+          <span class="wsLink" @click="clearSearch">清除</span>
         </div>
         <div
           v-for="hit in searchResults"
@@ -66,6 +78,24 @@
           >L{{ h.line }}：{{ h.text }}</div>
         </div>
         <div v-if="!searchResults.length" class="wsEmptyTip">未找到结果</div>
+      </template>
+
+      <!-- 节点/备注搜索结果 -->
+      <template v-else-if="nodeSearchResults">
+        <div class="wsGroupTitle">
+          节点/备注搜索结果（{{ nodeSearchResults.length }}）
+          <span class="wsLink" @click="clearSearch">清除</span>
+        </div>
+        <div
+          v-for="hit in nodeSearchResults"
+          :key="hit.uid"
+          class="wsHit"
+          @click="openNodeHit(hit)"
+        >
+          <div class="wsHitFile">{{ hit.path }}</div>
+          <div class="wsHitLine">{{ hit.preview }}</div>
+        </div>
+        <div v-if="!nodeSearchResults.length" class="wsEmptyTip">未找到结果</div>
       </template>
 
       <!-- 文件树 -->
@@ -114,6 +144,12 @@ import { getWorkbookList } from '@/api'
 
 export default {
   name: 'WorkspacePanel',
+  props: {
+    mindMap: {
+      type: Object,
+      default: null
+    }
+  },
   data() {
     return {
       root: '',
@@ -121,7 +157,9 @@ export default {
       filesCache: [],
       filter: '',
       query: '',
+      searchMode: 'files', // 'files' | 'nodes'
       searchResults: null,
+      nodeSearchResults: null,
       indexStatus: 'ok',
       busy: false,
       progress: 0,
@@ -269,8 +307,22 @@ export default {
     },
     onFilter() {
       this.searchResults = null
+      this.nodeSearchResults = null
+    },
+    clearSearch() {
+      this.searchResults = null
+      this.nodeSearchResults = null
+      this.query = ''
+    },
+    async runSearch() {
+      if (this.searchMode === 'nodes') {
+        await this.runNodeSearch()
+      } else {
+        await this.runFullText()
+      }
     },
     async runFullText() {
+      this.nodeSearchResults = null
       const q = this.query.trim()
       if (!q) {
         this.searchResults = null
@@ -278,6 +330,58 @@ export default {
       }
       const r = await getServices().workspaceSearch.fullText(q, { limit: 200 })
       this.searchResults = r.ok ? r.data.results || r.data : []
+    },
+    async runNodeSearch() {
+      this.searchResults = null
+      const q = this.query.trim().toLowerCase()
+      if (!q || !this.mindMap) {
+        this.nodeSearchResults = null
+        return
+      }
+      const results = []
+      const root = this.mindMap.renderer && this.mindMap.renderer.root
+      if (!root) {
+        this.nodeSearchResults = []
+        return
+      }
+      const stripHtml = html => String(html || '').replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim()
+      const truncate = (str, n = 80) => {
+        str = String(str || '').replace(/\s+/g, ' ').trim()
+        return str.length > n ? str.slice(0, n) + '…' : str
+      }
+      const walk = node => {
+        const data = node.getData ? node.getData() : node.data || {}
+        const text = stripHtml(data.text || '')
+        const note = stripHtml(data.note || '')
+        const refs = (data._mindlink && Array.isArray(data._mindlink.refs) ? data._mindlink.refs : [])
+        const refText = refs.map(r => [r.title, r.cachedContent].filter(Boolean).join('\n')).join('\n')
+        const hay = (text + '\n' + note + '\n' + refText).toLowerCase()
+        if (hay.includes(q)) {
+          const path = node.getAncestorNodes
+            ? node.getAncestorNodes().map(n => stripHtml(n.getData('text'))).concat([text]).join(' > ')
+            : text
+          const preview = note
+            ? truncate(note)
+            : refText
+              ? truncate(refText)
+              : truncate(text)
+          results.push({
+            uid: data.uid,
+            path,
+            preview,
+            source: text
+          })
+        }
+        const children = node.children || []
+        children.forEach(walk)
+      }
+      walk(root)
+      this.nodeSearchResults = results
+    },
+    openNodeHit(hit) {
+      if (!this.mindMap || !hit.uid) return
+      this.$bus.$emit('show_search') // 关闭可能打开的搜索弹窗，避免冲突
+      this.mindMap.execCommand('GO_TARGET_NODE', hit.uid)
     },
     openHit(hit) {
       const root = this.root
@@ -345,6 +449,7 @@ export default {
 
 <style lang="less" scoped>
 .workspacePanel {
+  position: relative;
   display: flex;
   flex-direction: column;
   width: 240px;
@@ -355,14 +460,57 @@ export default {
   -webkit-backdrop-filter: var(--macos-blur);
   color: var(--macos-text);
   font-size: 13px;
+  transition: width 0.2s ease;
 
   &.collapsed {
-    width: 48px;
-    .wsTitle,
+    width: 0;
+    border-right: none;
+    overflow: visible;
+    .wsHeader,
     .wsSearch,
     .wsBody,
     .wsEmpty {
       display: none;
+    }
+  }
+
+  // 左侧蓝色小药丸（仿右侧 sidebarTrigger）
+  .wsPill {
+    position: fixed;
+    left: 0;
+    top: 50%;
+    transform: translateY(-50%);
+    width: 8px;
+    height: 60px;
+    background: #409eff;
+    border-top-right-radius: 6px;
+    border-bottom-right-radius: 6px;
+    cursor: pointer;
+    z-index: 100;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: left 0.2s ease, border-radius 0.2s ease;
+
+    &:hover {
+      width: 12px;
+    }
+
+    &.collapsed {
+      left: 0;
+      border-radius: 0 6px 6px 0;
+    }
+
+    &:not(.collapsed) {
+      left: 240px;
+      border-radius: 6px 0 0 6px;
+    }
+
+    .wsPillIcon {
+      color: #fff;
+      font-size: 11px;
+      font-weight: bold;
+      transform: scale(0.85);
     }
   }
 
@@ -372,7 +520,7 @@ export default {
     display: flex;
     align-items: center;
     padding: 0 6px 0 10px;
-    border-bottom: 1px solid var(--macos-divider);
+    background: var(--macos-bg-glass-strong);
 
     .wsTitle {
       flex: 1;
@@ -405,18 +553,39 @@ export default {
     padding: 6px;
     display: flex;
     flex-direction: column;
-    gap: 4px;
+    gap: 6px;
     .wsInput {
-      height: 24px;
-      padding: 0 6px;
+      height: 26px;
+      padding: 0 8px;
       font-size: 12px;
       border: 1px solid var(--macos-border);
       border-radius: 4px;
-      background: transparent;
+      background: var(--macos-bg-glass-strong);
       color: var(--macos-text);
       outline: none;
       &:focus {
         border-color: var(--macos-accent);
+      }
+    }
+    .wsSearchTabs {
+      display: flex;
+      align-items: center;
+      gap: 4px;
+      .wsTab {
+        flex: 1;
+        text-align: center;
+        padding: 3px 0;
+        font-size: 12px;
+        border-radius: 4px;
+        cursor: pointer;
+        color: var(--macos-text-2);
+        &:hover {
+          background: var(--macos-hover);
+        }
+        &.active {
+          background: var(--macos-accent);
+          color: #fff;
+        }
       }
     }
   }

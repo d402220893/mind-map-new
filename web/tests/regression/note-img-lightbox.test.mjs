@@ -87,7 +87,8 @@ test('[F2] NodeNoteContentShow.vue 不再内联 lightbox（已抽出到 NoteImgL
 // 初版在底部加 .noteCodeBar（语言下拉+插入代码块+长提示），用户反馈 UI 难看；
 // 且 exec('codeBlock', { language }) 的入参在 WYSIWYG 下不存在、被静默吞掉 → 插入的是无语言代码块。
 // 二版直接删掉整条栏改用自带 </> 按钮 → 用户反馈"编程语言选择都没了"（找不到入口）。
-// 现行方案：编辑器**上方**一行紧凑工具条 .noteCodeLangBar（无长提示），
+// 现行方案：编辑器**上方**一行紧凑工具条 .noteToolbar（无长提示），
+// 语言选择 + 插入代码块 + 引用操作合并为顶部工具栏；
 // 插入走 ProseMirror 直接建带 language attrs 的 codeBlock 节点，确保语言真的生效。
 
 test('[F1 语言选择] NodeNote.vue 保留紧凑语言工具条，且不再用底部 .noteCodeBar', () => {
@@ -97,17 +98,17 @@ test('[F1 语言选择] NodeNote.vue 保留紧凑语言工具条，且不再用�
     'NodeNote.vue 不应再含底部 .noteCodeBar（旧版 UI 难看）'
   )
   assert.ok(
-    /class=["']noteCodeLangBar["']/.test(s),
-    'NodeNote.vue 应含紧凑语言工具条 .noteCodeLangBar'
+    /class=["']noteToolbar["']/.test(s),
+    'NodeNote.vue 应含紧凑顶部工具条 .noteToolbar'
   )
   assert.ok(
     /codeLangs\s*:/.test(s) && /codeLang:\s*['"]/.test(s),
     'NodeNote.vue 应含 codeLang / codeLangs（语言选择数据）'
   )
-  // 语言条必须在编辑器之前（顶部），不能是底部旧样式
+  // 工具条必须在编辑器之前（顶部），不能是底部旧样式
   assert.ok(
-    s.indexOf('noteCodeLangBar') < s.indexOf('ref="noteEditor"'),
-    '语言工具条应位于编辑器上方（旧版在底部被反馈难看）'
+    s.indexOf('noteToolbar') < s.indexOf('ref="noteEditor"'),
+    '工具条应位于编辑器上方（旧版在底部被反馈难看）'
   )
 })
 

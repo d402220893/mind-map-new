@@ -1446,3 +1446,43 @@ onChange → mdDoc.setContent + scheduleSave
 - 版本号先行 bump（`electron-app/package.json` 2.0.12 → 2.0.13，同步 `make_installer.nsi`）后 `SKIP_BUMP=1 bash build_now.sh`。
 - 部署真源：`D:\Program Files (x86)\思绪思维导图\resources\app\`（app/ > app.asar 两处同步）。
 - 产物：`electron-app/dist-electron2/思绪思维导图 Setup.exe`。
+
+## 35. 2026-09-21（续）：UI 打磨 — 备注弹窗/文件树栏/底部状态栏
+
+> 状态：**已改源码 + 回归测试 976/976 全绿（check-arch EXIT 0），待 web build 通过、bump v2.0.14 后出包部署**。
+> 触发：用户给出 5 条 UI 反馈与截图。
+
+### 35.1 改动清单
+
+1. **备注弹窗合并输入框、优化按钮布局**（`web/src/pages/Edit/components/NodeNote.vue`）
+   - 去掉独立的 `.noteCodeLangBar`（代码块语言 label + select + 插入按钮），改为顶部一行 `.noteToolbar`：左侧语言选择 + 插入代码块；右侧「引用文档章节」+「刷新」。
+   - 主区域只保留一个 `.noteEditor`，不再出现"两个输入框"的观感。
+   - 同步改写回归测试 `tests/regression/note-img-lightbox.test.mjs`：断言 `.noteToolbar` 存在、不含底部 `.noteCodeBar`。
+
+2. **文件树栏像右侧菜单栏那样用一个蓝色小按钮展开/收起**（`web/src/pages/Edit/components/WorkspacePanel.vue`、`web/src/pages/Edit/Index.vue`）
+   - 新增 `.wsPill`：固定于左边缘的蓝色小药丸，collapsed 时显示在 `left:0`，expanded 时跟随面板 `left:240px`。
+   - `.collapsed` 时面板宽度从 48px 改为 0，完全隐藏内容；`Index.vue` 同步把折叠时的画布偏移从 `48px` 改为 `0px`。
+
+3. **文件树栏支持搜索思维导图节点和备注**（`WorkspacePanel.vue`）
+   - 搜索区新增「文件 / 节点·备注」切换标签。
+   - 节点模式下遍历 `mindMap.renderer.root`，匹配节点 `text`、备注 `note`、`_mindlink.refs` 的 `title`/`cachedContent`；结果显示节点路径 + 命中预览。
+   - 点击结果调用 `mindMap.execCommand('GO_TARGET_NODE', uid)` 展开并居中节点。
+   - `Index.vue` 通过 `activeMindMap` 计算属性把 `Edit.vue` 的 `mindMap` 实例透传给 `WorkspacePanel`。
+
+4. **文件树栏显示效果优化**（`WorkspacePanel.vue`）
+   - 头部、搜索输入框统一使用玻璃拟态背景（`var(--macos-bg-glass-strong)`）；搜索标签 active 态使用主色填充。
+   - 列表项 hover/active 颜色沿用 `--macos-hover` / `--macos-hover-strong`。
+
+5. **底部状态栏不再显示**（`Index.vue`、`StatusBar.vue` 保留组件，但不再渲染）
+   - 移除 `Index.vue` 中的 `<StatusBar>` 使用、import、components 注册。
+   - `.sbVisible .editWrap .editContainer { bottom: 0px; }`，避免状态栏遮挡画布。
+   - 同步改写回归测试 `tests/regression/view-service-wiring.test.mjs`：不再断言 StatusBar 存在，反而断言其已移除。
+
+### 35.2 测试与门禁
+- `cd web && npm test` → **976/976 全绿**；`check-arch` EXIT 0。
+- 回归测试已同步更新（`note-img-lightbox.test.mjs` + `view-service-wiring.test.mjs`）。
+
+### 35.3 待完成
+- 待 `npm run build` 通过（任务 rBtXvr）。
+- bump `electron-app/package.json` 2.0.13 → 2.0.14，`make_installer.nsi` 同步。
+- `SKIP_BUMP=1 bash build_now.sh` 出包并部署 D 盘真源。

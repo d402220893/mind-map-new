@@ -57,7 +57,8 @@ test('[视图接线] Index.vue 按 Tab kind 切换 md / 导图编辑器', () => 
   assert.ok(/activeKind === 'markdown'/.test(src), '未用 activeKind 做编辑器切换')
   assert.ok(/<MdEditor/.test(src), '未渲染 MdEditor')
   assert.ok(/v-show="activeKind !== 'markdown'"/.test(src), '导图侧必须用 v-show 保留实例（v-if 会销毁画布）')
-  assert.ok(/<WorkspacePanel/.test(src) && /<StatusBar/.test(src), '缺少工作区侧栏或状态栏')
+  assert.ok(/<WorkspacePanel/.test(src), '缺少工作区侧栏')
+  assert.ok(!/<StatusBar/.test(src), '底部状态栏已移除，避免遮挡内容')
 })
 
 test('[视图接线] Edit.vue 注入 customHyperlinkJump（且不在 node_click 重复实现）', () => {

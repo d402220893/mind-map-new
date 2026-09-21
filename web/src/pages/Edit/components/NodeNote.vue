@@ -7,7 +7,25 @@
     :top="isMobile ? '20px' : '15vh'"
     :close-on-click-modal="false"
   >
-    <!-- 引用块列表（§7.14 / §8.3）：固定在备注编辑器上方，自有备注在下方 -->
+    <!-- 工具栏：代码块语言 + 插入代码块 + 引用操作 -->
+    <div class="noteToolbar">
+      <div class="toolGroup">
+        <select v-model="codeLang" class="codeLangSelect" title="代码块语言">
+          <option v-for="l in codeLangs" :key="l" :value="l">{{ l }}</option>
+        </select>
+        <el-button size="small" type="primary" @click="insertCodeBlock"
+          >插入代码块</el-button
+        >
+      </div>
+      <div class="toolGroup">
+        <el-button size="small" @click="pickVisible = true"
+          >🔗 引用文档章节</el-button
+        >
+        <el-button size="small" @click="refreshAll">🔄 刷新</el-button>
+      </div>
+    </div>
+
+    <!-- 引用块列表（§7.14 / §8.3）：位于编辑器上方，自有备注在下方 -->
     <div class="refArea">
       <RefBlock
         v-for="r in refs"
@@ -19,18 +37,8 @@
         @unref="onUnref"
         @reselect="onReselect"
       />
-      <el-button size="small" @click="pickVisible = true">🔗 引用文档章节</el-button>
-      <el-button size="small" @click="refreshAll">🔄 刷新全部引用</el-button>
     </div>
-    <div class="noteCodeLangBar">
-      <span class="label">代码块语言</span>
-      <select v-model="codeLang" class="codeLangSelect">
-        <option v-for="l in codeLangs" :key="l" :value="l">{{ l }}</option>
-      </select>
-      <el-button size="small" type="primary" @click="insertCodeBlock"
-        >插入代码块</el-button
-      >
-    </div>
+
     <div class="noteEditor" ref="noteEditor" @keyup.stop @keydown.stop></div>
     <!--
       F1：单栏实时渲染（wysiwyg 单栏，不再左右分栏）
@@ -38,7 +46,7 @@
       - codeSyntaxHighlight 插件按语言实时上色代码块
       - 图片粘贴为 data URL 内嵌，渲染为真 <img>
       - 图片双击由全局 NoteImgLightbox 拦截打开缩放查看器
-      - 不再需要额外底部"插入代码块"工具栏（用户反馈 UI 难看 + exec 命令的 language 入参没生效）
+      - 顶部仅保留一行紧凑工具栏，不再有多余输入框
     -->
     <template #footer>
       <span class="dialog-footer">
@@ -380,33 +388,38 @@ export default {
     color: #dcdfe6;
   }
 
-  // 代码块语言选择：紧贴编辑器上方的一行紧凑工具条（旧版放在底部且带长提示，用户反馈难看）
-  .noteCodeLangBar {
+  // 顶部紧凑工具栏：语言选择 + 插入代码块 + 引用操作（替代原来的独立语言条）
+  .noteToolbar {
     display: flex;
     align-items: center;
+    justify-content: space-between;
     gap: 8px;
     margin-bottom: 8px;
 
-    .label {
-      font-size: 12px;
-      color: #606266;
-      flex: none;
+    .toolGroup {
+      display: flex;
+      align-items: center;
+      gap: 6px;
     }
 
     .codeLangSelect {
       height: 26px;
       font-size: 12px;
       padding: 0 4px;
-      border: 1px solid #dcdfe6;
-      border-radius: 3px;
-      background: #fff;
-      color: #606266;
+      border: 1px solid var(--macos-border);
+      border-radius: 4px;
+      background: transparent;
+      color: var(--macos-text);
       outline: none;
 
       &:focus {
-        border-color: #409eff;
+        border-color: var(--macos-accent);
       }
     }
+  }
+
+  .refArea {
+    margin-bottom: 8px;
   }
 }
 </style>

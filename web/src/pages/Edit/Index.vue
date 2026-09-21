@@ -22,6 +22,7 @@
         <WorkspacePanel
           v-if="!isZenMode && workspaceDocked"
           ref="wsPanel"
+          :mindMap="activeMindMap"
           @collapse="wsCollapsed = $event"
         />
         <div class="mainCol">
@@ -44,16 +45,10 @@
               :filePath="activePath"
               class="editWrap"
             />
-            <MdOutline v-if="showMdOutline && activeKind === 'markdown'"></MdOutline>
-          </div>
-          <StatusBar
-            v-if="!isZenMode"
-            :tabId="activeWorkbookId"
-            :filePath="activePath"
-            :kind="activeKind"
-          />
+          <MdOutline v-if="showMdOutline && activeKind === 'markdown'"></MdOutline>
         </div>
       </div>
+    </div>
       <!-- F22：失效链接提示（link-missing 无监听方时，点失效链接是全静默） -->
       <MissingLinkDialog />
     </template>
@@ -68,7 +63,6 @@ import WorkspacePanel from './components/WorkspacePanel.vue'
 import MdEditor from './components/MdEditor.vue'
 import MdToolbar from './components/MdToolbar.vue'
 import MdOutline from './components/MdOutline.vue'
-import StatusBar from './components/StatusBar.vue'
 import MissingLinkDialog from './components/MissingLinkDialog.vue'
 import { mapState, mapMutations } from 'vuex'
 import { getLocalConfig } from '@/api'
@@ -90,7 +84,6 @@ export default {
     MdEditor,
     MdToolbar,
     MdOutline,
-    StatusBar,
     MissingLinkDialog
   },
   data() {
@@ -118,6 +111,11 @@ export default {
     },
     activePath() {
       return this.activeWb ? this.activeWb.filePath || '' : ''
+    },
+    activeMindMap() {
+      return this.$refs.editComp && this.$refs.editComp.mindMap
+        ? this.$refs.editComp.mindMap
+        : null
     },
     wsDocked() {
       return this.workspaceDocked
@@ -368,10 +366,10 @@ export default {
     left: 240px;
   }
   &.wsDocked.wsCollapsed .editWrap .editContainer {
-    left: 48px;
+    left: 0px;
   }
   &.sbVisible .editWrap .editContainer {
-    bottom: 26px;
+    bottom: 0px;
   }
 }
 </style>
