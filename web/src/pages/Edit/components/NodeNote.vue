@@ -320,7 +320,10 @@ export default {
         this.editor = markRaw(
           new Editor({
             el: this.$refs.noteEditor,
-            height: '500px',
+            // 高度跟随内容（不再固定 500px）：空/短备注时编辑器收紧，引用条紧随其后，
+            // 避免"空编辑区一大块空白 + 引用条被顶到底部"的上下两个框观感。
+            // 过长内容由下方 .toastui-editor-ww-container 的 max-height 内部滚动兜底。
+            height: 'auto',
             // F1：单栏实时渲染（不再左右分栏）。写 markdown 当场渲染成单栏，
             // 代码块由 codeSyntaxHighlight 插件按语言实时上色；图片粘贴为 data URL 内嵌，渲染为真 <img>。
             initialEditType: 'wysiwyg',
@@ -515,6 +518,14 @@ export default {
       border: none;
       background: transparent;
     }
+  }
+
+  // 编辑器自适应高度（配合 initEditor height:'auto'）：
+  // 空内容时给足编辑落点(min-height)，引用条紧随其后读作一个框；
+  // 过长时编辑区内部滚动(max-height)，不把整个弹窗撑得超高。
+  .toastui-editor-ww-container {
+    min-height: 140px;
+    max-height: 46vh;
   }
 }
 

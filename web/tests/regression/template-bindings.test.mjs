@@ -345,6 +345,12 @@ test('[引用块合并框] NodeNote 引用块与编辑器合并为一个框', ()
   assert.ok(iEditor > -1 && iRefArea > -1 && iEditor < iRefArea, 'refArea 必须位于 noteEditor 之后（工具栏在框的最顶部）')
   assert.ok(/\.refBlock\s*\{[^}]*border-top:\s*1px/s.test(vue), '引用块应只保留顶部分隔线（附在编辑区底部）')
   assert.ok(!/\.refBlock\s*\{[^}]*border-bottom:\s*1px/s.test(vue), '引用块不应再有底部分隔线')
+  // 2026-09-21 三次反馈：编辑器不得固定大高度（500px 空内容会把引用条顶到底部、读作上下两个框），
+  // 改为自适应内容高度 + 上下界（空内容有落点、过长内部滚动）。
+  assert.ok(/height:\s*'auto'/.test(vue), '编辑器应 height:auto 自适应内容，不得固定 500px')
+  assert.ok(!/height:\s*'500px'/.test(vue), '编辑器不应再固定 500px 高度')
+  assert.ok(/\.toastui-editor-ww-container\s*\{[^}]*min-height/s.test(vue), '编辑区应有 min-height 保底编辑落点')
+  assert.ok(/\.toastui-editor-ww-container\s*\{[^}]*max-height/s.test(vue), '编辑区应有 max-height 过长内部滚动')
 })
 
 test('[统一搜索] WorkspacePanel 去掉模式切换，单框同搜 md+smm', () => {
