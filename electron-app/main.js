@@ -17,6 +17,18 @@ function bootMark(label) {
   if (!STARTUP_LOG) return
   try { fs.appendFileSync(STARTUP_LOG, label + ' ' + (Date.now() - _bootT0) + '\n') } catch (e) {}
 }
+// 渲染端错误日志落盘路径：必须可写。
+// 历史上写到 APP_DIR/..（Program Files\resources\renderer.log），普通用户对 Program Files
+// 无写权限 → appendFileSync 静默失败、日志从未真正生成。改到 userData（%APPDATA% 下，必可写）。
+function rendererLogPath() {
+  try {
+    return path.join(app.getPath('userData'), 'renderer.log')
+  } catch (e) {
+    // app 未 ready 等极端情况兜底到临时目录，仍比 Program Files 可靠
+    return path.join(os.tmpdir(), 'mindmap-renderer.log')
+  }
+}
+
 // 本地静态服务器端口（仅监听 127.0.0.1，安全）
 const PORT = 51888
 // 实际监听端口（端口回退后会变，给 mainWindow.loadURL 用）
@@ -776,7 +788,7 @@ function createWindow() {
     if (level >= 2) {
       try {
         fs.appendFileSync(
-          path.join(APP_DIR, '..', 'renderer.log'),
+          rendererLogPath(),
           '[' + new Date().toISOString() + '] CONSOLE[' + level + '] ' +
             (source || '') + ':' + (line || '') + ' ' + message + '\n'
         )
@@ -787,7 +799,7 @@ function createWindow() {
           dialog.showErrorBox(
             '页面脚本错误',
             (source || '') + ':' + (line || '') + '\n' + message +
-              '\n\n（详细日志见 exe 同目录 renderer.log）'
+              '\n\n（详细日志见 ' + rendererLogPath() + '，或按 Ctrl+Shift+I 打开控制台查看完整堆栈）'
           )
         } catch (err) {}
       }
@@ -797,7 +809,7 @@ function createWindow() {
   mainWindow.webContents.on('did-fail-load', (e, code, desc, url) => {
     try {
       fs.appendFileSync(
-        path.join(APP_DIR, '..', 'renderer.log'),
+        rendererLogPath(),
         '[' + new Date().toISOString() + '] DID_FAIL_LOAD code=' + code + ' ' + desc + ' ' + url + '\n'
       )
     } catch (err) {}
@@ -807,7 +819,7 @@ function createWindow() {
   mainWindow.webContents.on('render-process-gone', (e, details) => {
     try {
       fs.appendFileSync(
-        path.join(APP_DIR, '..', 'renderer.log'),
+        rendererLogPath(),
         '[' + new Date().toISOString() + '] RENDER_GONE ' + JSON.stringify(details) + '\n'
       )
     } catch (err) {}

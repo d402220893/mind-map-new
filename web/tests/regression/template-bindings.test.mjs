@@ -323,3 +323,43 @@ test('[跨表图片] Edit.vue 接入 nodeImageKeys 修复（import + 钩子 + �
   )
 })
 
+// ===== 2026-09-21 四连修（offset 诊断 / 引用块折叠 / 统一搜索 / 蓝色竖条）=====
+
+test('[引用块折叠] RefBlock 默认折叠预览，可展开', () => {
+  const vue = read(new URL('pages/Edit/components/RefBlock.vue', SRC))
+  assert.ok(/expanded:\s*false/.test(vue), 'RefBlock 应有 expanded 状态，默认 false')
+  assert.ok(/rbCollapsed:\s*!expanded/.test(vue), 'rbContent 应绑定 rbCollapsed')
+  assert.ok(/展开全部/.test(vue), '应有展开全部/收起切换')
+})
+
+test('[统一搜索] WorkspacePanel 去掉模式切换，单框同搜 md+smm', () => {
+  const vue = read(new URL('pages/Edit/components/WorkspacePanel.vue', SRC))
+  assert.ok(!/searchMode/.test(vue), '不得再保留 searchMode 模式切换')
+  assert.ok(!/wsSearchTabs/.test(vue), '不得再保留 wsSearchTabs 标签')
+  assert.ok(!/nodeSearchResults/.test(vue), '不得再保留 nodeSearchResults 旧字段')
+  assert.ok(/runSmmSearch/.test(vue), '应实现 runSmmSearch 搜 smm 文件')
+  assert.ok(/collectSmmFiles/.test(vue), '应实现 collectSmmFiles 收集工作区 smm')
+  assert.ok(/searchSmmContainer/.test(vue), '应复用 utils/smmSearch 的 searchSmmContainer')
+  assert.ok(/decodeSmm/.test(vue), '应用 decodeSmm 解析 smm 容器')
+})
+
+test('[蓝色竖条] wsPill 与右侧 SidebarTrigger 同款外观', () => {
+  const vue = read(new URL('pages/Edit/components/WorkspacePanel.vue', SRC))
+  assert.ok(/iconjiantouyou/.test(vue), 'wsPill 应使用与右侧一致的箭头图标 iconjiantouyou')
+  assert.ok(/width:\s*28px/.test(vue), 'wsPill 应为 28px 悬停滑出式蓝条')
+  assert.ok(/border-top-right-radius:\s*10px/.test(vue), '蓝条圆角应与右侧一致(10px)')
+})
+
+test('[错误诊断] renderer.log 改写到 userData（Program Files 不可写）', () => {
+  const main = read(new URL('main.js', APP))
+  assert.ok(/rendererLogPath/.test(main), 'main.js 应实现 rendererLogPath()')
+  assert.ok(/app\.getPath\('userData'\)/.test(main), '日志应落 userData（必可写）')
+  assert.ok(!/path\.join\(APP_DIR, '\.\.', 'renderer\.log'\)/.test(main), '不得再写 Program Files 下的 renderer.log')
+})
+
+test('[错误诊断] Vue errorHandler 附加组件名', () => {
+  const main = read(new URL('main.js', SRC))
+  assert.ok(/t\.name \|\| t\.__name/.test(main), 'errorHandler 应取组件 name/__name')
+  assert.ok(/'@' \+ comp/.test(main), 'kind 应附加 @组件名')
+})
+

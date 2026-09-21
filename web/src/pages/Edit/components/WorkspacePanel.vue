@@ -1,7 +1,12 @@
 <template>
   <div class="workspacePanel" :class="{ isDark: isDark, collapsed: collapsed }">
-    <div class="wsPill" :class="{ collapsed: collapsed }" @click="toggleCollapsed" title="展开 / 收起">
-      <span class="wsPillIcon">{{ collapsed ? '»' : '«' }}</span>
+    <div
+      class="wsPill"
+      :class="{ collapsed: collapsed }"
+      @click="toggleCollapsed"
+      :title="collapsed ? '展开文件栏' : '收起文件栏'"
+    >
+      <span class="iconfont iconjiantouyou wsPillIcon"></span>
     </div>
     <div class="wsHeader">
       <span class="wsTitle" :title="root || ''">
@@ -21,24 +26,13 @@
         placeholder="过滤文件名…"
         @input="onFilter"
       />
+      <!-- 统一搜索：一次回车同时搜 md 全文与所有 .smm 导图内容（节点/备注/引用），无需切换模式 -->
       <input
         v-model="query"
         class="wsInput"
-        :placeholder="searchMode === 'nodes' ? '搜索节点 / 备注（回车）' : '全文搜索（回车）'"
+        placeholder="搜索 md / 导图内容（回车）"
         @keyup.enter="runSearch"
       />
-      <div class="wsSearchTabs">
-        <span
-          class="wsTab"
-          :class="{ active: searchMode === 'files' }"
-          @click="searchMode = 'files'; onFilter()"
-        >文件</span>
-        <span
-          class="wsTab"
-          :class="{ active: searchMode === 'nodes' }"
-          @click="searchMode = 'nodes'; onFilter()"
-        >节点/备注</span>
-      </div>
     </div>
 
     <!-- 索引降级提示（§8.7 错误态：内联可操作） -->
@@ -58,44 +52,52 @@
     </div>
 
     <div v-else class="wsBody customScrollbar">
-      <!-- 文件搜索结果 -->
-      <template v-if="searchResults">
+      <!-- 统一搜索结果（md 全文 + smm 导图内容，同屏展示） -->
+      <template v-if="hasSearchResult">
         <div class="wsGroupTitle">
-          文件搜索结果（{{ searchResults.length }}）
+          搜索结果（导图 {{ (smmResults || []).length }} · 文档 {{ (searchResults || []).length }}）
           <span class="wsLink" @click="clearSearch">清除</span>
         </div>
-        <div
-          v-for="hit in searchResults"
-          :key="hit.rel + hit.hits[0].line"
-          class="wsHit"
-          @click="openHit(hit)"
-        >
-          <div class="wsHitFile">{{ hit.rel }}</div>
-          <div
-            v-for="(h, i) in hit.hits.slice(0, 3)"
-            :key="i"
-            class="wsHitLine"
-          >L{{ h.line }}：{{ h.text }}</div>
-        </div>
-        <div v-if="!searchResults.length" class="wsEmptyTip">未找到结果</div>
-      </template>
 
-      <!-- 节点/备注搜索结果 -->
-      <template v-else-if="nodeSearchResults">
-        <div class="wsGroupTitle">
-          节点/备注搜索结果（{{ nodeSearchResults.length }}）
-          <span class="wsLink" @click="clearSearch">清除</span>
-        </div>
+        <!-- 导图（.smm）节点/备注/引用命中 -->
+        <template v-if="smmResults && smmResults.length">
+          <div class="wsGroupSub">🧠 导图内容</div>
+          <div
+            v-for="(hit, i) in smmResults"
+            :key="'smm' + i + hit.uid"
+            class="wsHit"
+            @click="openNodeHit(hit)"
+          >
+            <div class="wsHitFile">
+              {{ hit.fileName }}<template v-if="hit.sheetName"> · {{ hit.sheetName }}</template>
+            </div>
+            <div class="wsHitLine">{{ hit.path }}</div>
+            <div class="wsHitLine">{{ hit.preview }}</div>
+          </div>
+        </template>
+
+        <!-- md 全文命中 -->
+        <template v-if="searchResults && searchResults.length">
+          <div class="wsGroupSub">📄 文档全文</div>
+          <div
+            v-for="hit in searchResults"
+            :key="hit.rel + hit.hits[0].line"
+            class="wsHit"
+            @click="openHit(hit)"
+          >
+            <div class="wsHitFile">{{ hit.rel }}</div>
+            <div
+              v-for="(h, i) in hit.hits.slice(0, 3)"
+              :key="i"
+              class="wsHitLine"
+            >L{{ h.line }}：{{ h.text }}</div>
+          </div>
+        </template>
+
         <div
-          v-for="hit in nodeSearchResults"
-          :key="hit.uid"
-          class="wsHit"
-          @click="openNodeHit(hit)"
-        >
-          <div class="wsHitFile">{{ hit.path }}</div>
-          <div class="wsHitLine">{{ hit.preview }}</div>
-        </div>
-        <div v-if="!nodeSearchResults.length" class="wsEmptyTip">未找到结果</div>
+          v-if="!(smmResults && smmResults.length) && !(searchResults && searchResults.length)"
+          class="wsEmptyTip"
+        >未找到结果</div>
       </template>
 
       <!-- 文件树 -->
@@ -141,6 +143,8 @@ import {
   createMdFile
 } from '@/utils/workspaceBridge'
 import { getWorkbookList } from '@/api'
+import { decodeSmm } from '@/services/smmCodec'
+import { searchSmmContainer, stripHtml, truncate } from '@/utils/smmSearch'
 
 export default {
   name: 'WorkspacePanel',
@@ -157,9 +161,8 @@ export default {
       filesCache: [],
       filter: '',
       query: '',
-      searchMode: 'files', // 'files' | 'nodes'
-      searchResults: null,
-      nodeSearchResults: null,
+      searchResults: null, // md 全文结果（[{rel, hits:[{line,text}]}]）
+      smmResults: null, // 导图内容结果（[{file,fileName,sheetName,uid,path,preview,live}]）
       indexStatus: 'ok',
       busy: false,
       progress: 0,
@@ -176,6 +179,9 @@ export default {
     },
     baseOfRoot() {
       return this.root
+    },
+    hasSearchResult() {
+      return this.searchResults !== null || this.smmResults !== null
     },
     flatFiles() {
       const kw = this.filter.trim().toLowerCase()
@@ -307,48 +313,78 @@ export default {
     },
     onFilter() {
       this.searchResults = null
-      this.nodeSearchResults = null
+      this.smmResults = null
     },
     clearSearch() {
       this.searchResults = null
-      this.nodeSearchResults = null
+      this.smmResults = null
       this.query = ''
     },
+    // 统一搜索：一次回车同时搜 md 全文 + 所有 .smm 导图内容（节点/备注/引用）
     async runSearch() {
-      if (this.searchMode === 'nodes') {
-        await this.runNodeSearch()
-      } else {
-        await this.runFullText()
-      }
-    },
-    async runFullText() {
-      this.nodeSearchResults = null
       const q = this.query.trim()
       if (!q) {
         this.searchResults = null
+        this.smmResults = null
         return
       }
+      await Promise.all([this.runFullText(q), this.runSmmSearch(q)])
+    },
+    async runFullText(q) {
       const r = await getServices().workspaceSearch.fullText(q, { limit: 200 })
       this.searchResults = r.ok ? r.data.results || r.data : []
     },
-    async runNodeSearch() {
-      this.searchResults = null
-      const q = this.query.trim().toLowerCase()
-      if (!q || !this.mindMap) {
-        this.nodeSearchResults = null
-        return
+    // 收集工作区内全部 .smm 文件（从树直取，不受文件名过滤影响）
+    collectSmmFiles() {
+      const out = []
+      const walk = nodes => {
+        for (const n of nodes || []) {
+          if (n.isDir) walk(n.children)
+          else if (/\.smm$/i.test(String(n.name || ''))) out.push(n)
+        }
       }
+      walk(this.tree)
+      return out
+    },
+    // 路径同一性判定（Windows 大小写不敏感、斜杠归一）
+    samePath(a, b) {
+      const norm = p => String(p || '').replace(/\\/g, '/').toLowerCase()
+      return norm(a) === norm(b)
+    },
+    async runSmmSearch(q) {
+      const hits = []
+      const svc = getServices()
+      const files = this.collectSmmFiles()
+      for (const f of files) {
+        // 当前激活导图走内存实时数据（含未保存改动），读盘分支跳过
+        if (this.activePath && this.samePath(f.path, this.activePath)) continue
+        try {
+          const rd = await svc.workspaceService.readText(f.path)
+          if (!rd || !rd.ok) continue
+          const decoded = decodeSmm(rd.data.content)
+          searchSmmContainer(decoded, q).forEach(h =>
+            hits.push({ ...h, file: f.path, fileName: f.name })
+          )
+        } catch (e) {
+          // 单个文件损坏/读取失败不影响整体搜索
+        }
+      }
+      // 当前打开的导图：内存实时遍历（含未保存改动；无路径的新建文件也覆盖）
+      const live = this.walkLiveNodes(q)
+      if (live.length) {
+        const name = this.activePath ? this.baseOf(this.activePath) : '当前编辑中'
+        live.forEach(h =>
+          hits.unshift({ ...h, file: this.activePath || '', fileName: name, live: true })
+        )
+      }
+      this.smmResults = hits
+    },
+    // 遍历当前 mindMap 实例（MindMapNode 实例树，走 getData 访问器）
+    walkLiveNodes(q) {
+      const needle = String(q || '').trim().toLowerCase()
+      const root = this.mindMap && this.mindMap.renderer && this.mindMap.renderer.root
+      if (!needle || !root) return []
       const results = []
-      const root = this.mindMap.renderer && this.mindMap.renderer.root
-      if (!root) {
-        this.nodeSearchResults = []
-        return
-      }
-      const stripHtml = html => String(html || '').replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim()
-      const truncate = (str, n = 80) => {
-        str = String(str || '').replace(/\s+/g, ' ').trim()
-        return str.length > n ? str.slice(0, n) + '…' : str
-      }
       const walk = node => {
         const data = node.getData ? node.getData() : node.data || {}
         const text = stripHtml(data.text || '')
@@ -356,7 +392,7 @@ export default {
         const refs = (data._mindlink && Array.isArray(data._mindlink.refs) ? data._mindlink.refs : [])
         const refText = refs.map(r => [r.title, r.cachedContent].filter(Boolean).join('\n')).join('\n')
         const hay = (text + '\n' + note + '\n' + refText).toLowerCase()
-        if (hay.includes(q)) {
+        if (hay.includes(needle)) {
           const path = node.getAncestorNodes
             ? node.getAncestorNodes().map(n => stripHtml(n.getData('text'))).concat([text]).join(' > ')
             : text
@@ -376,11 +412,16 @@ export default {
         children.forEach(walk)
       }
       walk(root)
-      this.nodeSearchResults = results
+      return results
     },
     openNodeHit(hit) {
-      if (!this.mindMap || !hit.uid) return
-      this.mindMap.execCommand('GO_TARGET_NODE', hit.uid)
+      // 当前已打开文件的节点：直接画布内定位；其余先打开对应文件
+      const isCurrent = hit.live || (hit.file && this.activePath && this.samePath(hit.file, this.activePath))
+      if (isCurrent && hit.uid && this.mindMap) {
+        this.mindMap.execCommand('GO_TARGET_NODE', hit.uid)
+        return
+      }
+      if (hit.file) this.openFile({ path: hit.file, name: hit.fileName })
     },
     openHit(hit) {
       const root = this.root
@@ -473,43 +514,46 @@ export default {
     }
   }
 
-  // 左侧蓝色小药丸（仿右侧 sidebarTrigger）
+  // 左侧蓝色竖条（与右侧 SidebarTrigger 的 toggleShowBtn 同款交互/外观）：
+  // 宽 28px 大部分藏起、只露出一条蓝缝，悬停时滑出更多；白色小箭头指示方向。
   .wsPill {
     position: fixed;
-    left: 0;
     top: 50%;
     transform: translateY(-50%);
-    width: 8px;
+    width: 28px;
     height: 60px;
     background: #409eff;
-    border-top-right-radius: 6px;
-    border-bottom-right-radius: 6px;
     cursor: pointer;
     z-index: 100;
     display: flex;
     align-items: center;
-    justify-content: center;
-    transition: left 0.2s ease, border-radius 0.2s ease;
+    transition: left 0.2s ease;
+    border-top-right-radius: 10px;
+    border-bottom-right-radius: 10px;
 
+    // 展开态：面板可见，蓝条贴在面板右缘（240px），露出 ~6px，箭头朝左（点击收起）
+    left: 234px;
+    justify-content: flex-end;
+    padding-right: 2px;
     &:hover {
-      width: 12px;
+      left: 226px; // 悬停滑出更多（露出 ~14px）
     }
-
-    &.collapsed {
-      left: 0;
-      border-radius: 0 6px 6px 0;
-    }
-
-    &:not(.collapsed) {
-      left: 240px;
-      border-radius: 6px 0 0 6px;
-    }
-
     .wsPillIcon {
       color: #fff;
-      font-size: 11px;
-      font-weight: bold;
-      transform: scale(0.85);
+      font-size: 12px;
+      transform: rotateZ(180deg);
+      transition: transform 0.1s;
+    }
+
+    // 收起态：面板隐藏，蓝条贴屏幕左缘，露出 ~10px，箭头朝右（点击展开）
+    &.collapsed {
+      left: -18px;
+      &:hover {
+        left: -8px; // 悬停滑出更多（露出 ~20px）
+      }
+      .wsPillIcon {
+        transform: rotateZ(0deg);
+      }
     }
   }
 
@@ -564,27 +608,6 @@ export default {
       outline: none;
       &:focus {
         border-color: var(--macos-accent);
-      }
-    }
-    .wsSearchTabs {
-      display: flex;
-      align-items: center;
-      gap: 4px;
-      .wsTab {
-        flex: 1;
-        text-align: center;
-        padding: 3px 0;
-        font-size: 12px;
-        border-radius: 4px;
-        cursor: pointer;
-        color: var(--macos-text-2);
-        &:hover {
-          background: var(--macos-hover);
-        }
-        &.active {
-          background: var(--macos-accent);
-          color: #fff;
-        }
       }
     }
   }
@@ -647,6 +670,12 @@ export default {
         cursor: pointer;
         color: var(--macos-accent);
       }
+    }
+    .wsGroupSub {
+      padding: 2px 8px;
+      font-size: 11px;
+      font-weight: 600;
+      color: var(--macos-text-2);
     }
     .wsHit {
       padding: 4px 8px;

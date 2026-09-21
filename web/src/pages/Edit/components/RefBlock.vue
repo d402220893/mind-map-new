@@ -50,7 +50,13 @@
         @blur="commit"
         @input="scheduleCommit"
       ></textarea>
-      <pre v-else class="rbContent">{{ displayContent }}</pre>
+      <template v-else>
+        <!-- 默认折叠为 3 行预览，避免引用块在视觉上像"第二个输入框" -->
+        <pre class="rbContent" :class="{ rbCollapsed: !expanded }">{{ displayContent }}</pre>
+        <span class="rbExpand" @click="expanded = !expanded">
+          {{ expanded ? '▴ 收起' : '▾ 展开全部' }}
+        </span>
+      </template>
     </div>
     <div class="rbFoot" v-if="editing">
       <span class="rbState">{{ committing ? '提交中…' : '未提交' }}</span>
@@ -91,6 +97,7 @@ export default {
     return {
       status: 'loading',
       editing: false,
+      expanded: false,
       draft: '',
       content: '',
       committing: false,
@@ -379,6 +386,24 @@ export default {
       white-space: pre-wrap;
       font-size: 12px;
       line-height: 1.6;
+      &.rbCollapsed {
+        max-height: 62px; // 约 3 行预览
+        overflow: hidden;
+        // 底部渐隐，暗示可展开
+        -webkit-mask-image: linear-gradient(to bottom, #000 55%, transparent 100%);
+        mask-image: linear-gradient(to bottom, #000 55%, transparent 100%);
+      }
+    }
+    .rbExpand {
+      display: inline-block;
+      margin-top: 2px;
+      font-size: 11px;
+      cursor: pointer;
+      color: var(--macos-accent);
+      user-select: none;
+      &:hover {
+        text-decoration: underline;
+      }
     }
   }
   .rbFoot {

@@ -82,7 +82,7 @@ function showErrorBanner() {
     msg.textContent =
       '启动时有 ' + startupErrors.length + ' 项异常（功能可能不完整）：' +
       (first ? first.kind + ' — ' + first.text.split('\n')[0].slice(0, 160) : '') +
-      '　完整日志见程序目录 resources/renderer.log'
+      '　按 Ctrl+Shift+I 打开控制台查看完整堆栈'
     const close = document.createElement('span')
     close.textContent = '✕'
     close.style.cssText = 'position:absolute;right:10px;top:4px;cursor:pointer;font-size:13px'
@@ -114,7 +114,7 @@ function renderStartupFailure() {
   title.style.cssText = 'font-size:16px;font-weight:600;color:#d93026;margin-bottom:10px'
   const hint = document.createElement('div')
   hint.textContent =
-    '请把下面这段文字完整截图或复制反馈；完整日志在程序目录 resources/renderer.log。'
+    '请把下面这段文字完整截图或复制反馈；按 Ctrl+Shift+I 打开控制台可查看完整堆栈。'
   hint.style.cssText = 'color:#5c6670;margin-bottom:14px'
   const pre = document.createElement('pre')
   pre.textContent = startupErrors.length
@@ -173,8 +173,15 @@ const initApp = () => {
   app.config.globalProperties.$bus = bus
 
   // Vue 组件内未捕获的渲染/生命周期异常（默认只 console.error，这里补上统一前缀与留档）
+  // 附加组件名：prod 构建下 Vue 只给 error-reference 编号（如 runtime-5=native event handler），
+  // 不带组件名时根本无法定位是哪个组件的事件处理器抛的。
   app.config.errorHandler = (err, instance, info) => {
-    recordError('vue.' + (info || 'error'), err)
+    let comp = ''
+    try {
+      const t = instance && instance.$ && instance.$.type
+      comp = t ? String(t.name || t.__name || '') : ''
+    } catch (e) {}
+    recordError('vue.' + (info || 'error') + (comp ? '@' + comp : ''), err)
   }
 
   app.use(router)
