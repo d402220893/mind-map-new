@@ -48,6 +48,13 @@ export function setNodeRefs(node, refs) {
   } else {
     data[REF_KEY] = ml
   }
+  // ⚠️ 触发节点重绘：simple-mind-map 的 SET_NODE_DATA 命令只合并数据、不重绘，
+  // 而备注图标在节点 render 阶段由 createNoteNode 决定（已改为 refs 也显示图标）。
+  // 引用增删后若不主动重绘，"备注标识"不会即时出现/消失（setNote 走 setNodeDataRender 才会重绘）。
+  // 仅对运行时 MindMapNode 实例生效（裸节点无 reRender，本就是快照写回场景，无需重绘）。
+  if (node && typeof node.reRender === 'function') {
+    try { node.reRender() } catch (e) {}
+  }
   return true
 }
 

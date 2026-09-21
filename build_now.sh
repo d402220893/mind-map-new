@@ -80,6 +80,12 @@ else
   echo "  提示：漏导出 / import 环 / 分层越界 / 预算不足 都会在此拦下，请先修根因，不要绕过。" | tee -a "$LOG"
   exit 1
 fi
+# === [0.8/5] 给 simple-mind-map 打补丁：备注图标在节点含引用(_mindlink.refs)时也出现 ===
+# 根因：v2.0.13 修复"插入引用后节点无备注标识/无法预览"需改 simple-mind-map 的
+# createNoteNode，但 node_modules 不入库、npm install 会覆盖，故每次出包前幂等重放
+# （见 scripts/patch-smm-note-indicator.js）。务必放在 vue build 之前、ensure_deps 之后。
+echo "=== [0.8/5] simple-mind-map 补丁（引用也显示备注标识）===" | tee -a "$LOG"
+"$NODE" E:/03_学习文件/mind-map-main/scripts/patch-smm-note-indicator.js 2>&1 | tee -a "$LOG"
 echo "=== [1/5] vue build ===" | tee -a "$LOG"
 cd /e/03_学习文件/mind-map-main/web
 # 清 webpack 缓存：陈旧缓存会导致 Edit.vue 等改动未重编译，产出"假新包"（时间戳新但内容旧），

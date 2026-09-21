@@ -344,6 +344,38 @@ test('addRef 对运行时节点实例生效：写进 nodeData.data._mindlink.ref
   assert.strictEqual(getNodeRefs(inst)[0].refId, 'r0')
 })
 
+// ── 引用增删后必须触发节点重绘（否则"备注标识"不会即时出现/消失）─────────────
+// simple-mind-map 的 SET_NODE_DATA 仅合并数据、不重绘；备注图标在 render 阶段
+// 的 createNoteNode 决定（已改为 refs 也显示图标）。故 setNodeRefs 必须主动
+// 调 node.reRender()。本组用例锁定该行为，防止回归。
+
+// 带 reRender 的实例（复刻 MindMapNode）
+function mindMapNodeWithRender() {
+  const base = mindMapNode()
+  base.reRender = function () { this._reRendered = (this._reRendered || 0) + 1 }
+  return base
+}
+
+test('addRef 对运行时节点实例会触发 reRender（标识即时出现）', () => {
+  const inst = mindMapNodeWithRender()
+  addRef(inst, { file: 'a.md', sectionId: 's1', title: 'T', cachedContent: 'C' })
+  assert.strictEqual(inst._reRendered, 1, 'addRef 后必须主动重绘一次')
+})
+
+test('removeRef 对运行时节点实例会触发 reRender（标识即时消失）', () => {
+  const inst = mindMapNodeWithRender()
+  const r = addRef(inst, { file: 'a.md', sectionId: 's1', title: 'T', cachedContent: 'C' })
+  const afterAdd = inst._reRendered
+  removeRef(inst, r.refId)
+  assert.strictEqual(inst._reRendered, afterAdd + 1, 'removeRef 后必须再重绘一次')
+})
+
+test('裸节点（无 reRender）不抛且不被重绘', () => {
+  const n = node()
+  assert.doesNotThrow(() => addRef(n, { file: 'a.md', sectionId: 's1' }))
+  assert.doesNotThrow(() => removeRef(n, 'r0'))
+})
+
 test('运行时实例：addRef 去重 + title 回填', () => {
   const inst = mindMapNode()
   addRef(inst, { file: 'a.md', sectionId: 's1' })

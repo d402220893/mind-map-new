@@ -1464,7 +1464,25 @@ export default {
         nodeNoteTooltipZIndex: 1000,
         customNoteContentShow: {
           show: (content, left, top, node) => {
-            this.$bus.$emit('showNoteContent', content, left, top, node)
+            // 合并「备注正文」与「章节引用」：仅引用、无 data.note 的节点也要能悬停预览被引用内容
+            let md = typeof content === 'string' ? content : ''
+            try {
+              const ml = node && typeof node.getData === 'function' ? node.getData('_mindlink') : null
+              const refs = ml && Array.isArray(ml.refs) ? ml.refs : []
+              if (refs.length) {
+                const refMd = refs.map(r => {
+                  const title =
+                    (r && r.title) ||
+                    (r && r.file
+                      ? r.file + (r.sectionPath && r.sectionPath.length ? ' · ' + r.sectionPath.join('/') : '')
+                      : '引用')
+                  const body = String((r && r.cachedContent) || '').trim()
+                  return '> 📎 **' + title + '**' + (body ? '\n> ' + body.replace(/\n/g, '\n> ') : '')
+                }).join('\n\n')
+                md = (md ? md + '\n\n' : '') + refMd
+              }
+            } catch (e) {}
+            this.$bus.$emit('showNoteContent', md, left, top, node)
           },
           hide: () => {
             this.$bus.$emit('hideNoteContent')
