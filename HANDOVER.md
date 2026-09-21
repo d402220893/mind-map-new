@@ -1449,7 +1449,8 @@ onChange → mdDoc.setContent + scheduleSave
 
 ## 35. 2026-09-21（续）：UI 打磨 — 备注弹窗/文件树栏/底部状态栏
 
-> 状态：**已改源码 + 回归测试 976/976 全绿（check-arch EXIT 0），待 web build 通过、bump v2.0.14 后出包部署**。
+> 状态：**已完成并出包 v2.0.14，部署 D 盘运行真源，产物核验通过**。
+> 回归测试 976/976 全绿（check-arch EXIT 0）；`build-info.json` = `{version:"2.0.14", gitHash:"b3cb603"}`。
 > 触发：用户给出 5 条 UI 反馈与截图。
 
 ### 35.1 改动清单
@@ -1482,7 +1483,36 @@ onChange → mdDoc.setContent + scheduleSave
 - `cd web && npm test` → **976/976 全绿**；`check-arch` EXIT 0。
 - 回归测试已同步更新（`note-img-lightbox.test.mjs` + `view-service-wiring.test.mjs`）。
 
-### 35.3 待完成
-- 待 `npm run build` 通过（任务 rBtXvr）。
-- bump `electron-app/package.json` 2.0.13 → 2.0.14，`make_installer.nsi` 同步。
-- `SKIP_BUMP=1 bash build_now.sh` 出包并部署 D 盘真源。
+### 35.3 补遗与最终出包（v2.0.14）
+- 节点搜索点击误触发 `show_search` 弹窗：在 `WorkspacePanel.openNodeHit` 中移除 `$bus.$emit('show_search')`，避免点击文件树节点搜索结果时又打开全局搜索框。
+- 已 bump `electron-app/package.json` 2.0.13 → 2.0.14，`make_installer.nsi` 同步。
+- `SKIP_BUMP=1 bash build_now.sh` 通过并部署 D 盘真源：`gitHash` 最终为 `b3cb603`，`build-info.json` = v2.0.14。
+- 产物：`electron-app/dist-electron2/思绪思维导图 Setup.exe`（约 73.5 MB）。
+
+### 35.4 部署产物核验（防陈旧缓存假新包）
+直接读部署目录 bundle（非源码），逐项确认 5 条改动真进了包：
+
+| 标记 | 含义 | 结果 |
+|---|---|---|
+| `wsPill` | 文件树蓝色药丸展开/收起按钮 | ✅ |
+| `noteToolbar` | 备注弹窗合并后的顶部单行工具栏 | ✅ |
+| `!statusBar` | 底部状态栏已从渲染中移除 | ✅ |
+| `activeMindMap` | Index → WorkspacePanel 透传 mindMap 实例 | ✅ |
+| `GO_TARGET_NODE` | 节点搜索结果点击定位节点 | ✅ |
+| `节点/备注` | 搜索区「文件 / 节点·备注」切换标签 | ✅ |
+
+- asar 与本地 `_appstage.asar` **逐字节一致**；`resources/app/dist` 与打包源文件集合一致（`deploy-assert OK`）。
+- 启动诊断（防白屏兜底）已编译进 bundle；asar 内 `dist/index.html` 已无 51.la 跟踪脚本（`51la-strip-assert OK`）。
+
+### 35.5 提交记录
+- `9316997` ui: 备注弹窗/文件树栏/底部状态栏 5 项体验优化
+- `eabd229` chore(release): bump 2.0.13 -> 2.0.14
+- `b3cb603` fix: 节点搜索结果点击不再误触发 show_search 弹窗
+- `docs(handover)`: 本节 §35 更新（状态转已完成 + 产物核验表）
+
+### 35.6 真机待复测（用户侧）
+1. 备注弹窗：只有一个编辑器框，顶部一行工具栏（语言选择/插入代码块 + 引用章节/刷新）；
+2. 文件树栏：折叠后左缘出现蓝色小药丸按钮，点击展开/收起；展开/收起时画布无空白偏移；
+3. 文件树栏搜索：切到「节点·备注」可搜节点文本/备注/引用缓存，点击结果定位并居中节点；
+4. 文件树栏整体风格与右侧菜单栏一致（玻璃拟态）；
+5. 底部不再显示文件名/状态栏，画布铺满不被遮挡。
