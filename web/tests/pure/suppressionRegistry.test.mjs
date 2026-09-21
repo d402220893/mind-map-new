@@ -24,9 +24,10 @@ test('③ hit 是 async 且返回布尔（消费端 await 语义）', async () =
 })
 
 test('④ TTL 过期后不命中', async () => {
-  const reg = createSuppressionRegistry({ ttl: 20 })
+  let t = 0
+  const reg = createSuppressionRegistry({ ttl: 20, now: () => t })
   reg.register('/a.md', 'body')
-  await new Promise(r => setTimeout(r, 50))
+  t = 21
   assert.strictEqual(await reg.hit('/a.md'), false)
 })
 
@@ -38,21 +39,27 @@ test('⑤ TTL 内持续命中（不会被"一次性消费"清掉）', async () =
 })
 
 test('⑥ 过期条目被惰性清理（重登记后恢复命中）', async () => {
-  const reg = createSuppressionRegistry({ ttl: 20 })
+  let t = 0
+  const reg = createSuppressionRegistry({ ttl: 20, now: () => t })
   reg.register('/a.md', 'v1')
-  await new Promise(r => setTimeout(r, 50))
+  t = 21
   assert.strictEqual(await reg.hit('/a.md'), false)
   reg.register('/a.md', 'v2')
   assert.strictEqual(await reg.hit('/a.md'), true)
 })
 
 test('⑦ 同路径重复登记刷新 TTL（连写场景）', async () => {
-  const reg = createSuppressionRegistry({ ttl: 80 })
+  // 假时钟替代真实 setTimeout：本用例的语义是"等待必须短于 TTL 余量"，
+  // 真实定时器在负载下会抖（曾把 80ms TTL 的 30ms 余量吃掉 → 出包门禁假失败，2026-09-21）
+  let t = 0
+  const reg = createSuppressionRegistry({ ttl: 80, now: () => t })
   reg.register('/a.md', 'v1')
-  await new Promise(r => setTimeout(r, 50))
-  reg.register('/a.md', 'v2')
-  await new Promise(r => setTimeout(r, 50))
+  t = 50
+  reg.register('/a.md', 'v2') // 过期时间由 80 刷到 130
+  t = 100
   assert.strictEqual(await reg.hit('/a.md'), true, '第二次登记应把过期时间往后推')
+  t = 131
+  assert.strictEqual(await reg.hit('/a.md'), false, '超过刷新后的过期时间仍应失效')
 })
 
 test('⑧ 多路径互不干扰', async () => {

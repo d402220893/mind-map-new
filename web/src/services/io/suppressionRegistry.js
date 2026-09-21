@@ -5,15 +5,18 @@ import { sha1hex } from '../hash.js'
 
 export const createSuppressionRegistry = (ctx = {}) => {
   const ttl = (ctx.ttl != null ? ctx.ttl : 1500)
+  // 时钟可注入（默认 Date.now，生产行为不变）：TTL 用例若依赖真实 setTimeout 凑时间，
+  // 余量只有几十 ms，机器一忙就会抖成假失败（2026-09-21 出包门禁被 ⑦ 拦下的根因）。
+  const now = typeof ctx.now === 'function' ? ctx.now : () => Date.now()
   const table = new Map() // absPath -> { hash, until }
   function register(absPath, content) {
     const hash = sha1hex(String(content))
-    table.set(absPath, { hash, until: Date.now() + ttl })
+    table.set(absPath, { hash, until: now() + ttl })
   }
   async function hit(absPath) {
     const e = table.get(absPath)
     if (!e) return false
-    if (Date.now() > e.until) { table.delete(absPath); return false }
+    if (now() > e.until) { table.delete(absPath); return false }
     return true
   }
   function clear() { table.clear() }
