@@ -156,7 +156,12 @@ if [ -z "$SKIP_NSIS" ]; then
   # 故改用独立输出目录 dist-electron2 避开被锁旧目录。
   # ⚠️ 不再把 Setup.exe 拷回 dist-electron/：那样会得到两份完全相同的安装包（用户只想要一份）。
   #    安装包唯一产物固定为 electron-app/dist-electron2/思绪思维导图 Setup.exe
-  timeout 600 npm run dist -- --config.directories.output=dist-electron2 >> "$LOG" 2>&1
+  # ⚠️ compression=store（只打包不 7z 压缩）：本机 Defender 实时扫描会拦截 app-builder.exe 的
+  #    lzma 压缩子进程，导致 packaging 阶段死锁（app-builder.exe 僵死、无任何产出，exit 143）。
+  #    实测 normal→压缩 18 分钟无产出；store→54 秒完成，安装包仅大 ~1MB，完全可接受。
+  # ⚠️ 不套 timeout：timeout 杀不死 app-builder 子进程（会留下僵死 PID 需手动 taskkill），
+  #    且会误判为构建失败。store 模式已足够快，无需超时。
+  npm run dist -- --config.directories.output=dist-electron2 --config.compression=store >> "$LOG" 2>&1
   RC=$?
   echo "builder rc=$RC at $(date +%T)" | tee -a "$LOG"
   if [ $RC -ne 0 ]; then echo "NSIS 构建失败" | tee -a "$LOG"; exit 1; fi
