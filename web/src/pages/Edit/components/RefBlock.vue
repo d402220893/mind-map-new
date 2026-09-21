@@ -252,7 +252,11 @@ export default {
 <style lang="less" scoped>
 // v1.6 视觉弱化（§v1.6 2.4）：去掉四边边框（"像输入框"的主因），
 // 改为左侧 4px 紫色竖线 + 浅紫背景，读作「引用」而非「第二个输入框」。
+// 2026-09-21：卡片改纵向 flex —— 弹窗高度翻倍后卡片撑满引用区，
+// 操作行贴卡片底部（不再浮在中间）。
 .refBlock {
+  display: flex;
+  flex-direction: column;
   border: none;
   border-left: 4px solid rgba(124, 58, 237, 0.55);
   border-radius: 6px;
@@ -368,11 +372,12 @@ export default {
   }
 
   // 工具栏改为无边框的轻量文字链接，与编辑区观感一致（不再像独立按钮组）
+  // margin: auto 0 0 —— 卡片撑高后操作行贴底，内容少时不悬在中间
   .rbTools {
     display: flex;
     flex-wrap: wrap;
     gap: 12px;
-    margin: 4px 0;
+    margin: auto 0 0;
     .rbBtn {
       font-size: 11px;
       padding: 0;
@@ -412,18 +417,20 @@ export default {
       resize: vertical;
     }
     // 内容读起来像「引用备注」（左侧细线 + 弱化色），不像输入框
+    // 2026-09-21 弹窗高度翻倍：预览可视行数同步放大（折叠 62px≈3 行 → 150px≈7 行；
+    // 展开上限 200px → 320px）
     .rbContent {
       margin: 0;
       padding-left: 8px;
       border-left: 2px solid var(--macos-divider, #e4e7ed);
       color: var(--macos-text-2);
-      max-height: 200px;
+      max-height: 320px;
       overflow: auto;
       white-space: pre-wrap;
       font-size: 12px;
       line-height: 1.6;
       &.rbCollapsed {
-        max-height: 62px; // 约 3 行预览
+        max-height: 150px; // 约 7 行预览
         overflow: hidden;
         // 底部渐隐，暗示可展开
         -webkit-mask-image: linear-gradient(to bottom, #000 55%, transparent 100%);

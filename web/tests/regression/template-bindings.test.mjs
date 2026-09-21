@@ -361,6 +361,20 @@ test('[备注二选一] NodeNote 写备注/引用章节互斥，永不共存', (
   assert.ok(!/height:\s*'500px'/.test(vue), '编辑器不应再固定 500px 高度')
   assert.ok(/\.toastui-editor-ww-container\s*\{[^}]*min-height/s.test(vue), '编辑区应有 min-height 保底编辑落点')
   assert.ok(/\.toastui-editor-ww-container\s*\{[^}]*max-height/s.test(vue), '编辑区应有 max-height 过长内部滚动')
+  // 2026-09-21 反馈「框再大一点，高度增加一倍」：弹窗高度翻倍，
+  // ref 模式（引用区）与 note 模式（编辑区）最小高度同时提到 400px，两模式等高
+  assert.ok(
+    /\.refArea\s*\{[^}]*min-height:\s*400px/s.test(vue),
+    '引用区应有 400px 最小高度（弹窗高度翻倍）'
+  )
+  assert.ok(
+    />\s*\.refBlock\s*\{[^}]*flex:\s*1/s.test(vue),
+    '引用卡片应撑满引用区（占满放大的弹窗）'
+  )
+  assert.ok(
+    /\.toastui-editor-ww-container\s*\{[^}]*min-height:\s*400px/s.test(vue),
+    '编辑区最小高度应与引用区等高(400px)'
+  )
 })
 
 test('[引用块视觉弱化] RefBlock 左紫竖线+浅紫底，去四边框', () => {
@@ -374,6 +388,13 @@ test('[引用块视觉弱化] RefBlock 左紫竖线+浅紫底，去四边框', (
   assert.ok(/toggleEdit/.test(vue), '✏️ 按钮应绑定 toggleEdit')
   // 警示只在编辑态显示（只读浏览不占视觉）
   assert.ok(/v-if="editing"[^>]*class="rbWarn"|class="rbWarn"[^>]*v-if="editing"|v-if="editing"\s*class="rbWarn"/.test(vue), 'rbWarn 应仅在编辑态渲染')
+  // 2026-09-21 弹窗高度翻倍后卡片同步放大：纵向 flex 撑满、操作行贴底、预览行数放大
+  assert.ok(
+    /\.refBlock\s*\{[^}]*display:\s*flex[^}]*flex-direction:\s*column/s.test(vue),
+    '引用卡片应改纵向 flex（撑满引用区、操作行贴底）'
+  )
+  assert.ok(/\.rbTools\s*\{[^}]*margin:\s*auto/s.test(vue), '操作行应贴卡片底部(margin:auto)')
+  assert.ok(/\.rbCollapsed\s*\{[^}]*max-height:\s*150px/s.test(vue), '折叠预览应放大到 150px（约 7 行）')
   // 展开预览契约见上方「[引用块折叠]」既有用例，此处不重复
 })
 
@@ -401,11 +422,26 @@ test('[live搜索] mindMap 实例经 mindmap-inited 事件广播（$refs 非响�
 test('[蓝色竖条] wsPill 与右侧 SidebarTrigger 同款外观', () => {
   const vue = read(new URL('pages/Edit/components/WorkspacePanel.vue', SRC))
   assert.ok(/iconjiantouyou/.test(vue), 'wsPill 应使用与右侧一致的箭头图标 iconjiantouyou')
-  assert.ok(/width:\s*35px/.test(vue), 'wsPill 应与右侧同宽(35px)悬停滑出式蓝条')
+  assert.ok(/width:\s*35px/.test(vue), 'wsPill 应与右侧同宽(35px)')
   assert.ok(/border-top-right-radius:\s*10px/.test(vue), '蓝条圆角应与右侧一致(10px)')
   assert.ok(/<Teleport to="body">/.test(vue), '蓝条必须 Teleport 到 body（否则被 fixed 画布盖住，收起后找不到）')
   assert.ok(/z-index:\s*3000/.test(vue), '蓝条 z-index 必须高于画布')
-  assert.ok(/left:\s*-27px/.test(vue), '收起态应贴左缘露出 8px 蓝缝')
+  // ⚠️ 2026-09-21 真根因：Teleport 到 body 后祖先不再是 .workspacePanel，scoped 编译出的
+  //    `.workspacePanel .wsPill[data-v-x]` 与 DOM 结构不匹配 → 规则整条失效 → 蓝块无样式。
+  //    用户反馈「加一个蓝色的块，隐藏文件树栏」即此。规则必须落在非 scoped 样式块里。
+  const iScoped = vue.indexOf('<style lang="less" scoped>')
+  const iGlobal = vue.lastIndexOf('<style lang="less">')
+  assert.ok(
+    iScoped > -1 && iGlobal > iScoped,
+    '必须有独立的非 scoped <style lang="less"> 块承载 .wsPill（Teleport 节点不受 scoped 保护）'
+  )
+  const globalCss = vue.slice(iGlobal)
+  assert.ok(/^\.wsPill\s*\{/m.test(globalCss), 'wsPill 基本规则必须写在全局样式块内')
+  assert.ok(/left:\s*240px/.test(globalCss), '展开态：蓝块贴文件栏右缘(240px)完全可见')
+  assert.ok(
+    /collapsed\s*\{[^}]*left:\s*0/s.test(globalCss),
+    '收起态：蓝块贴屏幕左缘(left:0)'
+  )
 })
 
 test('[错误诊断] renderer.log 改写到 userData（Program Files 不可写）', () => {

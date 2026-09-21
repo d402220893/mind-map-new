@@ -533,51 +533,12 @@ export default {
     }
   }
 
-  // 左侧蓝色竖条（与右侧 SidebarTrigger 的 toggleShowBtn 完全同款）：
-  // 35px 宽 / 60px 高 / #409eff / 圆角 10px；常态只露出一条蓝缝，悬停滑出更多；白色小箭头指示方向。
-  // ⚠️ 已 Teleport 到 body + z-index 3000：画布 .editContainer 是 position:fixed 铺满窗口
-  //    且 DOM 在面板之后，pill 若留在面板层叠上下文内会被画布盖住（收起态 → "隐藏后找不到"）。
-  .wsPill {
-    position: fixed;
-    top: 50%;
-    transform: translateY(-50%);
-    width: 35px;
-    height: 60px;
-    background: #409eff;
-    cursor: pointer;
-    z-index: 3000;
-    display: flex;
-    align-items: center;
-    justify-content: flex-end;
-    padding-right: 4px;
-    transition: left 0.2s ease;
-    border-top-right-radius: 10px;
-    border-bottom-right-radius: 10px;
-
-    // 展开态：面板可见（宽 240px），蓝条贴面板右缘只露出 6px，箭头朝左（点击收起）
-    left: 211px;
-    &:hover {
-      left: 223px; // 悬停滑出更多（露出 ~18px）
-    }
-    .wsPillIcon {
-      color: #fff;
-      font-size: 12px;
-      transform: rotateZ(180deg);
-      transition: transform 0.1s;
-    }
-
-    // 收起态：面板隐藏，蓝条贴屏幕左缘露出 8px，箭头朝右（点击展开）
-    &.collapsed {
-      left: -27px;
-      &:hover {
-        left: -17px; // 悬停滑出更多（露出 ~18px）
-      }
-      .wsPillIcon {
-        transform: rotateZ(0deg);
-      }
-    }
-  }
-
+  // 左侧蓝色竖条（与右侧 SidebarTrigger 的 toggleShowBtn 同款尺寸）：
+  // 35px 宽 / 60px 高 / #409eff / 圆角 10px，白色小箭头指示方向。
+  // ⚠️ 样式必须写在文件末尾的「非 scoped」样式块里：wsPill 通过 <Teleport to="body">
+  //    挂到 body，祖先不再是 .workspacePanel，而 scoped 会编译成
+  //    `.workspacePanel .wsPill[data-v-x]`（后代关系）→ 整条失配 → 蓝条完全无样式
+  //    （2026-09-21 用户反馈「加一个蓝色的块，隐藏文件树栏」即此根因）。
   .wsHeader {
     height: 34px;
     flex: none;
@@ -772,6 +733,55 @@ export default {
       &:hover {
         background-color: var(--macos-hover-strong);
       }
+    }
+  }
+}
+</style>
+
+<style lang="less">
+// ⚠️ 非 scoped（全局）样式块：承载文件栏折叠蓝块 .wsPill。
+// 它通过 <Teleport to="body"> 渲染在 body 下（为了不被 position:fixed 铺满窗口的
+// 画布 .editContainer 盖住），祖先不再是 .workspacePanel —— 若写在 scoped 块里，
+// Vue 会编译成后代选择器 `.workspacePanel .wsPill[data-v-x]`，与 Teleport 后的
+// DOM 结构不匹配，规则整条失效 → 蓝块无宽高无背景，用户看不到任何隐藏入口
+// （2026-09-21「加一个蓝色的块，隐藏文件树栏」的真根因）。
+.wsPill {
+  position: fixed;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 35px;
+  height: 60px;
+  background: #409eff;
+  cursor: pointer;
+  z-index: 3000; // 必须高于 fixed 铺满的画布
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-top-right-radius: 10px;
+  border-bottom-right-radius: 10px;
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.18);
+  user-select: none;
+  transition: left 0.2s ease, background 0.15s ease;
+
+  // 展开态：文件栏宽 240px，蓝块紧贴其右缘（不遮挡文件树文字）
+  left: 240px;
+
+  &:hover {
+    background: #66b1ff;
+  }
+
+  .wsPillIcon {
+    color: #fff;
+    font-size: 12px;
+    transform: rotateZ(180deg); // 箭头朝左 = 点击收起文件栏
+    transition: transform 0.1s;
+  }
+
+  // 收起态：文件栏宽 0，蓝块贴屏幕左缘，箭头朝右 = 点击展开
+  &.collapsed {
+    left: 0;
+    .wsPillIcon {
+      transform: rotateZ(0deg);
     }
   }
 }

@@ -599,11 +599,20 @@ export default {
   }
 
   // ref 模式：引用块列表容器（无外框，块自带左紫竖线+浅紫底）
+  // 弹窗高度翻倍（2026-09-21 反馈「框再大一点，高度增加一倍」）：
+  // 引用区最小高度 400px（原内容区仅约 170px），弹窗整体从约 285px → 约 580px。
   .refArea {
     display: flex;
     flex-direction: column;
     gap: 8px;
     margin-bottom: 0;
+    min-height: 400px;
+
+    // 引用卡片撑满引用区（读作一整块引用内容，而非浮在上方的小卡片）
+    > .refBlock {
+      flex: 1;
+      min-height: 0;
+    }
   }
 
   // ref 模式空态
@@ -696,11 +705,11 @@ export default {
   }
 
   // 编辑器自适应高度（配合 initEditor height:'auto'）：
-  // 空内容时给足编辑落点(min-height)，引用条紧随其后读作一个框；
-  // 过长时编辑区内部滚动(max-height)，不把整个弹窗撑得超高。
+  // 空内容时给足编辑落点(min-height)，过长时编辑区内部滚动(max-height)。
+  // 2026-09-21 弹窗高度翻倍：min-height 140px → 400px，与 ref 模式（引用区 400px）等高。
   .toastui-editor-ww-container {
-    min-height: 140px;
-    max-height: 46vh;
+    min-height: 400px;
+    max-height: 56vh;
   }
 }
 
