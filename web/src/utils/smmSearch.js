@@ -70,6 +70,23 @@ export function searchMindTree(rootNode, q) {
 }
 
 /**
+ * 解包 sheet.data 到裸根节点。
+ * ⚠️ 真实落盘的 sheet.data 是 simple-mind-map `getData(true)` 的**包装形状**
+ *    `{ layout, root, theme, view }`（root 才是节点树）；直接用包装对象 walk，
+ *    它没有 .data/.children → 整棵树被跳过 → 磁盘上的 .smm 全部零命中，
+ *    只剩当前打开文件的内存实时遍历有结果（2026-09-22 用户反馈
+ *    「搜索只能搜到一个思维导图」即此根因）。
+ * 兼容：裸节点 / {root:节点} / {data:{root:节点}} / {data:节点}（extractMindmapData 的各形态）。
+ */
+export function unwrapRootNode(d) {
+  if (!d || typeof d !== 'object') return d
+  if (Array.isArray(d.children) || (d.data && typeof d.data === 'object' && 'text' in d.data)) return d
+  if (d.root && typeof d.root === 'object') return unwrapRootNode(d.root)
+  if (d.data && typeof d.data === 'object' && !('text' in d.data)) return unwrapRootNode(d.data)
+  return d
+}
+
+/**
  * 遍历 decodeSmm 产物的全部 sheet，返回带 sheet 归属的命中列表。
  * @param {{sheets:Array<{id:string,name?:string,data:object}>, activeId?:string}} decoded
  * @param {string} q 关键词
@@ -80,7 +97,7 @@ export function searchSmmContainer(decoded, q) {
   const out = []
   decoded.sheets.forEach((sheet, idx) => {
     const sheetName = sheet.name || 'Sheet' + (idx + 1)
-    searchMindTree(sheet.data, q).forEach(h => {
+    searchMindTree(unwrapRootNode(sheet.data), q).forEach(h => {
       out.push({ ...h, sheetId: sheet.id || '', sheetName })
     })
   })

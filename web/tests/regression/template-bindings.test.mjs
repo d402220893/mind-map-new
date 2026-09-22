@@ -504,6 +504,10 @@ test('[统一搜索] WorkspacePanel 去掉模式切换，单框同搜 md+smm', (
   assert.ok(/baseNameOf\(hit\.rel\)/.test(vue), 'md 命中应只显示文件名不带路径')
   assert.ok(/& \+ \.wsHit\s*\{[^}]*border-top/s.test(vue), '不同文件命中之间应有横线分隔')
   assert.ok(/\.wsHitLine\s*\{[^}]*line-height:\s*1\.8/s.test(vue), '命中行行高应加大到 1.8')
+  // 导图命中按文件分组：同一文件的命中归并到同一文件名下（2026-09-22 用户反馈）
+  assert.ok(/groupSmmHits/.test(vue), '应实现 groupSmmHits 按文件分组')
+  assert.ok(/v-for="group in smmResults"/.test(vue), '模板应按文件分组渲染（一组一个文件名）')
+  assert.ok(/smmHitCount/.test(vue), '计数应取分组后的总命中数 smmHitCount')
 })
 
 test('[live搜索] mindMap 实例经 mindmap-inited 事件广播（$refs 非响应式 prop 恒 null）', () => {
@@ -553,11 +557,28 @@ test('[蓝色竖条] wsPill 与右侧 SidebarTrigger 同款外观', () => {
   )
   const globalCss = vue.slice(iGlobal)
   assert.ok(/^\.wsPill\s*\{/m.test(globalCss), 'wsPill 基本规则必须写在全局样式块内')
-  assert.ok(/left:\s*240px/.test(globalCss), '展开态：蓝块贴文件栏右缘(240px)完全可见')
+  // 展开态位置真源是 --ws-panel-offset（随拖拽调宽/折叠同步），默认 240px
+  assert.ok(/left:\s*var\(--ws-panel-offset,\s*240px\)/.test(globalCss), '展开态：蓝块贴文件栏右缘（--ws-panel-offset，默认 240px）')
   assert.ok(
     /collapsed\s*\{[^}]*left:\s*0/s.test(globalCss),
     '收起态：蓝块贴屏幕左缘(left:0)'
   )
+})
+
+test('[文件栏调宽] 面板可拖拽调宽且偏移走 CSS 变量', () => {
+  const vue = read(new URL('pages/Edit/components/WorkspacePanel.vue', SRC))
+  assert.ok(/class="wsResizeHandle"/.test(vue), '面板应有右缘拖拽手柄 wsResizeHandle')
+  assert.ok(/startResize/.test(vue), '应实现 startResize 拖拽逻辑')
+  assert.ok(/width:\s*var\(--ws-panel-w,\s*240px\)/.test(vue), '面板宽度应走 --ws-panel-w 变量')
+  assert.ok(/syncPanelVars/.test(vue), '应有 syncPanelVars 发布 CSS 变量')
+  assert.ok(/setProperty\('--ws-panel-offset'/.test(vue), '折叠/拖拽时须同步 --ws-panel-offset')
+  assert.ok(/localStorage\.setItem\('wsPanelWidth'/.test(vue), '拖拽后的宽度应持久化到 localStorage')
+  assert.ok(/localStorage\.getItem\('wsPanelWidth'\)/.test(vue), '启动时应恢复上次拖拽的宽度')
+  // 画布与 sheet 栏消费同一偏移变量，拖拽/折叠时同步让位
+  const indexVue = read(new URL('pages/Edit/Index.vue', SRC))
+  assert.ok(/left:\s*var\(--ws-panel-offset,\s*240px\)/.test(indexVue), '画布 editContainer 应走 --ws-panel-offset')
+  const sheetTabs = read(new URL('pages/Edit/components/SheetTabs.vue', SRC))
+  assert.ok(/left:\s*var\(--ws-panel-offset,\s*0px\)/.test(sheetTabs), 'sheet 栏应走 --ws-panel-offset（文件栏展开时右移让位）')
 })
 
 test('[错误诊断] renderer.log 改写到 userData（Program Files 不可写）', () => {

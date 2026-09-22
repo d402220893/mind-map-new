@@ -1,5 +1,12 @@
 <template>
-  <div class="workspacePanel" :class="{ isDark: isDark, collapsed: collapsed }">
+  <div class="workspacePanel" :class="{ isDark: isDark, collapsed: collapsed, resizing: resizing }">
+    <!-- 右缘拖拽手柄：拖宽/拖窄文件栏（宽度走 CSS 变量，蓝缝/画布/sheet 栏同步跟随） -->
+    <div
+      v-if="!collapsed"
+      class="wsResizeHandle"
+      title="拖拽调整文件栏宽度"
+      @mousedown="startResize"
+    ></div>
     <!-- 折叠蓝条：Teleport 到 body。画布 .editContainer 是 position:fixed 铺满窗口且 DOM 在
          面板之后，若 pill 留在面板内会被画布整体盖住（收起态只露几 px → "隐藏后找不到"） -->
     <Teleport to="body">
@@ -59,27 +66,34 @@
       <!-- 统一搜索结果（md 全文 + smm 导图内容，同屏展示） -->
       <template v-if="hasSearchResult">
         <div class="wsGroupTitle">
-          搜索结果（导图 {{ (smmResults || []).length }} · 文档 {{ (searchResults || []).length }}）
+          搜索结果（导图 {{ smmHitCount }} · 文档 {{ (searchResults || []).length }}）
           <span class="wsLink" @click="clearSearch">清除</span>
         </div>
 
         <!-- 导图（.smm）节点/备注/引用命中：可独立折叠分区（紫色系） -->
         <template v-if="smmResults && smmResults.length">
           <div class="wsGroupSub smm" @click="collapseSmm = !collapseSmm">
-            <span class="wsCaret">{{ collapseSmm ? '▸' : '▾' }}</span>🧠 导图内容（{{ smmResults.length }}）
+            <span class="wsCaret">{{ collapseSmm ? '▸' : '▾' }}</span>🧠 导图内容（{{ smmHitCount }}）
           </div>
           <template v-if="!collapseSmm">
+            <!-- 同一文件的命中归并到同一文件名下（用户反馈：不要一个文件出现多次） -->
             <div
-              v-for="(hit, i) in smmResults"
-              :key="'smm' + i + hit.uid"
+              v-for="group in smmResults"
+              :key="'smmg' + group.key"
               class="wsHit"
-              @click="openNodeHit(hit)"
             >
-              <div class="wsHitFile">
-                {{ hit.fileName }}<template v-if="hit.sheetName"> · {{ hit.sheetName }}</template>
+              <div class="wsHitFile">{{ group.fileName }}</div>
+              <div
+                v-for="(hit, hi) in group.hits"
+                :key="'smm' + hi + hit.uid"
+                class="wsSmmItem"
+                @click="openNodeHit(hit)"
+              >
+                <div class="wsHitLine">
+                  <template v-if="hit.sheetName">{{ hit.sheetName }} · </template>{{ hit.path }}
+                </div>
+                <div class="wsHitLine">{{ hit.preview }}</div>
               </div>
-              <div class="wsHitLine">{{ hit.path }}</div>
-              <div class="wsHitLine">{{ hit.preview }}</div>
             </div>
           </template>
         </template>
@@ -175,7 +189,7 @@ export default {
       filter: '',
       query: '',
       searchResults: null, // md 全文结果（[{rel, hits:[{line,text}]}]）
-      smmResults: null, // 导图内容结果（[{file,fileName,sheetName,uid,path,preview,live}]）
+      smmResults: null, // 导图内容结果（按文件分组 [{key,file,fileName,live,hits:[{uid,path,preview,sheetName}]}]）
       indexStatus: 'ok',
       busy: false,
       progress: 0,
@@ -187,7 +201,9 @@ export default {
       collapseMd: false, // 搜索结果「文档全文」分区折叠
       unsubs: [],
       rebuiltTimer: null,
-      liveMindMap: null // mindMap 实例（经 mindmap-inited 事件广播；prop 可能为 null）
+      liveMindMap: null, // mindMap 实例（经 mindmap-inited 事件广播；prop 可能为 null）
+      panelWidth: 240, // 文件栏宽度（拖拽右缘可调，localStorage 持久化）
+      resizing: false // 拖拽中（禁用宽度 transition，避免拖影）
     }
   },
   computed: {
@@ -199,6 +215,10 @@ export default {
     },
     hasSearchResult() {
       return this.searchResults !== null || this.smmResults !== null
+    },
+    // 导图命中总数（smmResults 已按文件分组，计数取各组 hits 之和）
+    smmHitCount() {
+      return (this.smmResults || []).reduce((n, g) => n + (g.hits ? g.hits.length : 0), 0)
     },
     flatFiles() {
       const kw = this.filter.trim().toLowerCase()
@@ -237,6 +257,12 @@ export default {
     // 索引重建进度（§8.7）：L3 不 emit，由 workspaceService.progressRelay 上抛，
     // 经 workspaceBridge 转到 $bus；这里只消费。
     this.$bus.$on('index:rebuilding', this.onIndexProgress)
+    // 恢复上次拖拽的面板宽度并发布 CSS 变量（蓝缝/画布/sheet 栏都消费）
+    try {
+      const saved = parseInt(localStorage.getItem('wsPanelWidth') || '', 10)
+      if (saved >= 160 && saved <= 480) this.panelWidth = saved
+    } catch (e) {}
+    this.syncPanelVars()
     this.syncActive()
     const svc = getServices()
     if (svc && svc.workspaceService) {
@@ -298,6 +324,39 @@ export default {
     toggleCollapsed() {
       this.collapsed = !this.collapsed
       this.$emit('collapse', this.collapsed)
+      this.syncPanelVars()
+    },
+    // 面板宽度真源 → CSS 变量（面板自身宽度 / 蓝缝与画布、sheet 栏的偏移都消费它）
+    syncPanelVars() {
+      const el = document.documentElement
+      if (!el) return
+      el.style.setProperty('--ws-panel-w', this.panelWidth + 'px')
+      el.style.setProperty('--ws-panel-offset', this.collapsed ? '0px' : this.panelWidth + 'px')
+    },
+    // 拖拽右缘调宽（160–480px，持久化到 localStorage）
+    startResize(e) {
+      if (this.collapsed) return
+      e.preventDefault()
+      const startX = e.clientX
+      const startW = this.panelWidth
+      this.resizing = true
+      const onMove = ev => {
+        const w = Math.min(480, Math.max(160, startW + ev.clientX - startX))
+        if (w !== this.panelWidth) {
+          this.panelWidth = w
+          this.syncPanelVars()
+        }
+      }
+      const onUp = () => {
+        document.removeEventListener('mousemove', onMove)
+        document.removeEventListener('mouseup', onUp)
+        this.resizing = false
+        try {
+          localStorage.setItem('wsPanelWidth', String(this.panelWidth))
+        } catch (err) {}
+      }
+      document.addEventListener('mousemove', onMove)
+      document.addEventListener('mouseup', onUp)
     },
     onIndexProgress(p) {
       if (!p) return
@@ -416,7 +475,23 @@ export default {
           hits.unshift({ ...h, file: this.activePath || '', fileName: name, live: true })
         )
       }
-      this.smmResults = hits
+      this.smmResults = this.groupSmmHits(hits)
+    },
+    // 把扁平命中按文件归并成组（同一路径只出现一次文件名；live 组因 unshift 天然在最前）
+    groupSmmHits(hits) {
+      const groups = []
+      const idx = new Map()
+      for (const h of hits) {
+        const key = h.live ? '__live__' : String(h.file || '').replace(/\\/g, '/').toLowerCase()
+        let g = idx.get(key)
+        if (!g) {
+          g = { key, file: h.file || '', fileName: h.fileName, live: !!h.live, hits: [] }
+          idx.set(key, g)
+          groups.push(g)
+        }
+        g.hits.push(h)
+      }
+      return groups
     },
     // 遍历当前 mindMap 实例（MindMapNode 实例树，走 getData 访问器）
     walkLiveNodes(q) {
@@ -550,7 +625,8 @@ export default {
   position: relative;
   display: flex;
   flex-direction: column;
-  width: 240px;
+  // 宽度真源是 --ws-panel-w（syncPanelVars 发布），拖拽右缘实时改
+  width: var(--ws-panel-w, 240px);
   height: 100%;
   border-right: 1px solid var(--macos-border);
   background-color: var(--macos-bg-glass);
@@ -559,6 +635,24 @@ export default {
   color: var(--macos-text);
   font-size: 13px;
   transition: width 0.2s ease;
+
+  &.resizing {
+    transition: none; // 拖拽中禁用过渡，避免拖影
+  }
+
+  // 右缘拖拽手柄（6px 热区，半嵌在面板边界上）
+  .wsResizeHandle {
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    right: -3px;
+    width: 6px;
+    cursor: col-resize;
+    z-index: 3100;
+    &:hover {
+      background: rgba(64, 158, 255, 0.35);
+    }
+  }
 
   &.collapsed {
     width: 0;
@@ -742,6 +836,15 @@ export default {
         text-overflow: ellipsis;
       }
     }
+    // 导图分组内的单条命中（点击区域在条目上，而非整个文件块）
+    .wsSmmItem {
+      padding: 2px 8px 2px 14px;
+      cursor: pointer;
+      border-radius: 4px;
+      &:hover {
+        background-color: var(--macos-hover);
+      }
+    }
     .wsFile {
       display: flex;
       align-items: center;
@@ -841,8 +944,8 @@ export default {
   user-select: none;
   transition: width 0.12s ease, background 0.12s ease;
 
-  // 展开态：文件栏宽 240px，蓝缝紧贴其右缘（不遮挡文件树内容）
-  left: 240px;
+  // 展开态：蓝缝紧贴文件栏右缘（偏移真源 --ws-panel-offset，随拖拽/折叠同步）
+  left: var(--ws-panel-offset, 240px);
 
   &:hover {
     width: 18px; // 悬停滑出（与右侧 hover 时露出的宽度一致）

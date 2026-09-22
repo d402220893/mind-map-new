@@ -362,8 +362,9 @@ export default {
   // ⚠️ Edit.vue 的 .editContainer 是 position:fixed; inset:0（既有实现，画布铺满窗口）。
   // 新增的停靠侧栏 / 状态栏在文档流里，画布不会自动让位 —— 必须显式偏移，
   // 否则画布会盖住侧栏（fixed 元素不参与父级 flex 布局）。
+  // 偏移真源 --ws-panel-offset（WorkspacePanel 发布，随拖拽调宽/折叠同步）。
   &.wsDocked .editWrap .editContainer {
-    left: 240px;
+    left: var(--ws-panel-offset, 240px);
   }
   &.wsDocked.wsCollapsed .editWrap .editContainer {
     left: 0px;

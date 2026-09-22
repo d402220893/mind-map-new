@@ -173,7 +173,9 @@ export default {
 <style lang="less" scoped>
 .sheetTabs {
   position: fixed;
-  left: 0;
+  // 文件栏展开时整体右移让位（--ws-panel-offset 由 WorkspacePanel 发布，
+  // 折叠/未打开时为 0px）；否则 sheet 栏会压在文件树上面（2026-09-22 用户反馈）
+  left: var(--ws-panel-offset, 0px);
   right: 0;
   bottom: 0;
   height: 40px;

@@ -159,3 +159,44 @@ test('nodeSearchText _mindlink.refs 非数组时不抛且忽略', () => {
 test('searchSmmContainer sheets 为空数组返回空', () => {
   assert.deepStrictEqual(searchSmmContainer({ activeId: 's1', sheets: [] }, 'x'), [])
 })
+
+// ── 追加：真实落盘形状回归（2026-09-22「搜索只能搜到一个思维导图」根因）──
+// 本应用保存的 sheet.data 是 simple-mind-map getData(true) 的包装 {layout,root,theme,view}，
+// 直接 walk 包装对象会整树跳过 → 磁盘 .smm 全部零命中。unwrapRootNode 必须先解包。
+test('searchSmmContainer 解包 getData(true) 包装形状 {layout,root,theme,view}', () => {
+  const decoded = {
+    activeId: 's1',
+    sheets: [
+      {
+        id: 's1',
+        name: '表一',
+        data: {
+          layout: 'logicalStructure',
+          theme: { template: 'default', config: {} },
+          view: { transform: {} },
+          root: node('光模块', { uid: 'w1' }, [node('MTF 指标', { uid: 'w2' })])
+        }
+      }
+    ]
+  }
+  const hits = searchSmmContainer(decoded, 'MTF')
+  assert.strictEqual(hits.length, 1)
+  assert.strictEqual(hits[0].uid, 'w2')
+  assert.strictEqual(hits[0].path, '光模块 > MTF 指标')
+})
+
+test('searchSmmContainer 解包 {data:{root:…}} 嵌套形态', () => {
+  const decoded = {
+    sheets: [{ id: 's1', data: { data: { root: node('镜头对比', { uid: 'n9' }) } } }]
+  }
+  const hits = searchSmmContainer(decoded, '镜头')
+  assert.strictEqual(hits.length, 1)
+  assert.strictEqual(hits[0].uid, 'n9')
+})
+
+test('searchSmmContainer 裸节点形状不受影响（向后兼容）', () => {
+  const decoded = { sheets: [{ id: 's1', data: node('裸根', { uid: 'b1' }) }] }
+  const hits = searchSmmContainer(decoded, '裸根')
+  assert.strictEqual(hits.length, 1)
+  assert.strictEqual(hits[0].uid, 'b1')
+})
