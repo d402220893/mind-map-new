@@ -162,6 +162,10 @@
       <li v-if="ctxMenu.f && !ctxMenu.f.isDir" @click="openCtxFile">打开</li>
       <li @click="newFileNear">新建文件</li>
       <li @click="newFolderNear">新建文件夹</li>
+      <li v-if="ctxMenu.f && !ctxMenu.f.isDir" @click="renameCtxFile">重命名</li>
+      <li v-if="ctxMenu.f && !ctxMenu.f.isDir" class="danger" @click="deleteCtxFile">
+        删除文件
+      </li>
       <li v-if="ctxMenu.f" @click="showProps">属性</li>
       <li @click="copyPath">
         {{ ctxMenu.f && !ctxMenu.f.isDir ? '复制文件路径' : '复制路径' }}
@@ -172,13 +176,8 @@
 </template>
 
 <script>
-import {
-  pickAndOpenWorkspace,
-  openPath,
-  getServices,
-  createMdFile
-} from '@/utils/workspaceBridge'
-import { getWorkbookList } from '@/api'
+import { pickAndOpenWorkspace, openPath, getServices } from '@/utils/workspaceBridge'
+import { getWorkbookList, renameWorkbook, removeWorkbook } from '@/api'
 import { decodeSmm } from '@/services/smmCodec'
 import { searchSmmContainer, stripHtml, truncate } from '@/utils/smmSearch'
 
@@ -693,14 +692,63 @@ export default {
     async newFileNear() {
       const dir = this.ctxDir()
       if (!dir) return
-      const abs = await this.uniquePath(dir, '新建文档', '.md')
-      const name = this.baseOf(abs)
-      const r = await createMdFile(abs, '# 新建文档\n\n')
-      if (!r.ok) {
-        this.$message.error('新建失败：' + (r.error && (r.error.message || r.error.code)))
+      // 输入文件名，按扩展名决定类型：.md → Markdown 文档，.smm → 思维导图
+      let name
+      try {
+        const r = await this.$prompt(
+          '输入文件名（.md 新建 Markdown 文档，.smm 新建思维导图；不写扩展名默认为 .md）',
+          '新建文件',
+          {
+            confirmButtonText: '创建',
+            cancelButtonText: '取消',
+            inputValue: '新建文档.md',
+            inputPattern: /.+/,
+            inputErrorMessage: '文件名不能为空'
+          }
+        )
+        name = String((r && r.value) || '').trim()
+      } catch (e) {
+        return // 取消
+      }
+      if (!name) return
+      if (/[\\/:*?"<>|]/.test(name)) {
+        this.$message.error('文件名不能包含 \\ / : * ? " < > | 字符')
+        return
+      }
+      if (!/\.(md|smm)$/i.test(name)) name += '.md'
+      const abs = dir.replace(/\/+$/, '') + '/' + name
+      // 重名守卫（不静默覆盖已有文件）
+      const st = await getServices().workspaceService.stat(abs)
+      if (st.ok && st.data && st.data.exists) {
+        this.$message.error('已存在同名文件：' + name)
+        return
+      }
+      // smm 用本应用标准多工作表容器形状（与保存落盘一致，{root} 包装形态）
+      const content = /\.smm$/i.test(name)
+        ? JSON.stringify(
+            {
+              app: 'smm-multisheet',
+              version: 1,
+              activeId: 'sheet_1',
+              sheets: [
+                {
+                  id: 'sheet_1',
+                  name: 'Sheet1',
+                  data: { root: { data: { text: '中心主题' }, children: [] } }
+                }
+              ]
+            },
+            null,
+            2
+          )
+        : '# 新建文档\n\n'
+      const r2 = await getServices().workspaceService.writeText(abs, content)
+      if (!r2.ok) {
+        this.$message.error('新建失败：' + (r2.error && (r2.error.message || r2.error.code)))
         return
       }
       await this.refresh()
+      // openPath 按扩展名路由：.smm 进导图、.md 进编辑器
       await this.openFile({ path: abs, name })
     },
     async newFolderNear() {
@@ -712,6 +760,71 @@ export default {
         this.$message.error('新建文件夹失败：' + (r.error && (r.error.message || r.error.code)))
         return
       }
+      await this.refresh()
+    },
+    async renameCtxFile() {
+      const f = this.ctxMenu && this.ctxMenu.f
+      if (!f || f.isDir) return
+      let name
+      try {
+        const r = await this.$prompt('输入新文件名', '重命名', {
+          confirmButtonText: '重命名',
+          cancelButtonText: '取消',
+          inputValue: f.name,
+          inputPattern: /.+/,
+          inputErrorMessage: '文件名不能为空'
+        })
+        name = String((r && r.value) || '').trim()
+      } catch (e) {
+        return // 取消
+      }
+      if (!name || name === f.name) return
+      if (/[\\/:*?"<>|]/.test(name)) {
+        this.$message.error('文件名不能包含 \\ / : * ? " < > | 字符')
+        return
+      }
+      const dir = String(f.path).replace(/\\/g, '/').replace(/\/[^/]*$/, '')
+      const to = dir + '/' + name
+      // 重名守卫（不静默覆盖已有文件）
+      const st = await getServices().workspaceService.stat(to)
+      if (st.ok && st.data && st.data.exists) {
+        this.$message.error('已存在同名文件：' + name)
+        return
+      }
+      const r2 = await getServices().workspaceService.move(f.path, to)
+      if (!r2.ok) {
+        this.$message.error('重命名失败：' + (r2.error && (r2.error.message || r2.error.code)))
+        return
+      }
+      // 该文件若以标签打开，同步标签名与路径（否则标签仍指向旧路径）
+      const { workbooks } = getWorkbookList()
+      const hit = workbooks.find(w => w.filePath === f.path)
+      if (hit) renameWorkbook(hit.id, name, to)
+      if (this.activePath === f.path) this.activePath = to
+      await this.refresh()
+    },
+    async deleteCtxFile() {
+      const f = this.ctxMenu && this.ctxMenu.f
+      if (!f || f.isDir) return
+      try {
+        await this.$confirm('将文件「' + f.name + '」移入回收站？', '删除文件', {
+          confirmButtonText: '删除',
+          cancelButtonText: '取消',
+          type: 'warning'
+        })
+      } catch (e) {
+        return // 取消
+      }
+      // 走系统回收站（可恢复），不做物理删除
+      const r = await getServices().workspaceService.trash([f.path])
+      if (!r.ok) {
+        this.$message.error('删除失败：' + (r.error && (r.error.message || r.error.code)))
+        return
+      }
+      // 该文件若以标签打开，关掉标签（文件已不存在）
+      const { workbooks } = getWorkbookList()
+      const hit = workbooks.find(w => w.filePath === f.path)
+      if (hit) removeWorkbook(hit.id)
       await this.refresh()
     }
   }
@@ -1016,6 +1129,9 @@ export default {
       font-size: 12px;
       &:hover {
         background-color: var(--macos-hover-strong);
+      }
+      &.danger {
+        color: var(--macos-danger, #f56c6c);
       }
     }
   }

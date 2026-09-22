@@ -620,6 +620,30 @@ test('[右键菜单] 外点关闭 + 文件/文件夹/空白分级菜单', () => 
   assert.ok(/reveal, stat, mkdirp/.test(svc), 'workspaceService 导出应含 stat/mkdirp')
 })
 
+test('[新建文件] 输入框按扩展名决定 md/smm', () => {
+  const vue = read(new URL('pages/Edit/components/WorkspacePanel.vue', SRC))
+  assert.ok(/this\.\$prompt\(/.test(vue), '新建文件应弹输入框（$prompt）')
+  assert.ok(/\\?\.\(md\|smm\)\$|\.(md\|smm)\$/i.test(vue) || /md\|smm/.test(vue), '应识别 md/smm 扩展名')
+  assert.ok(/不写扩展名默认为 \.md|name \+= '\.md'/.test(vue), '无扩展名应默认 .md')
+  assert.ok(/app: 'smm-multisheet'/.test(vue), 'smm 应写标准多工作表容器')
+  assert.ok(/中心主题/.test(vue), 'smm 默认根节点应为「中心主题」')
+  assert.ok(/已存在同名文件/.test(vue), '新建应有重名守卫（不静默覆盖）')
+  assert.ok(/workspaceService\.writeText/.test(vue), '应经服务层 writeText 落盘')
+})
+
+test('[文件右键] 重命名与删除文件', () => {
+  const vue = read(new URL('pages/Edit/components/WorkspacePanel.vue', SRC))
+  assert.ok(/@click="renameCtxFile">重命名<\/li>/.test(vue), '文件菜单应有「重命名」')
+  assert.ok(/class="danger" @click="deleteCtxFile">/.test(vue), '文件菜单应有红色「删除文件」')
+  assert.ok(/workspaceService\.move\(f\.path, to\)/.test(vue), '重命名应经服务层 move')
+  assert.ok(/workspaceService\.trash\(\[f\.path\]\)/.test(vue), '删除应走回收站 trash（不物理删除）')
+  assert.ok(/renameWorkbook\(hit\.id, name, to\)/.test(vue), '重命名后应同步打开标签的路径')
+  assert.ok(/removeWorkbook\(hit\.id\)/.test(vue), '删除后应关闭已打开的标签')
+  assert.ok(/移入回收站/.test(vue), '删除前应有确认（回收站语义）')
+  const svc = read(new URL('services/workspaceService.js', SRC))
+  assert.ok(/mkdirp, move, trash/.test(svc), 'workspaceService 导出应含 move/trash')
+})
+
 test('[错误诊断] renderer.log 改写到 userData（Program Files 不可写）', () => {
   const main = read(new URL('main.js', APP))
   assert.ok(/rendererLogPath/.test(main), 'main.js 应实现 rendererLogPath()')

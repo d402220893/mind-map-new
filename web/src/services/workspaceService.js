@@ -195,6 +195,20 @@ export const createWorkspaceService = (ctx = {}) => {
     }
     return fsApi.mkdirp(dir)
   }
+  /** 移动/重命名（右键菜单「重命名」用） */
+  async function move(from, to) {
+    if (!fsApi || typeof fsApi.move !== 'function') {
+      return fail(err('E_NOT_SUPPORTED', { method: 'move' }))
+    }
+    return fsApi.move(from, to)
+  }
+  /** 移入系统回收站（右键菜单「删除文件」用；可恢复，不直接物理删除） */
+  async function trash(paths) {
+    if (!fsApi || typeof fsApi.trash !== 'function') {
+      return fail(err('E_NOT_SUPPORTED', { method: 'trash' }))
+    }
+    return fsApi.trash(paths)
+  }
   /** 当前工作区文件列表（来自 L2 workspaceStore，非重复扫盘） */
   function files() {
     const st = workspace.get() || {}
@@ -210,6 +224,6 @@ export const createWorkspaceService = (ctx = {}) => {
     open, close, refresh, getRoot, abs, rel, inferRootFor,
     onFsAdd, onFsChange, onFsUnlink,
     readIndex, writeIndex, rebuildIndex,
-    pickDirectory, readText, writeText, writeBinary, reveal, stat, mkdirp, files, setConfirm
+    pickDirectory, readText, writeText, writeBinary, reveal, stat, mkdirp, move, trash, files, setConfirm
   }
 }
