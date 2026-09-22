@@ -599,6 +599,27 @@ test('[md 编辑器] 关闭浏览器原生拼写检查', () => {
   assert.ok(/setAttribute\('spellcheck',\s*'false'\)/.test(vue), '应把编辑区 spellcheck 置为 false')
 })
 
+test('[右键菜单] 外点关闭 + 文件/文件夹/空白分级菜单', () => {
+  const vue = read(new URL('pages/Edit/components/WorkspacePanel.vue', SRC))
+  // 1) 外点关闭：全局捕获监听 click/contextmenu/Escape，菜单内部放行
+  assert.ok(/window\.addEventListener\('click',\s*this\.onGlobalClickClose,\s*true\)/.test(vue), '应有全局 click 捕获监听关菜单')
+  assert.ok(/window\.addEventListener\('keydown',\s*this\.onGlobalKeyClose,\s*true\)/.test(vue), '应有 Escape 关闭')
+  assert.ok(/window\.removeEventListener\('click',\s*this\.onGlobalClickClose,\s*true\)/.test(vue), '卸载时必须移除全局监听')
+  assert.ok(/closest\('\.wsCtxMenu'\)/.test(vue), '点在菜单内部应放行')
+  // 2) 空白区域右键 + 行内右键阻止冒泡（否则会同时触发空白菜单）
+  assert.ok(/@contextmenu\.prevent="onCtxBlank\(\$event\)"/.test(vue), '空白区域应挂 onCtxBlank')
+  assert.ok(/@contextmenu\.prevent\.stop="onCtx\(\$event, f\)"/.test(vue), '文件行右键必须 stop 冒泡')
+  // 3) 分级菜单项
+  assert.ok(/<li v-if="ctxMenu\.f && !ctxMenu\.f\.isDir" @click="openCtxFile">打开<\/li>/.test(vue), '文件菜单应有「打开」')
+  assert.ok(/@click="newFileNear">新建文件<\/li>/.test(vue), '应有「新建文件」')
+  assert.ok(/@click="newFolderNear">新建文件夹<\/li>/.test(vue), '应有「新建文件夹」')
+  assert.ok(/@click="showProps">属性<\/li>/.test(vue), '应有「属性」')
+  // 4) 服务层能力：stat/mkdirp 透传（UI → L4 → L3 分层）
+  const svc = read(new URL('services/workspaceService.js', SRC))
+  assert.ok(/async function stat\(abs\) \{ return fsApi\.stat\(abs\) \}/.test(svc), 'workspaceService 应透传 stat')
+  assert.ok(/reveal, stat, mkdirp/.test(svc), 'workspaceService 导出应含 stat/mkdirp')
+})
+
 test('[错误诊断] renderer.log 改写到 userData（Program Files 不可写）', () => {
   const main = read(new URL('main.js', APP))
   assert.ok(/rendererLogPath/.test(main), 'main.js 应实现 rendererLogPath()')

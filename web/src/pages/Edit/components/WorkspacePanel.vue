@@ -62,7 +62,11 @@
       <button class="wsBigBtn" @click="openFolder">打开文件夹</button>
     </div>
 
-    <div v-else class="wsBody customScrollbar">
+    <div
+      v-else
+      class="wsBody customScrollbar"
+      @contextmenu.prevent="onCtxBlank($event)"
+    >
       <!-- 统一搜索结果（md 全文 + smm 导图内容，同屏展示） -->
       <template v-if="hasSearchResult">
         <div class="wsGroupTitle">
@@ -135,7 +139,7 @@
           :class="{ active: f.path === activePath }"
           :style="{ paddingLeft: 8 + f.depth * 14 + 'px' }"
           @click="onFileClick(f)"
-          @contextmenu.prevent="onCtx($event, f)"
+          @contextmenu.prevent.stop="onCtx($event, f)"
         >
           <span class="wsCaret">{{ f.isDir ? (isDirCollapsed(f.path) ? '▸' : '▾') : '' }}</span>
           <span class="wsIcon">{{ f.isDir ? (isDirCollapsed(f.path) ? '📁' : '📂') : iconOf(f.name) }}</span>
@@ -148,16 +152,21 @@
       </template>
     </div>
 
-    <!-- 右键菜单 -->
+    <!-- 右键菜单：f=null 表示空白区域（作用目标是工作区根目录） -->
     <ul
       v-if="ctxMenu"
       class="wsCtxMenu"
       :style="{ left: ctxMenu.x + 'px', top: ctxMenu.y + 'px' }"
       @click="ctxMenu = null"
     >
-      <li @click="revealFile">在资源管理器中显示</li>
-      <li @click="copyPath">复制文件路径</li>
-      <li v-if="!ctxMenu.f.isDir" @click="newMdNear">在此新建 md 文件</li>
+      <li v-if="ctxMenu.f && !ctxMenu.f.isDir" @click="openCtxFile">打开</li>
+      <li @click="newFileNear">新建文件</li>
+      <li @click="newFolderNear">新建文件夹</li>
+      <li v-if="ctxMenu.f" @click="showProps">属性</li>
+      <li @click="copyPath">
+        {{ ctxMenu.f && !ctxMenu.f.isDir ? '复制文件路径' : '复制路径' }}
+      </li>
+      <li v-if="ctxMenu.f" @click="revealFile">在资源管理器中显示</li>
     </ul>
   </div>
 </template>
@@ -274,8 +283,15 @@ export default {
       )
       this.unsubs.push(svc.workspaceService.onFsChange(() => this.refreshSilent()))
     }
+    // 右键菜单外点关闭：捕获阶段全局监听，菜单自身点击放行（菜单 @click 自行关闭）
+    window.addEventListener('click', this.onGlobalClickClose, true)
+    window.addEventListener('contextmenu', this.onGlobalClickClose, true)
+    window.addEventListener('keydown', this.onGlobalKeyClose, true)
   },
   beforeUnmount() {
+    window.removeEventListener('click', this.onGlobalClickClose, true)
+    window.removeEventListener('contextmenu', this.onGlobalClickClose, true)
+    window.removeEventListener('keydown', this.onGlobalKeyClose, true)
     this.$bus.$off('workspace-opened', this.onWorkspaceOpened)
     this.$bus.$off('workbook-list-changed', this.syncActive)
     this.$bus.$off('workbook-switched', this.syncActive)
@@ -589,32 +605,114 @@ export default {
     onCtx(e, f) {
       this.ctxMenu = { x: e.clientX, y: e.clientY, f }
     },
+    // 空白区域右键：作用目标是工作区根目录（搜索结果区不弹新建菜单）
+    onCtxBlank(e) {
+      if (this.hasSearchResult) return
+      if (!this.root) return
+      this.ctxMenu = { x: e.clientX, y: e.clientY, f: null }
+    },
+    // 全局外点关闭右键菜单（捕获阶段；点在菜单内部放行，由菜单 @click 处理）
+    onGlobalClickClose(e) {
+      if (!this.ctxMenu) return
+      const t = e.target
+      if (t && typeof t.closest === 'function' && t.closest('.wsCtxMenu')) return
+      this.ctxMenu = null
+    },
+    onGlobalKeyClose(e) {
+      if (e.key === 'Escape') this.ctxMenu = null
+    },
+    // 菜单作用目录：空白=工作区根；文件夹=其自身；文件=其父目录
+    ctxDir() {
+      const f = this.ctxMenu && this.ctxMenu.f
+      const norm = p => String(p || '').replace(/\\/g, '/')
+      if (!f) return norm(this.root)
+      if (f.isDir) return norm(f.path)
+      return norm(f.path).replace(/\/[^/]*$/, '')
+    },
+    // 重名自动加序号：新建文档.md / 新建文档2.md …
+    async uniquePath(dir, base, ext) {
+      const svc = getServices().workspaceService
+      for (let i = 0; i < 50; i++) {
+        const abs = dir + '/' + (i === 0 ? base + ext : base + (i + 1) + ext)
+        const st = await svc.stat(abs)
+        if (st.ok && st.data && !st.data.exists) return abs
+      }
+      return dir + '/' + base + '-' + Date.now() + ext
+    },
+    openCtxFile() {
+      const f = this.ctxMenu && this.ctxMenu.f
+      if (f && !f.isDir) this.openFile(f)
+    },
     revealFile() {
       const f = this.ctxMenu && this.ctxMenu.f
       if (f) getServices().workspaceService.reveal(f.path)
     },
     copyPath() {
       const f = this.ctxMenu && this.ctxMenu.f
-      if (!f) return
+      const p = f ? f.path : this.root
+      if (!p) return
       try {
-        navigator.clipboard.writeText(f.path)
+        navigator.clipboard.writeText(p)
         this.$message.success('已复制路径')
       } catch (e) {
-        this.$message.info(f.path)
+        this.$message.info(p)
       }
     },
-    async newMdNear() {
+    async showProps() {
       const f = this.ctxMenu && this.ctxMenu.f
       if (!f) return
-      const dir = String(f.path).replace(/\\/g, '/').replace(/\/[^/]*$/, '')
-      const abs = dir + '/新建文档.md'
+      const r = await getServices().workspaceService.stat(f.path)
+      if (!r.ok || !r.data || !r.data.exists) {
+        this.$message.error('无法读取文件信息')
+        return
+      }
+      const d = r.data
+      const size =
+        d.size == null
+          ? '-'
+          : d.size < 1024
+            ? d.size + ' B'
+            : d.size < 1048576
+              ? (d.size / 1024).toFixed(1) + ' KB'
+              : (d.size / 1048576).toFixed(1) + ' MB'
+      const mtime = d.mtimeMs ? new Date(d.mtimeMs).toLocaleString('zh-CN') : '-'
+      const esc = s =>
+        String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+      this.$alert(
+        '<div style="line-height:1.9;word-break:break-all">' +
+          '<div><b>名称：</b>' + esc(f.name) + '</div>' +
+          '<div><b>类型：</b>' + (d.isDir ? '文件夹' : '文件') + '</div>' +
+          '<div><b>大小：</b>' + (d.isDir ? '-' : size) + '</div>' +
+          '<div><b>修改时间：</b>' + mtime + '</div>' +
+          '<div><b>路径：</b>' + esc(f.path) + '</div>' +
+          '</div>',
+        '属性',
+        { dangerouslyUseHTMLString: true, confirmButtonText: '确定' }
+      ).catch(() => {})
+    },
+    async newFileNear() {
+      const dir = this.ctxDir()
+      if (!dir) return
+      const abs = await this.uniquePath(dir, '新建文档', '.md')
+      const name = this.baseOf(abs)
       const r = await createMdFile(abs, '# 新建文档\n\n')
       if (!r.ok) {
         this.$message.error('新建失败：' + (r.error && (r.error.message || r.error.code)))
         return
       }
       await this.refresh()
-      await this.openFile({ path: abs, name: '新建文档.md' })
+      await this.openFile({ path: abs, name })
+    },
+    async newFolderNear() {
+      const dir = this.ctxDir()
+      if (!dir) return
+      const abs = await this.uniquePath(dir, '新建文件夹', '')
+      const r = await getServices().workspaceService.mkdirp(abs)
+      if (!r.ok) {
+        this.$message.error('新建文件夹失败：' + (r.error && (r.error.message || r.error.code)))
+        return
+      }
+      await this.refresh()
     }
   }
 }

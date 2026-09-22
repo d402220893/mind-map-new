@@ -186,6 +186,15 @@ export const createWorkspaceService = (ctx = {}) => {
     if (fsApi && typeof fsApi.revealInFolder === 'function') return fsApi.revealInFolder(abs)
     return fail(err('E_NOT_SUPPORTED', { method: 'revealInFolder' }))
   }
+  /** 文件/目录元信息（右键菜单「属性」用） */
+  async function stat(abs) { return fsApi.stat(abs) }
+  /** 递归创建目录（右键菜单「新建文件夹」用） */
+  async function mkdirp(dir) {
+    if (!fsApi || typeof fsApi.mkdirp !== 'function') {
+      return fail(err('E_NOT_SUPPORTED', { method: 'mkdirp' }))
+    }
+    return fsApi.mkdirp(dir)
+  }
   /** 当前工作区文件列表（来自 L2 workspaceStore，非重复扫盘） */
   function files() {
     const st = workspace.get() || {}
@@ -201,6 +210,6 @@ export const createWorkspaceService = (ctx = {}) => {
     open, close, refresh, getRoot, abs, rel, inferRootFor,
     onFsAdd, onFsChange, onFsUnlink,
     readIndex, writeIndex, rebuildIndex,
-    pickDirectory, readText, writeText, writeBinary, reveal, files, setConfirm
+    pickDirectory, readText, writeText, writeBinary, reveal, stat, mkdirp, files, setConfirm
   }
 }
