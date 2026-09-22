@@ -797,9 +797,19 @@ export default {
         return
       }
       // 该文件若以标签打开，同步标签名与路径（否则标签仍指向旧路径）
-      const { workbooks } = getWorkbookList()
-      const hit = workbooks.find(w => w.filePath === f.path)
-      if (hit) renameWorkbook(hit.id, name, to)
+      const list = getWorkbookList()
+      const hit = list.workbooks.find(w => w.filePath === f.path)
+      if (hit) {
+        renameWorkbook(hit.id, name, to)
+        // 关键：renameWorkbook 改的是 workbookState 模块内的 state，而 Index.vue 的
+        // workbooks 是 getWorkbookList() 返回的【全新快照副本】，不会自动跟随。必须显式
+        // 通知顶部标签栏与编辑区刷新，否则重命名后顶部文件名栏仍显示旧名。
+        // —— 与 FileTabs 自身的重命名路径（Index.renameWorkbook）保持一致。
+        this.$bus.$emit('workbook-list-changed')
+        if (hit.id === list.activeId) {
+          this.$bus.$emit('workbook-renamed', { id: hit.id, newPath: to })
+        }
+      }
       if (this.activePath === f.path) this.activePath = to
       await this.refresh()
     },

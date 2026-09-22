@@ -685,3 +685,23 @@ test('[良性告警] 主进程 console-message 不得为良性告警弹原生框
   assert.ok(/ResizeObserver loop \(limit exceeded/.test(seg[0]), '主进程侧模式应与渲染端一致')
 })
 
+test('[文件树重命名同步] WorkspacePanel.renameCtxFile 改完状态后必须通知顶部标签栏刷新', () => {
+  const vue = read(new URL('pages/Edit/components/WorkspacePanel.vue', SRC))
+  const seg = vue.match(/async renameCtxFile\(\)[\s\S]*?\n    },/)
+  assert.ok(seg, '找不到 renameCtxFile 方法')
+  assert.ok(
+    /renameWorkbook\(hit\.id, name, to\)/.test(seg[0]),
+    'renameCtxFile 应调用 renameWorkbook 更新标签名/路径'
+  )
+  // 关键契约：renameWorkbook 改的是模块内 state，Index 的 workbooks 是快照副本，
+  // 必须 emit workbook-list-changed 触发 refreshWorkbooks，否则顶部文件名栏不变。
+  assert.ok(
+    /this\.\$bus\.\$emit\('workbook-list-changed'\)/.test(seg[0]),
+    'renameCtxFile 必须 emit workbook-list-changed（否则顶部文件名栏不刷新生效）'
+  )
+  assert.ok(
+    /this\.\$bus\.\$emit\('workbook-renamed'/.test(seg[0]),
+    '重命名当前激活文件时应 emit workbook-renamed（让编辑区同步新路径/标题）'
+  )
+})
+
