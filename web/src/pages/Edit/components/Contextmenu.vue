@@ -65,6 +65,9 @@
       <div class="item" @click="addOrEditNote">
         <span class="name">{{ $t('contextmenu.nodeNote') }}</span>
       </div>
+      <div class="item" @click="addToTodo">
+        <span class="name">{{ $t('contextmenu.addToDo') }}</span>
+      </div>
       <div class="item iconMenuItem" @mouseenter="onSubEnter" @mouseleave="onSubLeave">
         <span class="name">{{ $t('contextmenu.nodeIcon') || '图标' }}</span>
         <span class="el-icon-arrow-right"></span>
@@ -600,6 +603,36 @@ export default {
     addOrEditNote() {
       if (!this.node) return
       this.$bus.$emit('showNodeNote', this.node)
+      this.hide()
+    },
+
+    // 添加到待办：把当前节点文本作为待办项（markdown 任务列表）追加到
+    // 首节点（根节点 / 中心主题）的备注里；无备注则创建。
+    // 说明：待办统一落在根节点备注，形成一份"全图待办清单"。
+    addToTodo() {
+      if (!this.node) return
+      const root =
+        this.mindMap && this.mindMap.renderer && this.mindMap.renderer.root
+      const text = getTextFromHtml(this.node.getData('text') || '').trim()
+      if (!root || !text) {
+        this.$message.warning(this.$t('contextmenu.addToDoEmpty'))
+        this.hide()
+        return
+      }
+      // 去重：根节点备注里已有同内容待办项则不再重复追加
+      const cur = root.getData('note') || ''
+      const dup = cur
+        .split(/\r?\n/)
+        .some(line => line.replace(/^\s*[-*+]\s*\[[ xX]\]\s*/, '').trim() === text)
+      if (dup) {
+        this.$message.info(this.$t('contextmenu.addToDoDuplicate'))
+        this.hide()
+        return
+      }
+      const item = '- [ ] ' + text
+      const next = cur.trim() ? cur.replace(/\s+$/, '') + '\n' + item : item
+      root.setNote(next)
+      this.$message.success(this.$t('contextmenu.addToDoSuccess'))
       this.hide()
     },
 

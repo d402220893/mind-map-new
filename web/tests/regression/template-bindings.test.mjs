@@ -705,3 +705,56 @@ test('[文件树重命名同步] WorkspacePanel.renameCtxFile 改完状态后必
   )
 })
 
+test('[备注弹窗] 内容过长必须可滚动（不得被裁掉且无滚动条）', () => {
+  const vue = read(new URL('pages/Edit/components/NodeNote.vue', SRC))
+  const seg = vue.match(/\.toastui-editor-ww-container\s*\{[\s\S]*?\n  \}/)
+  assert.ok(seg, '找不到 .toastui-editor-ww-container 规则')
+  assert.ok(/max-height:\s*56vh/.test(seg[0]), '应保留 max-height:56vh 上限')
+  // Toast UI 自带 overflow:hidden + height:inherit，只给 max-height 不给滚动 →
+  // 超出部分被外层 .noteBox{overflow:hidden} 裁掉且不产生滚动条（用户报的 bug）。
+  assert.ok(
+    /overflow-y:\s*auto/.test(seg[0]),
+    'ww-container 必须是滚动容器(overflow-y:auto)，否则长内容没有滚动条'
+  )
+  assert.ok(/height:\s*auto/.test(seg[0]), '内层应 height:auto 断开 height:inherit 链')
+})
+
+test('[备注预览] 鼠标移入浮层不得消失 + 宽度自适应', () => {
+  const vue = read(new URL('pages/Edit/components/NodeNoteContentShow.vue', SRC))
+  // 库层备注图标 mouseout 会立刻 hide()，鼠标移向浮层的途中浮层瞬隐（用户报的 bug）。
+  // 必须改为延迟隐藏，并由浮层自身 hover 取消。
+  assert.ok(/@mouseenter="onPreviewEnter"/.test(vue), '浮层根应绑定 mouseenter 保持')
+  assert.ok(/@mouseleave="onPreviewLeave"/.test(vue), '浮层根应绑定 mouseleave')
+  assert.ok(/onPreviewEnter\(\)/.test(vue), '应实现 onPreviewEnter')
+  assert.ok(/clearHideTimer/.test(vue), '进入浮层应取消待执行的隐藏(clearHideTimer)')
+  assert.ok(/scheduleHide\(\)/.test(vue), '应实现 scheduleHide 延迟隐藏')
+  assert.ok(/setTimeout\([\s\S]*?hideNow\(\)/.test(vue), 'scheduleHide 应经定时器延迟 hideNow')
+  assert.ok(
+    /\$bus\.\$on\('hideNoteContent', this\.scheduleHide\)/.test(vue),
+    'hideNoteContent 应走 scheduleHide 而非立即隐藏（否则移向浮层时消失）'
+  )
+  // 宽度自适应（旧版固定 max-width:250px 太窄，表格/长文显示不全）
+  assert.ok(/width:\s*max-content/.test(vue), '内容区应 width:max-content 自适应宽度')
+  assert.ok(!/max-width:\s*250px/.test(vue), '不得再固定 250px 宽')
+})
+
+test('[添加到待办] 节点右键项把节点文本追加到根节点备注', () => {
+  const vue = read(new URL('pages/Edit/components/Contextmenu.vue', SRC))
+  assert.ok(/@click="addToTodo"/.test(vue), '右键菜单应有「添加到待办」项')
+  assert.ok(/\$t\('contextmenu\.addToDo'\)/.test(vue), '菜单项应使用 contextmenu.addToDo 文案')
+  const seg = vue.match(/addToTodo\(\)\s*\{[\s\S]*?\n    \},/)
+  assert.ok(seg, '找不到 addToTodo 方法')
+  assert.ok(/renderer\.root/.test(seg[0]), '应取首节点(根节点) renderer.root')
+  assert.ok(
+    /getTextFromHtml\(this\.node\.getData\('text'\)/.test(seg[0]),
+    '应取当前节点纯文本'
+  )
+  assert.ok(/'- \[ \] '\s*\+\s*text/.test(seg[0]), '待办项应为 markdown 任务列表 - [ ] 文本')
+  assert.ok(/root\.setNote\(/.test(seg[0]), '应把待办写入根节点备注(root.setNote)')
+  // 四个语言文件都必须有 addToDo 文案键（菜单/提示用）
+  for (const lang of ['zh_cn', 'en_us', 'zh_tw', 'vi_vn']) {
+    const dict = read(new URL('lang/' + lang + '.js', SRC))
+    assert.ok(/addToDo:/.test(dict), lang + ' 缺少 contextmenu.addToDo 文案')
+  }
+})
+

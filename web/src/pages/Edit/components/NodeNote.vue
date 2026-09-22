@@ -707,9 +707,25 @@ export default {
   // 编辑器自适应高度（配合 initEditor height:'auto'）：
   // 空内容时给足编辑落点(min-height)，过长时编辑区内部滚动(max-height)。
   // 2026-09-21 弹窗高度翻倍：min-height 140px → 400px，与 ref 模式（引用区 400px）等高。
+  //
+  // ⚠️ 2026-09-22 修复「备注内容太长没有滚动条」：
+  // Toast UI 自带 .toastui-editor-ww-container 是 `overflow:hidden; height:inherit`，
+  // 我们此前只加了 max-height:56vh 却没给滚动 → 超出 56vh 的内容被外层
+  // .noteBox{overflow:hidden} 直接裁掉，既看不到也滚不动（表格/长文被截断）。
+  // 修法：①把 ww-container 变成真正的滚动容器(overflow-y:auto)；
+  //       ②断开 height:inherit 链（父级 height:auto 时 inherit=auto → 内层不受约束，
+  //         若继续 inherit 则内层同样被裁，永不产生滚动条）。
   .toastui-editor-ww-container {
     min-height: 400px;
     max-height: 56vh;
+    overflow-y: auto;
+    overflow-x: hidden;
+
+    > .toastui-editor,
+    .toastui-editor-contents {
+      height: auto;
+      overflow: visible;
+    }
   }
 }
 

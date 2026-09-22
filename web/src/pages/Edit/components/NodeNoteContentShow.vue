@@ -12,6 +12,8 @@
     @mousemove.stop
     @mouseup.stop
     @wheel.stop
+    @mouseenter="onPreviewEnter"
+    @mouseleave="onPreviewLeave"
   >
     <div class="noteContentWrap customScrollbar" ref="noteContentWrap"></div>
     <!--
@@ -45,18 +47,27 @@ export default {
       show: false,
       left: 0,
       top: 0,
-      node: null
+      node: null,
+      // hover 保持用（⚠️ 不能用 _ 前缀：Vue3 不代理 data 里以 _/$ 开头的键）
+      // 图标 mouseout 会立刻触发隐藏，导致鼠标移向浮层时浮层瞬隐；
+      // 这里用定时器延迟隐藏，鼠标进入浮层即取消。
+      hideTimer: null,
+      hovering: false,
+      lastLeft: null,
+      lastTop: null
     }
   },
   created() {
     this.$bus.$on('showNoteContent', this.onShowNoteContent)
-    this.$bus.$on('hideNoteContent', this.hideNoteContent)
-    document.body.addEventListener('click', this.hideNoteContent)
+    // 库层备注图标 mouseout → hide()：改为延迟隐藏，给鼠标移向浮层留出时间
+    this.$bus.$on('hideNoteContent', this.scheduleHide)
+    // 以下为明确关闭场景：立即隐藏
+    document.body.addEventListener('click', this.hideNow)
     this.$bus.$on('node_active', this.onNodeActive)
     this.$bus.$on('scale', this.onScale)
     this.$bus.$on('translate', this.onScale)
-    this.$bus.$on('svg_mousedown', this.hideNoteContent)
-    this.$bus.$on('expand_btn_click', this.hideNoteContent)
+    this.$bus.$on('svg_mousedown', this.hideNow)
+    this.$bus.$on('expand_btn_click', this.hideNow)
   },
   mounted() {
     this.mindMap.el.appendChild(this.$refs.noteContentViewer)
@@ -64,29 +75,33 @@ export default {
   },
   beforeUnmount() {
     this.$bus.$off('showNoteContent', this.onShowNoteContent)
-    this.$bus.$off('hideNoteContent', this.hideNoteContent)
-    document.body.removeEventListener('click', this.hideNoteContent)
+    this.$bus.$off('hideNoteContent', this.scheduleHide)
+    document.body.removeEventListener('click', this.hideNow)
     this.$bus.$off('node_active', this.onNodeActive)
     this.$bus.$off('scale', this.onScale)
     this.$bus.$off('translate', this.onScale)
-    this.$bus.$off('svg_mousedown', this.hideNoteContent)
-    this.$bus.$off('expand_btn_click', this.hideNoteContent)
+    this.$bus.$off('svg_mousedown', this.hideNow)
+    this.$bus.$off('expand_btn_click', this.hideNow)
+    this.clearHideTimer()
   },
   methods: {
     onNodeActive(...args) {
       const nodes = [...args[1]]
       if (nodes.length > 0) {
         if (nodes[0] !== this.node) {
-          this.hideNoteContent()
+          this.hideNow()
         }
       } else {
-        this.hideNoteContent()
+        this.hideNow()
       }
     },
 
     // 显示备注浮层
     onShowNoteContent(content, left, top, node) {
+      this.clearHideTimer()
       this.node = node
+      this.lastLeft = left
+      this.lastTop = top
       this.editor.setMarkdown(content)
       this.handleALink()
       this.highlightCode()
@@ -100,6 +115,10 @@ export default {
         const wrap = this.$refs.noteContentWrap
         if (wrap && typeof Prism !== 'undefined') {
           Prism.highlightAllUnder(wrap)
+        }
+        // 自适应宽度下代码高亮会改变行宽/尺寸 → 重新校正位置，避免浮层溢出画布右/下边
+        if (this.show && typeof this.lastLeft === 'number') {
+          this.updateNoteContentPosition(this.lastLeft, this.lastTop)
         }
       })
     },
@@ -127,8 +146,41 @@ export default {
       this.updateNoteContentPosition(left, top)
     },
 
-    // 隐藏备注浮层
-    hideNoteContent() {
+    // 鼠标进入浮层：取消待执行的隐藏（浮层需可交互/可阅读，不能一移入就消失）
+    onPreviewEnter() {
+      this.hovering = true
+      this.clearHideTimer()
+    },
+
+    // 鼠标离开浮层：延迟隐藏，允许再移回图标或浮层
+    onPreviewLeave() {
+      this.hovering = false
+      this.scheduleHide()
+    },
+
+    // 延迟隐藏：库在备注图标 mouseout 时立即调用，若直接隐藏则鼠标从图标
+    // 移向浮层的途中（mouseout 已触发、mouseenter 未到）浮层会瞬隐。
+    // 260ms 宽限期足够跨过图标与浮层间的间隙。
+    scheduleHide() {
+      if (this.hovering) return
+      this.clearHideTimer()
+      this.hideTimer = setTimeout(() => {
+        this.hideTimer = null
+        this.hideNow()
+      }, 260)
+    },
+
+    clearHideTimer() {
+      if (this.hideTimer) {
+        clearTimeout(this.hideTimer)
+        this.hideTimer = null
+      }
+    },
+
+    // 立即隐藏（点击空白、选中节点、缩放/平移、展开按钮等明确关闭场景）
+    hideNow() {
+      this.clearHideTimer()
+      this.hovering = false
       this.show = false
     },
 
@@ -158,11 +210,17 @@ export default {
   box-shadow: 0 2px 16px 0 rgba(0, 0, 0, 0.06);
   border: 1px solid rgba(0, 0, 0, 0.06);
   z-index: 2;
+  max-width: 520px;
 
   .noteContentWrap {
-    max-width: 250px;
-    max-height: 300px;
-    overflow-y: auto;
+    // 2026-09-22 修复「预览栏太窄」：旧版固定 250px 宽，表格/长文本显示不全。
+    // 改为自适应宽度——短内容按自然宽（不超 min-width），长内容在 max-width 处换行；
+    // 宽内容（如宽表格 / 代码）仍可在内部横向滚动。
+    width: max-content;
+    min-width: 260px;
+    max-width: 480px;
+    max-height: 320px;
+    overflow: auto;
   }
 }
 </style>
