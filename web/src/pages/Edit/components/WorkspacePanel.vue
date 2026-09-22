@@ -629,9 +629,13 @@ export default {
   width: var(--ws-panel-w, 240px);
   height: 100%;
   border-right: 1px solid var(--macos-border);
-  background-color: var(--macos-bg-glass);
-  backdrop-filter: var(--macos-blur);
-  -webkit-backdrop-filter: var(--macos-blur);
+  // 与右侧 Sidebar 等工具栏同款观感：强玻璃拟态 + 外侧大圆角 + 展开投影
+  background-color: var(--macos-bg-glass-strong);
+  backdrop-filter: var(--macos-blur-strong);
+  -webkit-backdrop-filter: var(--macos-blur-strong);
+  border-top-right-radius: var(--macos-radius-xl);
+  border-bottom-right-radius: var(--macos-radius-xl);
+  box-shadow: 16px 0 44px rgba(0, 0, 0, 0.16);
   color: var(--macos-text);
   font-size: 13px;
   transition: width 0.2s ease;
@@ -657,6 +661,9 @@ export default {
   &.collapsed {
     width: 0;
     border-right: none;
+    // 收起（宽 0）时必须去阴影，否则 44px 投影会从左缘渗到画布上
+    //（与 Sidebar 隐藏态 right:-320px 阴影泄漏同款根因）
+    box-shadow: none;
     overflow: visible;
     .wsHeader,
     .wsSearch,
@@ -849,8 +856,11 @@ export default {
       display: flex;
       align-items: center;
       gap: 4px;
-      height: 24px;
+      height: 26px;
+      // macOS 风格条目：左右留白 + 圆角 hover/选中（与其他工具栏列表项一致）
+      margin: 0 6px;
       padding-right: 6px;
+      border-radius: 6px;
       cursor: pointer;
       overflow: hidden;
       &:hover {

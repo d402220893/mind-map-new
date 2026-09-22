@@ -112,7 +112,19 @@ export default {
           }
         })
       )
+      this.disableSpellcheck()
       this.attachDomHandlers()
+    },
+
+    // 关闭浏览器原生拼写检查（中英文混排时满屏红色波浪线）。
+    // Toast UI 无此配置项：WYSIWYG 的 ProseMirror 与源码模式的 CodeMirror 输入区
+    // 都是 contenteditable/textarea，统一在 DOM 上关掉 spellcheck。
+    disableSpellcheck() {
+      const host = this.$refs.host
+      if (!host) return
+      host
+        .querySelectorAll('[contenteditable], textarea')
+        .forEach(el => el.setAttribute('spellcheck', 'false'))
     },
 
     async mountContent() {

@@ -581,6 +581,24 @@ test('[文件栏调宽] 面板可拖拽调宽且偏移走 CSS 变量', () => {
   assert.ok(/left:\s*var\(--ws-panel-offset,\s*0px\)/.test(sheetTabs), 'sheet 栏应走 --ws-panel-offset（文件栏展开时右移让位）')
 })
 
+test('[文件栏观感] 面板与右侧工具栏同款玻璃拟态+圆角+投影', () => {
+  const vue = read(new URL('pages/Edit/components/WorkspacePanel.vue', SRC))
+  assert.ok(/\.workspacePanel\s*\{[^}]*--macos-bg-glass-strong/s.test(vue), '面板应使用强玻璃背景（与 Sidebar 一致）')
+  assert.ok(/\.workspacePanel\s*\{[^}]*--macos-blur-strong/s.test(vue), '面板应使用强模糊（与 Sidebar 一致）')
+  assert.ok(/border-top-right-radius:\s*var\(--macos-radius-xl\)/.test(vue), '面板右外角应为大圆角 radius-xl')
+  assert.ok(/border-bottom-right-radius:\s*var\(--macos-radius-xl\)/.test(vue), '面板右下外角应为大圆角 radius-xl')
+  // 收起（宽 0）时必须去阴影，否则投影渗到画布（Sidebar 隐藏态阴影泄漏同款根因）
+  assert.ok(/&\.collapsed\s*\{[^}]*box-shadow:\s*none/s.test(vue), '收起态必须去阴影防渗漏')
+  // 文件条目为圆角列表项
+  assert.ok(/\.wsFile\s*\{[^}]*border-radius:\s*6px/s.test(vue), '文件条目应为圆角列表项')
+})
+
+test('[md 编辑器] 关闭浏览器原生拼写检查', () => {
+  const vue = read(new URL('pages/Edit/components/MdEditor.vue', SRC))
+  assert.ok(/disableSpellcheck/.test(vue), 'MdEditor 应实现 disableSpellcheck')
+  assert.ok(/setAttribute\('spellcheck',\s*'false'\)/.test(vue), '应把编辑区 spellcheck 置为 false')
+})
+
 test('[错误诊断] renderer.log 改写到 userData（Program Files 不可写）', () => {
   const main = read(new URL('main.js', APP))
   assert.ok(/rendererLogPath/.test(main), 'main.js 应实现 rendererLogPath()')
