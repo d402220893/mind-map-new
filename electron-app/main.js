@@ -824,6 +824,11 @@ function createWindow() {
 
   // 捕获渲染端 JS 报错（白屏最常见原因），写入日志并首次弹窗
   mainWindow.webContents.on('console-message', (e, level, message, line, source) => {
+    // ResizeObserver loop 告警是浏览器规范级良性提示（同帧布局抖动），功能无影响：
+    // 只落日志，绝不弹原生错误框（用户创建 .smm 切换画布时必现，纯属打扰）
+    const isBenignRO = /ResizeObserver loop (limit exceeded|completed with undelivered notifications)/.test(
+      String(message || '')
+    )
     if (level >= 2) {
       try {
         fs.appendFileSync(
@@ -832,7 +837,7 @@ function createWindow() {
             (source || '') + ':' + (line || '') + ' ' + message + '\n'
         )
       } catch (err) {}
-      if (level >= 3 && !firstErrorShown) {
+      if (level >= 3 && !isBenignRO && !firstErrorShown) {
         firstErrorShown = true
         try {
           dialog.showErrorBox(

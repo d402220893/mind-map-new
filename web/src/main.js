@@ -51,8 +51,22 @@ function describe(err) {
  * @param {any} err 错误
  * @param {boolean} fatal true=致命（弹原生框 + 全屏面板）；false=可降级（仅日志 + 顶部横幅）
  */
+// 「ResizeObserver loop limit exceeded / completed with undelivered notifications」
+// 是浏览器规范级的**良性告警**（同一帧内布局变化再次触发了观察回调），不代表功能异常；
+// 但 Chromium 会以 error 级控制台消息抛出 → 既触发我们的启动横幅，又被主进程
+// console-message(level=3) 捕获弹原生框。统一在这里识别、各入口放行日志但不告警。
+function isBenignResizeObserverError(text) {
+  return /ResizeObserver loop (limit exceeded|completed with undelivered notifications)/.test(text)
+}
+
 function recordError(kind, err, fatal = false) {
   const text = describe(err)
+  if (isBenignResizeObserverError(text)) {
+    try {
+      console.warn('[思绪] ' + kind + '（良性，已忽略） → ' + text)
+    } catch (e) {}
+    return
+  }
   startupErrors.push({ kind, text, fatal })
   window.__STARTUP_ERRORS__ = startupErrors
   // ⚠️ 主进程只捕获 level>=2：console.warn(2) 落 renderer.log，console.error(3) 还会弹框。

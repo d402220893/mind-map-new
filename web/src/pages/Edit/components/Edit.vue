@@ -1489,9 +1489,14 @@ export default {
             this._mmReadyRO.disconnect()
             this._mmReadyRO = null
           }
-          // 切回导图页：补一次画布加载态，渲染结束由 node_tree_render_end 收尾
-          showLoading()
-          this.initWhenReady()
+          // 延迟到下一帧再建实例：RO 回调里同步建画布会造成同帧布局抖动，
+          // 触发「ResizeObserver loop limit exceeded」良性告警（banner+弹窗）
+          requestAnimationFrame(() => {
+            if (this.mindMap) return // 已被其他路径初始化
+            // 切回导图页：补一次画布加载态，渲染结束由 node_tree_render_end 收尾
+            showLoading()
+            this.initWhenReady()
+          })
         }
       })
       this._mmReadyRO.observe(el)
