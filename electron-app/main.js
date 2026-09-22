@@ -824,8 +824,9 @@ function createWindow() {
 
   // 捕获渲染端 JS 报错（白屏最常见原因），写入日志并首次弹窗
   mainWindow.webContents.on('console-message', (e, level, message, line, source) => {
-    // ResizeObserver loop 告警是浏览器规范级良性提示（同帧布局抖动），功能无影响：
-    // 只落日志，绝不弹原生错误框（用户创建 .smm 切换画布时必现，纯属打扰）
+    // ResizeObserver loop 告警是浏览器规范级良性提示（同帧布局抖动，功能无影响）：
+    // 只落日志，绝不弹原生错误框 —— 用户新建 .smm 切画布时必现，纯属打扰。
+    // 渲染端同款白名单见 web/src/utils/benignErrors.js（两处模式需保持一致）。
     const isBenignRO = /ResizeObserver loop (limit exceeded|completed with undelivered notifications)/.test(
       String(message || '')
     )

@@ -25,6 +25,7 @@ import {
   openWorkspace
 } from '@/utils/workspaceBridge'
 import { nsHas } from '@/utils/lateBind.js'
+import { isBenignError } from '@/utils/benignErrors.js'
 // import VConsole from 'vconsole'
 // const vConsole = new VConsole()
 
@@ -46,24 +47,20 @@ function describe(err) {
   return String(err)
 }
 
+// 良性告警（如 ResizeObserver loop limit exceeded）判定统一走 utils/benignErrors：
+// 它们是规范级提示、功能无影响，但 Chromium 以 error 级抛出 → 会同时命中
+// 我们的启动横幅与主进程 console-message(level>=3) 的原生弹窗。
+// 这里识别后只留一行 warn 日志，不记横幅、不弹框。
 /**
  * @param {string} kind 阶段名
  * @param {any} err 错误
  * @param {boolean} fatal true=致命（弹原生框 + 全屏面板）；false=可降级（仅日志 + 顶部横幅）
  */
-// 「ResizeObserver loop limit exceeded / completed with undelivered notifications」
-// 是浏览器规范级的**良性告警**（同一帧内布局变化再次触发了观察回调），不代表功能异常；
-// 但 Chromium 会以 error 级控制台消息抛出 → 既触发我们的启动横幅，又被主进程
-// console-message(level=3) 捕获弹原生框。统一在这里识别、各入口放行日志但不告警。
-function isBenignResizeObserverError(text) {
-  return /ResizeObserver loop (limit exceeded|completed with undelivered notifications)/.test(text)
-}
-
 function recordError(kind, err, fatal = false) {
   const text = describe(err)
-  if (isBenignResizeObserverError(text)) {
+  if (isBenignError(text)) {
     try {
-      console.warn('[思绪] ' + kind + '（良性，已忽略） → ' + text)
+      console.warn('[思绪] ' + kind + '（良性告警，已忽略） → ' + text)
     } catch (e) {}
     return
   }

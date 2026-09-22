@@ -657,3 +657,31 @@ test('[错误诊断] Vue errorHandler 附加组件名', () => {
   assert.ok(/'@' \+ comp/.test(main), 'kind 应附加 @组件名')
 })
 
+// 用户反馈「新建 .smm 弹页面脚本错误 / 顶部启动异常横幅」。真凶是 ResizeObserver loop
+// 良性告警被两端兜底层当成致命错误。两侧白名单缺一即复现，故双双钉住。
+test('[良性告警] 渲染端 recordError 必须走 benignErrors 白名单，且横幅不收录良性告警', () => {
+  const main = read(new URL('main.js', SRC))
+  assert.ok(/from '@\/utils\/benignErrors\.js'/.test(main), 'main.js 应引入 isBenignError 白名单')
+  const seg = main.match(/function recordError\([\s\S]*?\n\}/)
+  assert.ok(seg, '找不到 recordError 定义')
+  assert.ok(/if \(isBenignError\(text\)\)/.test(seg[0]), 'recordError 应先做良性判定')
+  const benignIdx = seg[0].indexOf('isBenignError(text)')
+  const pushIdx = seg[0].indexOf('startupErrors.push')
+  assert.ok(benignIdx >= 0 && pushIdx > benignIdx, '良性判定必须在 startupErrors.push 之前 return（否则横幅照旧）')
+  const util = read(new URL('utils/benignErrors.js', SRC))
+  assert.ok(/ResizeObserver loop \(limit exceeded\|completed with undelivered notifications\)/.test(util), '白名单模式缺失或措辞被改宽')
+  assert.ok(/export function isBenignError/.test(util), 'benignErrors 应导出 isBenignError')
+})
+
+test('[良性告警] 主进程 console-message 不得为良性告警弹原生框', () => {
+  const main = read(new URL('main.js', APP))
+  const seg = main.match(/webContents\.on\('console-message'[\s\S]*?\n  \}\)/)
+  assert.ok(seg, '找不到 console-message 监听')
+  assert.ok(/isBenignRO/.test(seg[0]), '应按 isBenignRO 判定良性告警')
+  assert.ok(
+    /level >= 3 && !isBenignRO && !firstErrorShown/.test(seg[0]),
+    'showErrorBox 的触发条件必须排除良性告警（漏了就会在新建 .smm 时弹框）'
+  )
+  assert.ok(/ResizeObserver loop \(limit exceeded/.test(seg[0]), '主进程侧模式应与渲染端一致')
+})
+
