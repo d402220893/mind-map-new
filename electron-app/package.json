@@ -1,6 +1,6 @@
 {
   "name": "mind-map",
-  "version": "2.0.33",
+  "version": "2.0.37",
   "description": "思绪思维导图（多工作表离线版）",
   "main": "main.js",
   "author": "Jia Hao",
@@ -65,6 +65,15 @@
       "deleteAppDataOnUninstall": false,
       "installerIcon": "appicon.ico",
       "installerHeaderIcon": "appicon.ico"
-    }
+    },
+    "fileAssociations": [
+      {
+        "ext": "smm",
+        "name": "ThoughtsMindMap",
+        "description": "思绪思维导图文件",
+        "icon": "appicon.ico",
+        "role": "Editor"
+      }
+    ]
   }
 }

@@ -74,6 +74,10 @@ const MD_EXT = /\.(md|markdown|mmd)$/i
 const SMM_EXT = /\.smm$/i
 const IMPORT_EXT = /\.(km|xmind|json|emmx)$/i
 
+// 同路径并发打开入锁：挡住"双击文件行在一帧内两次 click 各建一份 workbook"的竞态
+// （openMindMap 到 addWorkbook 之间有 await readText 挂起，早退检查拦不住第二次）。
+const _opening = new Set()
+
 export function baseName(abs) {
   return String(abs || '').replace(/\\/g, '/').split('/').pop() || ''
 }
@@ -114,25 +118,51 @@ async function openMindMap(abs) {
   }
   const read = await services.workspaceService.readText(abs)
   if (!read.ok) return read
-  // ⚠️ decodeSmm 不返回 Result：成功直接返回 {sheets, activeId}；JSON 损坏抛 appError。
-  // 旧代码 `if (!decoded.ok) return decoded` 因 decoded.ok 恒为 undefined 而**永远为真**，
-  // 导致任何 .smm 都被提前返回、文件打不开（§32.4 Bug① 根因）。
-  let decoded
+  // ⚠️ 双击文件行会在一帧内连续触发两次 click（各自走一遍 onFileClick→openFile→openMindMap），
+  //    而本函数到 addWorkbook 之前有 await readText 挂起点：两次调用在"首次 addWorkbook 落地前"
+  //    都通过了上面的 findByPath 早退检查（彼时文件尚未真正打开），于是各自再建一个 workbook
+  //    → 同一文件出现两份标签（其中一份被激活、另一份沦为孤儿）。这就是"双击打开文件无法正确打开 /
+  //    显示状态好像是新建"的真根因之一。
+  // 修法：① 用 _opening 入锁集合挡住并发的同路径打开；② readText 之后**再查一次** findByPath，
+  //    把挂起期间已被另一路打开的文件复用掉，绝不重复建标签。
+  if (_opening.has(abs)) {
+    // 已有同路径正在打开：等其完成（这里无法 await 其 promise，直接复用其已落地的标签）
+    const late = findByPath(abs)
+    if (late) {
+      activate(late.id)
+      return { ok: true, reused: true, tabId: late.id, abs }
+    }
+    return { ok: true, pending: true, abs }
+  }
+  _opening.add(abs)
   try {
-    decoded = decodeSmm(read.data.content)
-  } catch (e) {
-    return { ok: false, error: { code: (e && e.code) || 'E_SMM_INVALID', message: e && e.message } }
+    const late = findByPath(abs)
+    if (late) {
+      activate(late.id)
+      return { ok: true, reused: true, tabId: late.id, abs }
+    }
+    // ⚠️ decodeSmm 不返回 Result：成功直接返回 {sheets, activeId}；JSON 损坏抛 appError。
+    // 旧代码 `if (!decoded.ok) return decoded` 因 decoded.ok 恒为 undefined 而**永远为真**，
+    // 导致任何 .smm 都被提前返回、文件打不开（§32.4 Bug① 根因）。
+    let decoded
+    try {
+      decoded = decodeSmm(read.data.content)
+    } catch (e) {
+      return { ok: false, error: { code: (e && e.code) || 'E_SMM_INVALID', message: e && e.message } }
+    }
+    const container = decoded // { sheets, activeId }，loadSheetsContainer 期望的形状
+    const name = baseName(abs).replace(/\.smm$/i, '')
+    const wb = addWorkbook({ name, filePath: abs, kind: 'mindmap' })
+    if (!loadSheetsContainer(container)) {
+      return { ok: false, error: { code: 'E_BAD_SMM', message: '工作表容器为空' } }
+    }
+    setCurrentFilePath(abs)
+    markDirty(wb.id, false)
+    activate(wb.id)
+    return { ok: true, reused: false, tabId: wb.id, abs }
+  } finally {
+    _opening.delete(abs)
   }
-  const container = decoded // { sheets, activeId }，loadSheetsContainer 期望的形状
-  const name = baseName(abs).replace(/\.smm$/i, '')
-  const wb = addWorkbook({ name, filePath: abs, kind: 'mindmap' })
-  if (!loadSheetsContainer(container)) {
-    return { ok: false, error: { code: 'E_BAD_SMM', message: '工作表容器为空' } }
-  }
-  setCurrentFilePath(abs)
-  markDirty(wb.id, false)
-  activate(wb.id)
-  return { ok: true, reused: false, tabId: wb.id, abs }
 }
 
 function activate(id) {
@@ -336,6 +366,17 @@ export const shell = {
     const a = hostApi()
     if (a && typeof a.onMenuCommand === 'function') a.onMenuCommand(cb)
   },
+  // 主进程经 smm:open-file 推送的"系统双击/命令行传入文件"回调（视图唯一出口）
+  onOpenFile(cb) {
+    const a = hostApi()
+    if (!a || typeof a.onOpenFile !== 'function') return false
+    try { a.onOpenFile(cb); return true } catch (e) { return false }
+  },
+  rendererReady() {
+    const a = hostApi()
+    if (!a || typeof a.rendererReady !== 'function') return
+    try { a.rendererReady() } catch (e) {}
+  },
   windowControls: {
     has(name) {
       const a = hostApi()
@@ -372,6 +413,34 @@ export function startFsBridge() {
     }
   })
   return true
+}
+
+/**
+ * 收口「系统双击 .smm/.md 打开」：主进程经 smm:open-file 把文件路径推到渲染端，
+ * 这里统一在 shell 网关注册（视图不得直调 window.smmApi，违背契约⑥），
+ * 回调直接走本模块的 openPath（按扩展名分派到导图/编辑器）。
+ *
+ * 注册完成后通知主进程「已就绪」，主进程再把暂存的启动文件路径推下来；
+ * 同时把 openPath 推到下一帧，避免在 initApp 同步收尾里立刻触发导图渲染，
+ * 与 Vue 挂载/ResizeObserver/画布初始化抢跑（v2.0.35 启动报 class constructor fr 异常）。
+ */
+export function startOpenFileBridge() {
+  const ok = shell.onOpenFile(async (filePath) => {
+    if (!filePath || typeof filePath !== 'string') return
+    // 推到下一宏任务，让 initApp / Vue 挂载/ResizeObserver 先落定，
+    // 避免同步收尾阶段立刻创建 MindMap 实例触发 SVG.js 类构造异常。
+    setTimeout(async () => {
+      try {
+        const r = await openPath(filePath)
+        if (!r.ok) console.warn('[启动打开文件] 失败', filePath, r.error)
+      } catch (e) {
+        console.error('[启动打开文件] 异常', filePath, e)
+      }
+    }, 0)
+  })
+  // 注册完成后立即通知主进程；主进程收到前暂存文件路径，不会丢失。
+  shell.rendererReady()
+  return ok
 }
 
 export { encode, decodeSmm }

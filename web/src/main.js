@@ -22,7 +22,8 @@ import {
   getServices,
   startEventBridge,
   startFsBridge,
-  openWorkspace
+  openWorkspace,
+  startOpenFileBridge
 } from '@/utils/workspaceBridge'
 import { nsHas } from '@/utils/lateBind.js'
 import { isBenignError } from '@/utils/benignErrors.js'
@@ -206,6 +207,15 @@ const initApp = () => {
     app.mount('#app')
   } catch (e) {
     recordError('app.mount', e, true)
+  }
+
+  // 系统双击/命令行传入的文件路径：主进程经 smm:open-file 推送，渲染端经 bridge 打开。
+  // 收口到 workspaceBridge 的 shell 网关（视图不得直连宿主外壳，违背契约⑥）；
+  // 注册需在 did-finish-load 之前完成，故放在 initApp 同步流程里（mount 已完成、服务层已装配）。
+  try {
+    startOpenFileBridge()
+  } catch (e) {
+    recordError('startupOpenFile', e)
   }
 
   // 看门狗：挂载后若 #app 内没有任何元素，说明页面确实是白的 —— 把错误顶到用户眼前

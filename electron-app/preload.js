@@ -63,6 +63,14 @@ contextBridge.exposeInMainWorld('smmApi', {
   onMenuCommand: cb => {
     ipcRenderer.on('smm:menu-command', (e, cmd) => cb(cmd))
   },
+  // 监听系统双击/命令行传入的文件路径（Windows 文件关联启动）
+  onOpenFile: cb => {
+    ipcRenderer.on('smm:open-file', (e, p) => cb(p))
+  },
+  // 渲染端注册完启动文件监听后回发主进程，主进程再把暂存文件推下来
+  rendererReady: () => {
+    ipcRenderer.send('smm:renderer-ready')
+  },
   // ===== 安装向导 IPC =====
   installGetDefaultPath: () => ipcRenderer.invoke('install:get-default-path'),
   installBrowse: () => ipcRenderer.invoke('install:browse'),

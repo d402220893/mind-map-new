@@ -6,6 +6,62 @@ const { execFile, spawn } = require('child_process')
 const os = require('os')
 const { getAppExeName } = require('./install-meta')
 
+// 安装器模式：--install 参数或环境变量 MINDMAP_INSTALL=1
+const IS_INSTALL_MODE = process.argv.includes('--install') || process.env.MINDMAP_INSTALL === '1'
+
+// 单实例锁：Windows 双击 .smm/.md 文件会启动第二个进程，必须把它转发到已有窗口。
+// 安装器模式不加锁，避免安装器实例被主实例误拦截。
+let gotTheLock = true
+if (!IS_INSTALL_MODE) {
+  gotTheLock = app.requestSingleInstanceLock()
+}
+if (!gotTheLock) {
+  app.quit()
+  process.exit(0)
+}
+
+// 从 argv 中提取系统双击/命令行传入的可打开文件路径（.smm / .md）。
+function getStartupFilePath(argv) {
+  if (!Array.isArray(argv)) return null
+  const openable = /\.(smm|md|markdown)$/i
+  for (const arg of argv) {
+    if (typeof arg !== 'string') continue
+    if (arg.startsWith('-')) continue
+    const ext = path.extname(arg).toLowerCase()
+    if (!openable.test(ext)) continue
+    // 优先按绝对路径解析
+    let p = path.resolve(arg)
+    if (fs.existsSync(p)) return p
+    // 相对路径则相对启动时的 cwd
+    p = path.resolve(process.cwd(), arg)
+    if (fs.existsSync(p)) return p
+  }
+  return null
+}
+
+// 启动时待打开的文件路径；如果窗口尚未建好，先暂存到这里，等渲染端就绪后再发。
+let startupFilePath = getStartupFilePath(process.argv)
+// 第二实例传入的文件路径（单实例锁转发）
+let secondInstanceFile = null
+// 渲染端就绪标记：主进程只在收到 smm:renderer-ready 后才把启动文件推过去，
+// 避免 did-finish-load 与 initApp 注册 smm:open-file 监听发生竞态。
+let rendererReady = false
+let pendingStartupFile = null
+
+function pushStartupFile(filePath) {
+  if (!filePath || !mainWindow || mainWindow.isDestroyed()) return
+  try {
+    mainWindow.webContents.send('smm:open-file', filePath)
+  } catch (e) {}
+}
+
+function flushStartupFile() {
+  if (rendererReady && pendingStartupFile) {
+    pushStartupFile(pendingStartupFile)
+    pendingStartupFile = null
+  }
+}
+
 const APP_DIR = __dirname
 // === 启动性能埋点（由环境变量 STARTUP_LOG 控制；为空则不写，不影响正常功能）===
 const STARTUP_LOG = process.env.STARTUP_LOG || ''
@@ -180,6 +236,13 @@ ipcMain.on('smm:write-file-sync', (event, { filePath, content }) => {
   } catch (err) {
     event.returnValue = { ok: false, error: err.message }
   }
+})
+
+// 渲染端注册完 smm:open-file 监听后回发此信号；主进程由此把暂存的启动文件推下去，
+// 避免 did-finish-load 与 initApp 注册发生竞态（导致文件打不开或回调过早触发）。
+ipcMain.on('smm:renderer-ready', () => {
+  rendererReady = true
+  flushStartupFile()
 })
 
 // 重命名本地文件（标签双击重命名用）：oldPath -> newPath
@@ -876,6 +939,18 @@ function createWindow() {
 
   mainWindow.webContents.on('did-finish-load', () => {
     bootMark('did_finish_load')
+    // 系统双击/命令行传入的文件路径：先暂存，等渲染端注册好监听并发回
+    // smm:renderer-ready 后再推，避免 did-finish-load 与 initApp 注册竞态。
+    if (startupFilePath) {
+      pendingStartupFile = startupFilePath
+      startupFilePath = null
+      flushStartupFile()
+    }
+    if (secondInstanceFile) {
+      pendingStartupFile = secondInstanceFile
+      secondInstanceFile = null
+      flushStartupFile()
+    }
   })
 
   mainWindow.once('ready-to-show', () => {
@@ -936,8 +1011,6 @@ function tryListen(startPort, cb, attempt) {
   })
 }
 
-const IS_INSTALL_MODE = process.argv.includes('--install') || process.env.MINDMAP_INSTALL === '1'
-
 // 安装器模式完全脱离 HTTP server（install.html 是纯本地资源，loadFile 直读），
 // 从根本上解决"安装器自己 listen 51888 → spawn 出去的 MindMap.exe 撞端口"的问题。
 // 正常模式走 tryListen 做端口回退，避免本机 51888 被其他程序占用时启动失败。
@@ -958,4 +1031,31 @@ app.on('window-all-closed', () => {
 
 app.on('activate', () => {
   if (BrowserWindow.getAllWindows().length === 0) createWindow()
+})
+
+// 第二实例被单实例锁拦截后，把它的 argv 里的 .smm/.md 路径转发给已运行实例。
+app.on('second-instance', (event, argv, workingDirectory) => {
+  const p = getStartupFilePath(argv)
+  if (mainWindow) {
+    if (mainWindow.isMinimized()) mainWindow.restore()
+    mainWindow.focus()
+    if (p) {
+      pendingStartupFile = p
+      flushStartupFile()
+    }
+  } else if (p) {
+    secondInstanceFile = p
+  }
+})
+
+// macOS 系统级打开文件（Finder 双击 .smm）
+app.on('open-file', (event, p) => {
+  event.preventDefault()
+  const abs = path.resolve(p)
+  if (mainWindow) {
+    pendingStartupFile = abs
+    flushStartupFile()
+  } else {
+    startupFilePath = abs
+  }
 })

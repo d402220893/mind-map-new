@@ -136,9 +136,10 @@
           v-for="f in flatFiles"
           :key="f.path"
           class="wsFile"
-          :class="{ active: f.path === activePath }"
+          :class="{ active: f.path === activePath, selected: selectedPaths.includes(f.path) }"
           :style="{ paddingLeft: 8 + f.depth * 14 + 'px' }"
-          @click="onFileClick(f)"
+          @click="onFileClick($event, f)"
+          @dblclick="onFileDblClick(f)"
           @contextmenu.prevent.stop="onCtx($event, f)"
         >
           <span class="wsCaret">{{ f.isDir ? (isDirCollapsed(f.path) ? '▸' : '▾') : '' }}</span>
@@ -160,6 +161,7 @@
       @click="ctxMenu = null"
     >
       <li v-if="ctxMenu.f && !ctxMenu.f.isDir" @click="openCtxFile">打开</li>
+      <li v-if="selectedPaths.length >= 1" @click="openSelected">打开选中的 {{ selectedPaths.length }} 个文件</li>
       <li @click="newFileNear">新建文件</li>
       <li @click="newFolderNear">新建文件夹</li>
       <li v-if="ctxMenu.f && !ctxMenu.f.isDir" @click="renameCtxFile">重命名</li>
@@ -177,6 +179,7 @@
 
 <script>
 import { pickAndOpenWorkspace, openPath, getServices } from '@/utils/workspaceBridge'
+import { computeRangeSelection } from '@/utils/rangeSelect'
 import { getWorkbookList, renameWorkbook, removeWorkbook } from '@/api'
 import { decodeSmm } from '@/services/smmCodec'
 import { searchSmmContainer, stripHtml, truncate } from '@/utils/smmSearch'
@@ -204,6 +207,8 @@ export default {
       collapsed: false,
       ctxMenu: null,
       activePath: '',
+      selectedPaths: [], // 文件树多选态（Ctrl/Shift+左键），普通点击清空
+      lastSelectedPath: '', // 多选锚点：Shift+点击的连续区间起点
       collapsedDirs: [], // 已折叠目录（正斜杠归一化路径），按工作区 root 持久化到 localStorage
       collapseSmm: false, // 搜索结果「导图内容」分区折叠
       collapseMd: false, // 搜索结果「文档全文」分区折叠
@@ -561,12 +566,74 @@ export default {
         : root.replace(/\\/g, '/').replace(/\/+$/, '') + '/' + hit.rel
       this.openFile({ path: abs, name: hit.rel })
     },
-    onFileClick(f) {
-      if (f.isDir) return this.toggleDir(f.path)
+    // 文件条目点击：
+    //   - Ctrl/Cmd+左键：单选切换（不打开）
+    //   - Shift+左键：从 lastSelectedPath 到当前文件之间的连续区间多选（不打开）
+    //   - Ctrl+Shift+左键：把连续区间追加到当前多选态
+    //   - 普通左键点击=打开文件（并清空多选态）
+    // 双击也显式打开（兼顾「双击打开文件」诉求）。
+    onFileClick(e, f) {
+      if (f.isDir) {
+        this.selectedPaths = []
+        this.lastSelectedPath = ''
+        return this.toggleDir(f.path)
+      }
+      const ctrl = e && (e.ctrlKey || e.metaKey)
+      const shift = e && e.shiftKey
+      if (ctrl && shift) {
+        this.selectRange(f.path, true)
+        return
+      }
+      if (shift) {
+        this.selectRange(f.path, false)
+        return
+      }
+      if (ctrl) {
+        this.toggleSelect(f.path)
+        this.lastSelectedPath = f.path
+        return
+      }
+      this.selectedPaths = []
+      this.lastSelectedPath = f.path
       this.openFile(f)
+    },
+    onFileDblClick(f) {
+      if (f.isDir) return
+      this.selectedPaths = []
+      this.lastSelectedPath = f.path
+      this.openFile(f)
+    },
+    toggleSelect(path) {
+      const i = this.selectedPaths.indexOf(path)
+      if (i >= 0) this.selectedPaths.splice(i, 1)
+      else this.selectedPaths.push(path)
+    },
+    // Shift+左键连续多选：以 lastSelectedPath 为锚点，选中到当前文件之间的所有文件
+    // （区间计算抽离到纯函数 computeRangeSelection，便于单测）
+    selectRange(path, append) {
+      this.selectedPaths = computeRangeSelection({
+        files: this.flatFiles || [],
+        anchor: this.lastSelectedPath,
+        current: path,
+        append,
+        selected: this.selectedPaths
+      })
+      this.lastSelectedPath = path
+    },
+    // 右键菜单「打开选中的 N 个文件」：依次打开所有已选文件（过滤掉目录）
+    async openSelected() {
+      const paths = this.selectedPaths.slice()
+      this.ctxMenu = null
+      for (const p of paths) {
+        const node = this.flatFiles.find(n => n.path === p && !n.isDir)
+        if (!node) continue
+        await this.openFile(node)
+      }
     },
     // 目录折叠/展开（路径统一为正斜杠，避免 Windows 反斜杠导致判定不一致）
     toggleDir(path) {
+      // 折叠/展开目录时清掉文件多选态（多选态只对文件有意义）
+      this.selectedPaths = []
       const p = String(path).replace(/\\/g, '/')
       const i = this.collapsedDirs.indexOf(p)
       if (i >= 0) this.collapsedDirs.splice(i, 1)
@@ -640,7 +707,10 @@ export default {
     },
     openCtxFile() {
       const f = this.ctxMenu && this.ctxMenu.f
-      if (f && !f.isDir) this.openFile(f)
+      if (f && !f.isDir) {
+        this.selectedPaths = []
+        this.openFile(f)
+      }
     },
     revealFile() {
       const f = this.ctxMenu && this.ctxMenu.f
@@ -1089,6 +1159,12 @@ export default {
       }
       &.active {
         background-color: var(--macos-hover-strong);
+      }
+      // 多选态（Ctrl/Shift+左键）：与 active 区分——用左侧强调色条 + 浅蓝底，
+      // 不覆盖 active 的高亮（两者可同时出现：选中集合中恰为当前激活文件）
+      &.selected {
+        background-color: rgba(64, 158, 255, 0.14);
+        box-shadow: inset 3px 0 0 var(--macos-accent, #409eff);
       }
       .wsCaret {
         flex: none;

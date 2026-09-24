@@ -5,6 +5,7 @@
     :width="isMobile ? '90%' : '50%'"
     :top="isMobile ? '20px' : '15vh'"
     :close-on-click-modal="false"
+    :draggable="true"
   >
     <!-- 标题行：标题 + 二选一模式切换（v1.6：写备注 / 引用章节，永不共存） -->
     <template #header>

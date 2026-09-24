@@ -86,7 +86,7 @@ import Select from 'simple-mind-map/src/plugins/Select.js'
 import RichText from 'simple-mind-map/src/plugins/RichText.js'
 import AssociativeLine from 'simple-mind-map/src/plugins/AssociativeLine.js'
 import TouchEvent from 'simple-mind-map/src/plugins/TouchEvent.js'
-import NodeImgAdjust from 'simple-mind-map/src/plugins/NodeImgAdjust.js'
+import NodeImgAdjust from '@/plugins/NodeImgAdjust.js'
 import SearchPlugin from 'simple-mind-map/src/plugins/Search.js'
 import Painter from 'simple-mind-map/src/plugins/Painter.js'
 import ScrollbarPlugin from 'simple-mind-map/src/plugins/Scrollbar.js'
@@ -246,6 +246,11 @@ export default {
         currentFilePath: '',
         // 加载文件/切换的短暂窗口：此期间产生的 data_change 不标记为未保存
         _isLoading: false,
+        // 打开/载入完成后的脏标记抑制截止时间戳（ms）。simple-mind-map 的 addHistory 被
+        // 节流 100ms，渲染结束清掉 _isLoading 后它仍可能晚到 emit data_change；若该 late
+        // 事件漏过 originAddHistory 去重，会把刚打开的文件误标"未保存"（状态栏显示"新建"）。
+        // 载入收尾时把该窗口延后 ~600ms，彻底吸收 late data_change，保证"打开已存文件不冒脏点"。
+        _suppressDirtyUntil: 0,
         // 粘贴图片时自动缩放的最长边像素（原图 <= 该值时保持原图大小）
         imgPasteMaxEdge: 600,
         // 自动保存：防抖调度器实例（null 表示尚未初始化）
@@ -471,6 +476,9 @@ export default {
         storeData({ root: data })
         // 用户编辑：标记当前文件为“未保存”（加载/切换期间不标记，避免误标）
         if (this._isLoading) return
+        // 打开/载入收尾的抑制窗口内：吸收节流晚到的 data_change，绝不误标脏
+        // （数据已通过上面的 storeData 落库，抑制的只是"未保存"标记，不丢内容）
+        if (this._suppressDirtyUntil && Date.now() < this._suppressDirtyUntil) return
         const id = getActiveWorkbookId()
         if (id && !isDirty(id)) {
           markDirty(id, true)
@@ -793,6 +801,8 @@ export default {
           // 这种情况已被底下的 setTimeout(250) 兜底覆盖（>100ms 节流窗）
         }
         this._isLoading = false
+        // 载入收尾：把脏标记抑制窗口延后，吸收节流晚到的 data_change（防"打开即误标未保存"）
+        this._suppressDirtyUntil = Date.now() + 600
         if (this.mindMap && typeof this.mindMap.off === 'function') {
           this.mindMap.off('node_tree_render_end', onRenderEnd)
         }
@@ -804,6 +814,8 @@ export default {
       setTimeout(() => {
         if (this._isLoading) {
           this._isLoading = false
+          // 兜底同样延后脏标记抑制窗口（极端情况：未收到渲染结束也要防误标）
+          this._suppressDirtyUntil = Date.now() + 600
           if (this.mindMap && typeof this.mindMap.off === 'function') {
             this.mindMap.off('node_tree_render_end', onRenderEnd)
           }
@@ -1310,12 +1322,18 @@ export default {
     // FileTabs 切换文件：API 已把 sheetState 指向新 workbook，这里只需载入到 mind map 实例
     onWorkbookSwitched() {
       if (!this.mindMap) return
-      this.loadSheetData(getActiveSheetData())
-      this.refreshSheets()
-      this.currentFilePath = getCurrentFilePath()
-      this.updateTitle()
-      // 切换文件时同步画布背景
-      this.applyStoredCanvasBackground()
+      try {
+        this.loadSheetData(getActiveSheetData())
+        this.refreshSheets()
+        this.currentFilePath = getCurrentFilePath()
+        this.updateTitle()
+        // 切换文件时同步画布背景
+        this.applyStoredCanvasBackground()
+      } catch (e) {
+        // simple-mind-map 插件（如 NodeImgAdjust）在重绘期间调用 image.rbox()
+        // 可能因 SVG 元素未挂载而抛异常；这里兜底捕获，避免冒泡成页面脚本错误弹窗。
+        console.error('[onWorkbookSwitched] 切换工作表时发生异常', e)
+      }
       // 切换文件时不弹 toast，保持 UI 静默切换
     },
 

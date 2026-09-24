@@ -1691,3 +1691,137 @@ onChange → mdDoc.setContent + scheduleSave
 3. 文件树栏搜索：切到「节点·备注」可搜节点文本/备注/引用缓存，点击结果定位并居中节点；
 4. 文件树栏整体风格与右侧菜单栏一致（玻璃拟态）；
 5. 底部不再显示文件名/状态栏，画布铺满不被遮挡。
+
+## §36 三连修：双击打开/备注拖动/文件树多选（v2.0.34）
+
+用户反馈三类体验缺陷（2026-09-21），全部已修且回归测试覆盖：
+
+### 36.1 Bug① 双击打开文件无法正确打开 / 显示状态好像是新建（HIGH）
+
+* 复现：在文件树**双击**一个 `.smm` 文件，出现两份相同标签；或直接单开一个已存文件后，状态栏/文件树红点显示"未保存"，保存被误导走「另存为」。
+* 真根因（两个独立缺陷，叠加表现为上述现象）：
+  1. **双击竞态建两份标签**：`onFileClick`→`openFile`→`openMindMap` 是异步流程，到 `addWorkbook` 之前有 `await readText` 挂起；双击在一帧内触发两次 `click`，两路**都在首次 `addWorkbook` 落地前**通过了同步的 `findByPath` 早退检查（此刻文件尚未真正打开），于是各自再建一个 workbook → 同一文件两份标签。
+  2. **打开后被误标脏**：simple-mind-map 的 `addHistory` 被节流 100ms，渲染结束清掉 `_isLoading` 后节流 timer 仍可能晚到 `emit data_change`；若该 late 事件漏过 `originAddHistory` 去重，会把刚打开的文件误标"未保存"（状态像新建 / 保存走另存为）。
+* 修复：
+  * `web/src/utils/workspaceBridge.js`：新增模块级 `_opening` 入锁集合（`new Set()`），`openMindMap` 入口 `if (_opening.has(abs))` 挡住并发同路径打开；并在 `await readText` **之后再次** `findByPath(abs)` 复查，把挂起期间已被另一路打开的标签复用掉；`try/finally` 中 `_opening.delete(abs)` 保释放（异常也不死锁）。
+  * `web/src/pages/Edit/components/Edit.vue`：新增 `_suppressDirtyUntil` 字段；`data_change` 处理器在 `_isLoading` 守卫之后、标脏之前增加 `if (this._suppressDirtyUntil && Date.now() < this._suppressDirtyUntil) return`；`loadSheetData` 的 `onRenderEnd` 与 1.5s 兜底收尾处把 `_suppressDirtyUntil` 延后 ~600ms，彻底吸收 late `data_change`（数据仍经 `storeData` 落库，仅抑制"未保存"标记，不丢内容）。
+* 回归：`tests/regression/template-bindings.test.mjs` 新增 `[双击重复打开]`（断言 `_opening` 入锁 + `finally` 释放 + `readText` 后复查 `findByPath`）与 `[打开误标脏]`（断言 `_suppressDirtyUntil` 字段、data_change 抑制 return、收尾设窗）。
+
+### 36.2 Bug② 备注窗口不能用鼠标左键按住拖动（MED）
+
+* 复现：点开节点「修改备注」弹窗后，鼠标左键按住标题栏无法拖动窗口。
+* 修复：`web/src/pages/Edit/components/NodeNote.vue` 的 `<el-dialog>` 增加 `:draggable="true"`（Element Plus 2.8.8 原生支持，按住标题栏拖动）。
+* 回归：`template-bindings.test.mjs` 新增 `[备注窗口拖动]` 断言 `el-dialog` 启用 `:draggable="true"`。
+
+### 36.3 Bug③ 文件树不能用 Shift+左键 / Ctrl+左键 多选文件（MED）
+
+* 复现：文件树只能单击打开，无法按住 Ctrl/Shift 多选。
+* 修复：`web/src/pages/Edit/components/WorkspacePanel.vue`：
+  * `data()` 新增 `selectedPaths: []`；文件条目 `@click` 改为传 `$event`，新增 `@dblclick="onFileDblClick(f)"`。
+  * `onFileClick(e, f)`：目录仍走 `toggleDir`（保持回归契约 `if (f.isDir) return this.toggleDir(f.path)` 不变，清空多选态移至 `toggleDir` 内）；文件在 `e.ctrlKey/metaKey/shiftKey` 时仅切换选中、不打开；普通点击清空多选并打开。
+  * 新增 `onFileDblClick(f)`（显式打开，兼顾双击诉求）、`toggleSelect(path)`、`openSelected()`（右键菜单「打开选中的 N 个文件」依次打开非目录选中项）。
+  * 选中态视觉：`.wsFile.selected` 用左侧主色条 + 浅蓝底，与 `.active` 并存不冲突。
+  * 右键菜单新增「打开选中的 N 个文件」项；`openCtxFile` 打开单文件后清空选中。
+* 回归：既有 `[统一搜索]` 用例对 `if (f.isDir) return this.toggleDir(f.path)` 的契约保持不变（已通过），本次多选改动未破坏。
+
+### 36.4 测试与门禁
+
+* `cd web && node --test` → **1050/1050 全绿**（0 fail）；`web/tests/regression/template-bindings.test.mjs` 新增 3 条契约断言 `[双击重复打开] #44` / `[打开误标脏] #45` / `[备注窗口拖动] #46`，本次重跑 46/46 全绿；`check-arch` EXIT 0。
+* 三项改动均随回归测试同次改写，符合"每次修复必须有测试"纪律。
+
+### 36.5 出包（v2.0.34）
+
+* 已 bump `electron-app/package.json` 2.0.33 → 2.0.34。
+* `SKIP_BUMP=1 SKIP_CACHE_CLEAR=1 BUILD_LOW_MEM=1 bash build_now.sh` 跑完：**vue build OK → NSIS store OK（Setup.exe 74.8 MB 已产出）→ stage-assert OK（262 文件）**，但 **部署 D 盘真源这一步失败**（见下）。
+* ⚠️ **D 盘部署受阻（未自动完成）**：目标 `D:\Program Files (x86)\思绪思维导图\resources\` 当前**不存在**（app 未安装/已卸载），且静默 `Setup.exe /S` 写入 `Program Files` 需管理员提权，非交互环境无法提升 → 安装器静默 no-op，D 真源**未更新**。
+* 因此本次**唯一可验证交付物 = 安装包本体**：`electron-app/dist-electron2/思绪思维导图 Setup.exe`（74,811,967 字节）。
+* 产物核验（读构建产物，非 D 真源）：`win-unpacked/resources/app/dist/build-info.json` = `{version:2.0.34, gitHash:"d8f3af4"}`；bundle 标记 `draggable:2`（Bug②）、`selectedPaths|openSelected:1`（Bug③）、`closest('.nodeNoteDialog'):1`（既有备注守卫）均在场 → 三修确实编入包。
+* **用户侧动作**：以**管理员身份**双击运行 `electron-app/dist-electron2/思绪思维导图 Setup.exe` 完成安装/升级（或先装 app），之后 `D:\Program Files (x86)\思绪思维导图\resources\` 才会是 v2.0.34。
+
+### 36.6 真机待复测（用户侧）
+
+1. 文件树双击/单击打开 `.smm`，标签只出现一份；打开后状态栏显示「已保存」、文件树无红点，Ctrl+S 直接覆盖原文件（不走另存为）；
+2. 打开节点「修改备注」弹窗，鼠标左键按住标题栏可拖动窗口；
+3. 文件树按住 Ctrl/Shift 左键可多选文件，右键「打开选中的 N 个文件」批量打开；普通单击仍正常打开并清空多选。
+
+***
+
+## 37. v2.0.35 — 系统双击打开文件 + 文件树 Shift 连续多选
+
+> 用户两条诉求（2026-09-21）：① 从桌面/资源管理器双击 `.smm` 文件后 app 启动但停在「未命名-1 / 未打开工作区」，文件未真正加载；② 文件树 shift+左键 选中连续的几个文件。
+> 版本：electron-app/package.json 2.0.34 → **2.0.35**（bump_version.js 已跑，NSIS VERSION 同步）。
+> 测试门禁：`cd web && node --test` → **1052/1052 全绿**（0 fail）；`template-bindings.test.mjs` 46→**48** 条契约（新增 #47 / #48）。
+
+### 37.1 Bug① 系统级文件关联双击打开不加载（HIGH）
+
+* 复现：资源管理器/桌面双击 `xxx.smm` → app 启动显示「未命名-1 / 未打开工作区」，文件没打开。
+* 真根因：此前 v2.0.34 只修了**应用内** WorkspacePanel 双击（双击文件行）；**系统级**启动路径完全没接。Windows 关联/未关联双击都启动新进程、把 `.smm` 路径塞进 `process.argv`；当前实例从未收到这个路径 → 渲染端永远停在初始空白态。
+* 修复（主进程 + 渲染端 + 安装器三方）：
+  * `electron-app/main.js`：提前声明 `IS_INSTALL_MODE`；启动时 `app.requestSingleInstanceLock()`；`getStartupFilePath(argv)` 解析 argv 里的 `.smm/.md/.markdown` 绝对/相对路径（存在才收）；`did-finish-load` 后 `mainWindow.webContents.send('smm:open-file', startupFilePath)`；`app.on('second-instance')` 把第二实例 argv 里的路径转发给已运行窗口；`app.on('open-file')`（mac 兜底）同样转发。
+  * `electron-app/preload.js`：`smmApi.onOpenFile: cb => ipcRenderer.on('smm:open-file', (e, p) => cb(p))` 暴露监听。
+  * `web/src/main.js` **不直接碰 `window.smmApi`**：改为调用 bridge 的 `startOpenFileBridge()`（收口到 `workspaceBridge` 的 `shell` 网关，满足契约⑥「视图不得直调宿主外壳」）；回调走 `openPath(filePath)` 按扩展名分派到导图/编辑器。
+  * `electron-app/package.json`：新增 `fileAssociations`（ext `smm`、role `Editor`），安装器注册 `.smm` 关联（即使未关联，lock+argv 路径也兜得住双击启动）。
+* 回归：`template-bindings.test.mjs` 新增 `[系统双击打开文件]` 断言 `getStartupFilePath`、`send('smm:open-file', …)`、second-instance 转发、preload `onOpenFile`、`startOpenFileBridge()`（web/main.js 不得含 `window.smmApi.onOpenFile`）。
+
+### 37.2 Bug② 文件树 Shift+左键连续多选（MED）
+
+* 复现：文件树只能单击打开 / Ctrl 单点切换，无法一次选中两个文件之间的连续区间。
+* 修复：`web/src/pages/Edit/components/WorkspacePanel.vue`：
+  * `data()` 新增 `lastSelectedPath: ''`（Shift 区间锚点）。
+  * `onFileClick(e, f)`：目录仍走 `if (f.isDir) { …; return this.toggleDir(f.path) }`（保持回归契约不变）；文件按 `ctrl/shift` 分支——`ctrl&&shift` → `selectRange(f.path, true)`（追加）、`shift` → `selectRange(f.path, false)`（替换）、`ctrl` → `toggleSelect` + 设锚点、`plain` → 清空多选并打开；`onFileDblClick` 也设锚点。
+  * 新增 `selectRange(path, append)`：以 `lastSelectedPath` 与当前文件在 `flatFiles`（仅文件、排除目录）中的下标为界，切片出连续区间，`append` 时并入现有 `selectedPaths`（Set 去重）。
+* 回归：`template-bindings.test.mjs` 新增 `[文件树 Shift 连续多选]` 断言 `lastSelectedPath:` / `selectRange(path, append)` / `e.shiftKey` 读取 / `ctrl&&shift` 与 `shift` 两分支 / 区间只纳入非目录文件。
+
+### 37.3 测试纪律（本次踩坑）
+
+* **批量 Edit 偶发"成功但未落盘"**：同一条消息并行发 3 个 Edit，2 个实际未改（路径 bug 与契约⑥ 回归因此反复失败）。→ 关键编辑**一次一条**，改完立即 Grep 复核目标串。
+* **契约⑥ 误伤**：首次在 `web/src/main.js` 直调 `window.smmApi.onOpenFile` 触发 `legacy-bridge.test.mjs ⑥` 失败；收口到 bridge 的 `shell` 网关后通过。注意**注释里写了 `window.smmApi` 字面量也会被该测试正则命中**——注释也不得出现该字符串。
+* **check-arch 预算门禁（pure ≥ 0.7）**：本次新增 2 条 regression 契约测试把 pureRatio 从 0.7012 压到 0.6995，导致 `npm test` 的 `check-arch` 硬门禁 FAIL（"pure/ 占新增不足 < 0.7"），整包终止。→ 不能绕过，把 `selectRange` 的区间算法抽成纯函数 `web/src/utils/rangeSelect.js` 并补 `web/tests/pure/rangeSelect.test.mjs`（7 用例），pureRatio 升回 0.702，门禁通过。教训：**新增契约测试若必然落在 regression 层，优先把被测逻辑抽成可纯测的函数**，避免预算被小幅击穿。
+* 全量回归 48 条契约 + 1052+ 单元/集成用例，本次重跑 0 fail。
+
+### 37.4 出包（v2.0.35）
+
+* 已 bump `electron-app/package.json` 2.0.34 → 2.0.35（NSIS `make_installer.nsi` VERSION 同步 2.0.35）。
+* 构建：`SKIP_BUMP=1 SKIP_CACHE_CLEAR=1 BUILD_LOW_MEM=1 bash build_now.sh`（vue build → NSIS store → stage-assert → D 盘部署）。
+* ⚠️ **D 盘部署仍可能因 `Program Files` 需管理员提权而非交互环境无法提升而失败**（与 v2.0.34 同款）——届时唯一可验证交付物 = `electron-app/dist-electron2/思绪思维导图 Setup.exe`，需用户以管理员身份双击安装/升级。
+* 产物核验：读 `win-unpacked/resources/app/dist/build-info.json` 应 = `{version:2.0.35, …}`；bundle 应含 `startOpenFileBridge|onOpenFile`（Bug①）、`lastSelectedPath|selectRange`（Bug②）。
+
+## §38 v2.0.36：修复启动 `Class constructor fr cannot be invoked without 'new'` 异常 + 系统双击打开文件 ready-ack 协议
+
+### 38.1 用户反馈
+
+* 安装/运行 v2.0.35 后，启动顶部横幅报：`window.error — TypeError: Class constructor fr cannot be invoked without 'new'`。
+* 双点击 .smm 仍可能显示「未命名-1 / 未打开工作区」，文件未真正加载。
+
+### 38.2 根因分析
+
+* `fr` 是 `@svgdotjs/svg.js` 的 `ForeignObject` 类经 webpack 压缩后的类名；该类构造器被当作普通函数调用即触发此 TypeError。
+* v2.0.35 中 `startOpenFileBridge()` 在 `initApp()` 同步收尾里注册 `smm:open-file` 监听，且 `main.js` 在 `did-finish-load` 立即把启动文件推给渲染端。此时 Vue 刚 mount、ResizeObserver/画布初始化尚未落定，立刻创建 `MindMap` 实例并渲染富文本 `foreignObject` 节点，极易在边界条件下触发 SVG.js 内部类构造异常；同时存在「did-finish-load 早于 initApp 注册」的竞态，文件事件可能丢失。
+
+### 38.3 修复内容
+
+1. **主进程 ⇄ 渲染端 ready-ack 协议**（`electron-app/main.js` / `preload.js` / `web/src/utils/workspaceBridge.js`）：
+   * 主进程收到 `smm:renderer-ready` 之前把启动/second-instance/open-file 路径暂存到 `pendingStartupFile`；
+   * 渲染端 `startOpenFileBridge()` 注册完监听后调用 `shell.rendererReady()` 回发主进程；
+   * 主进程再调用 `flushStartupFile()` → `pushStartupFile()` 把路径安全推下去。
+2. **延迟 openPath 到下一宏任务**（`workspaceBridge.js`）：在 `smm:open-file` 回调内部包一层 `setTimeout(..., 0)`，让 `initApp` 的同步收尾、Vue 挂载、`ResizeObserver` 初始化先落定，再创建 `MindMap` 实例。
+3. **类型守卫**：回调校验 `typeof filePath === 'string'`，过滤非字符串载荷。
+4. **导入规范化**：`WorkspacePanel.vue` 的 `rangeSelect` import 去掉冗余 `.js` 扩展名。
+
+### 38.4 测试
+
+* `node --test tests/regression/template-bindings.test.mjs` 48/48 pass；契约断言更新为 ready-ack + defer。
+* `node --test` 全量 1059/1059 pass，0 fail；pureRatio ≥ 0.7（rangeSelect 纯函数贡献）。
+
+### 38.5 真机待复测（用户侧）
+
+1. 正常启动应不再出现 `Class constructor fr` 启动异常横幅；
+2. 资源管理器双击 .smm 文件，app 启动后应自动打开该文件（标题栏/标签栏显示文件名，不是「未命名-1」）；
+3. 已打开 app 时，资源管理器再双击另一个 .smm，应在新标签/焦点标签打开该文件（不新建窗口）；
+4. 文件树 Shift+左键连续多选仍正常。
+
+### 38.6 出包（v2.0.36）
+
+* 已 bump `electron-app/package.json` 2.0.35 → 2.0.36（NSIS VERSION 同步）。
+* 构建：`SKIP_BUMP=1 SKIP_CACHE_CLEAR=1 BUILD_LOW_MEM=1 VUE_BUILD_TIMEOUT=2400 bash build_now.sh`。
+* 产物核验：读 `electron-app/dist/build-info.json` 应 = `{version:2.0.36, …}`；bundle 应含 `rendererReady|pendingStartupFile|flushStartupFile|setTimeout(async () => { await openPath`。

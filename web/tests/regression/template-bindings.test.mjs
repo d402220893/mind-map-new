@@ -493,7 +493,7 @@ test('[统一搜索] WorkspacePanel 去掉模式切换，单框同搜 md+smm', (
   assert.ok(/collapsedDirs:\s*\[\]/.test(vue), '应有 collapsedDirs 状态')
   assert.ok(/toggleDir\(/.test(vue), '应实现 toggleDir 折叠切换')
   assert.ok(/isDirCollapsed\(/.test(vue), '应实现 isDirCollapsed 判定')
-  assert.ok(/if \(f\.isDir\) return this\.toggleDir\(f\.path\)/.test(vue), '点击目录行应切换折叠而非无反应')
+  assert.ok(/if \(f\.isDir\)[\s\S]*?return this\.toggleDir\(f\.path\)/.test(vue), '点击目录行应切换折叠而非无反应')
   assert.ok(/kw \|\| !this\.isDirCollapsed\(n\.path\)/.test(vue), '无过滤词时折叠目录不递归子级；搜索时自动展开')
   assert.ok(/wsCollapsedDirs:/.test(vue), '折叠状态应按工作区 root 持久化到 localStorage')
   assert.ok(/class="wsCaret"/.test(vue), '目录行应有折叠箭头 wsCaret')
@@ -757,4 +757,199 @@ test('[添加到待办] 节点右键项把节点文本追加到根节点备注',
     assert.ok(/addToDo:/.test(dict), lang + ' 缺少 contextmenu.addToDo 文案')
   }
 })
+
+// ===== 修复：双击文件行重复打开同一文件（HIGH）=====
+// 复现：双击文件行在一帧内连续触发两次 click，各自走 onFileClick→openFile→openMindMap；
+// 而 openMindMap 到 addWorkbook 之间有 await readText 挂起，两次调用在"首次 addWorkbook
+// 落地前"都通过了 findByPath 早退检查（彼时文件尚未真正打开），于是各自再建一个 workbook
+// → 同一文件出现两份标签（"双击打开文件无法正确打开 / 显示状态好像是新建"真根因之一）。
+// 修复：① 用模块级 _opening 入锁集合挡住并发同路径打开；② readText 之后**再查一次**
+// findByPath，把挂起期间已被另一路打开的文件复用掉，绝不重复建标签。
+test('[双击重复打开] workspaceBridge.openMindMap 入锁 + await 后再查 findByPath', () => {
+  const bridge = read(new URL('utils/workspaceBridge.js', SRC))
+  assert.ok(
+    /const _opening = new Set\(\)/.test(bridge),
+    '应声明模块级 _opening 入锁集合'
+  )
+  assert.ok(
+    /_opening\.has\(abs\)/.test(bridge),
+    'openMindMap 应用 _opening.has(abs) 挡住并发同路径打开'
+  )
+  assert.ok(
+    /_opening\.add\(abs\)/.test(bridge) && /_opening\.delete\(abs\)/.test(bridge),
+    '入锁须在 try/finally 中 add 与 delete（异常也要释放，否则该路径永久锁死）'
+  )
+  // 关键契约：readText 之后仍需 findByPath(abs) 复查，复用挂起期间已落地的标签
+  const readIdx = bridge.indexOf('readText')
+  const lateIdx = bridge.indexOf('const late = findByPath(abs)')
+  assert.ok(readIdx > -1, '应仍走 readText 读盘')
+  assert.ok(
+    lateIdx > readIdx,
+    'await readText 之后必须再查 findByPath(abs) 复用已打开标签（防双击建两份）'
+  )
+  assert.ok(
+    /finally\s*\{[\s\S]*_opening\.delete\(abs\)/.test(bridge),
+    'finally 块必须释放 _opening 锁'
+  )
+})
+
+// ===== 修复：打开/载入后误标"未保存"（状态像新建）（HIGH）=====
+// 复现：simple-mind-map 的 addHistory 被节流 100ms，渲染结束清掉 _isLoading 后它仍可能
+// 晚到 emit data_change；若该 late 事件漏过 originAddHistory 去重，会把刚打开的文件误标
+// "未保存"（状态栏显示"新建"、保存走另存为）。originAddHistory 已做同步去重，但为彻底吸收
+// 各类 late data_change，在载入收尾处把"脏标记抑制窗口"延后 ~600ms：窗口内只落盘不标脏。
+test('[打开误标脏] Edit.vue loadSheetData 收尾延后脏标记抑制窗口', () => {
+  const vue = read(new URL('pages/Edit/components/Edit.vue', SRC))
+  // 1) data() 应有 _suppressDirtyUntil 字段
+  assert.ok(/_suppressDirtyUntil:/.test(vue), 'data 应有 _suppressDirtyUntil 脏标记抑制字段')
+  // 2) data_change 处理器仍受 _isLoading 守卫（原始防护不回退）
+  assert.ok(
+    /if \(this\._isLoading\) return/.test(vue),
+    'data_change 仍应受 _isLoading 守卫'
+  )
+  // 3) data_change 在 _isLoading 之后、标记脏之前检查抑制窗口：窗口内直接 return，不误标未保存
+  //    （_suppressDirtyUntil 的 return 仅此一处，足以锚定到 data_change 处理器）
+  assert.ok(
+    /this\._suppressDirtyUntil && Date\.now\(\) < this\._suppressDirtyUntil\) return/.test(vue),
+    'data_change 应在抑制窗口内直接 return，不误标未保存'
+  )
+  // 4) loadSheetData 渲染收尾处设置抑制窗口（onRenderEnd 与 1.5s 兜底都要设）
+  assert.ok(
+    /this\._suppressDirtyUntil = Date\.now\(\) \+ 600/.test(vue),
+    'onRenderEnd / 兜底超时收尾应把 _suppressDirtyUntil 延后 ~600ms'
+  )
+})
+
+// ===== 修复：备注对话框鼠标左键可拖动（Bug②）=====
+// 复现：用户用鼠标左键按住备注对话框标题栏无法拖动窗口（el-dialog 默认不可拖拽）。
+// 修复：el-dialog 加 :draggable="true"（Element Plus 2.8.8 原生支持，按住标题栏拖动）。
+test('[备注窗口拖动] NodeNote.vue el-dialog 启用 draggable', () => {
+  const vue = read(new URL('pages/Edit/components/NodeNote.vue', SRC))
+  assert.ok(
+    /<el-dialog[\s\S]*?draggable="true"/.test(vue) || /:draggable="true"/.test(vue),
+    '备注对话框 el-dialog 应启用 :draggable="true"（鼠标左键按住标题栏可拖动）'
+  )
+})
+
+// ===== 修复：Windows 资源管理器双击 .smm 文件启动时应自动打开该文件 =====
+// 复现：从桌面/资源管理器双击 .smm 文件，app 启动了但显示「未命名-1 / 未打开工作区」，
+// 没有真正加载该文件。修复：主进程解析 argv 里的 .smm/.md 路径，渲染端就绪后收到
+// smm:open-file 事件并直接 openPath。
+test('[系统双击打开文件] 主进程 argv → bridge 网关注册 onOpenFile → openPath', () => {
+  const main = read(new URL('main.js', APP))
+  assert.ok(/function getStartupFilePath\(argv\)/.test(main), 'main.js 应有 getStartupFilePath(argv)')
+  // 已改为 ready-ack 协议：主进程先暂存路径，等渲染端发 smm:renderer-ready 再推
+  assert.ok(
+    /let rendererReady = false/.test(main) && /let pendingStartupFile = null/.test(main),
+    'main.js 应有 rendererReady / pendingStartupFile 暂存机制'
+  )
+  assert.ok(
+    /function flushStartupFile\(\)/.test(main) && /pushStartupFile\(pendingStartupFile\)/.test(main),
+    'main.js 应有 flushStartupFile() 在就绪后推送暂存路径'
+  )
+  assert.ok(
+    /ipcMain\.on\('smm:renderer-ready'/.test(main),
+    'main.js 应监听 smm:renderer-ready 后再推送启动文件'
+  )
+  assert.ok(
+    /app\.on\('second-instance'/.test(main),
+    'main.js 应监听 second-instance 以转发第二实例 argv 中的文件路径'
+  )
+  assert.ok(
+    /pendingStartupFile = p/.test(main),
+    'second-instance 中应把路径暂存到 pendingStartupFile'
+  )
+  const preload = read(new URL('preload.js', APP))
+  assert.ok(
+    /onOpenFile:\s*cb\s*=>\s*\{[\s\S]*?ipcRenderer\.on\('smm:open-file'/.test(preload),
+    'preload.js 应暴露 onOpenFile 监听 smm:open-file'
+  )
+  assert.ok(
+    /rendererReady:\s*\(\)\s*=>\s*\{[\s\S]*?ipcRenderer\.send\('smm:renderer-ready'\)/.test(preload),
+    'preload.js 应暴露 rendererReady() 回发主进程'
+  )
+  // 视图不得直调 window.smmApi（契约⑥）：收口到 workspaceBridge 的 shell 网关
+  const bridge = read(new URL('utils/workspaceBridge.js', SRC))
+  assert.ok(/onOpenFile\(cb\)/.test(bridge), 'shell 网关应暴露 onOpenFile(cb)（视图唯一出口）')
+  assert.ok(/rendererReady\(\)/.test(bridge), 'shell 网关应暴露 rendererReady()')
+  assert.ok(
+    /startOpenFileBridge\s*\(\s*\)\s*\{[\s\S]*?shell\.onOpenFile/.test(bridge),
+    'startOpenFileBridge 应经 shell.onOpenFile 注册（不直接碰 window.smmApi）'
+  )
+  assert.ok(
+    /shell\.rendererReady\(\)/.test(bridge),
+    'startOpenFileBridge 注册完成后应调用 shell.rendererReady()'
+  )
+  assert.ok(
+    /setTimeout\(\s*async\s*\(\)\s*=>\s*\{[\s\S]*?await openPath\(filePath\)/.test(bridge),
+    'startOpenFileBridge 回调应 defer 到下一帧再 await openPath(filePath)'
+  )
+  const webMain = read(new URL('main.js', SRC))
+  assert.ok(
+    /startOpenFileBridge\(\)/.test(webMain),
+    'web/src/main.js 应调用 startOpenFileBridge()（不得直调 window.smmApi）'
+  )
+  assert.ok(
+    !/window\.smmApi\.onOpenFile/.test(webMain),
+    'web/src/main.js 不得直调 window.smmApi（违背契约⑥，单测环境漏判空即崩）'
+  )
+})
+
+// ===== 修复：文件树 Shift+左键连续多选 =====
+// 复现：Shift+左键只能单选/取消，不能一次选中两个文件之间的连续区间。
+// 修复：WorkspacePanel 增加 lastSelectedPath 锚点 + selectRange 方法，Shift+点击时选中
+// lastSelectedPath 到当前文件之间的所有文件；Ctrl+Shift 追加到现有选择。
+test('[文件树 Shift 连续多选] WorkspacePanel 支持 Shift 区间选择', () => {
+  const vue = read(new URL('pages/Edit/components/WorkspacePanel.vue', SRC))
+  assert.ok(/lastSelectedPath:/.test(vue), 'data 应有 lastSelectedPath 多选锚点')
+  assert.ok(/selectRange\(path, append\)/.test(vue), '应实现 selectRange(path, append) 方法')
+  assert.ok(
+    /const shift = e && e\.shiftKey/.test(vue),
+    'onFileClick 应读取 e.shiftKey'
+  )
+  assert.ok(
+    /if \(ctrl && shift\)/.test(vue) && /if \(shift\)/.test(vue),
+    'onFileClick 应区分 Ctrl+Shift 与 Shift 两个分支'
+  )
+  // 区间计算抽离到纯函数 computeRangeSelection（便于单测，且抬升 pure 占比过 0.7 门禁）
+  const rangeSel = read(new URL('utils/rangeSelect.js', SRC))
+  assert.ok(/export function computeRangeSelection/.test(rangeSel), 'rangeSelect.js 应导出 computeRangeSelection 纯函数')
+  assert.ok(
+    /findIndex\(n => n\.path === anchor && !n\.isDir\)/.test(rangeSel),
+    'computeRangeSelection 应只把文件（非目录）纳入区间'
+  )
+})
+
+// ===== 修复：切换/打开含图片节点的工作表时，NodeImgAdjust 插件调用 image.rbox() 报错 =====
+// 复现：双击 .smm 或切换 sheet 时，事件链触发重绘；若鼠标正悬停在带图片的节点上，
+// NodeImgAdjust 会立即对尚未挂载到 DOM 的 SVG image 调用 rbox()，抛出
+// "Getting rbox of element 'image' is not possible"，并冒泡成页面脚本错误弹窗。
+// 修复：将 NodeImgAdjust vendor 到 web/src/plugins/NodeImgAdjust.js，增加 safeImgRbox()
+// 对 rbox() 做 try/catch + DOM 挂载检查；Edit.vue 的 onWorkbookSwitched 也加外层兜底。
+test('[图片调整 rbox 兜底] NodeImgAdjust 本地化并安全包装 rbox() 调用', () => {
+  const vue = read(new URL('pages/Edit/components/Edit.vue', SRC))
+  assert.ok(
+    /import NodeImgAdjust from ['"]@\/plugins\/NodeImgAdjust\.js['"]/.test(vue),
+    'Edit.vue 应从 @/plugins/NodeImgAdjust.js 导入本地补丁版本'
+  )
+  assert.ok(
+    /onWorkbookSwitched\s*\(\)\s*\{[\s\S]*?try\s*\{[\s\S]*?this\.loadSheetData/.test(vue),
+    'Edit.vue onWorkbookSwitched 应对切换流程加 try/catch 兜底'
+  )
+  const plugin = read(new URL('plugins/NodeImgAdjust.js', SRC))
+  assert.ok(/safeImgRbox\s*\(\)/.test(plugin), 'NodeImgAdjust.js 应实现 safeImgRbox()')
+  assert.ok(
+    /try\s*\{[\s\S]*?this\.img\.rbox\(\)[\s\S]*?\}\s*catch\s*\(e\)\s*\{[\s\S]*?return null/.test(plugin),
+    'safeImgRbox() 中 rbox() 应被 try/catch 包裹并在异常时返回 null'
+  )
+  assert.ok(
+    /onScale\s*\(\)\s*\{[\s\S]*?const rect = this\.safeImgRbox\(\)/.test(plugin),
+    'onScale() 应调用 safeImgRbox()'
+  )
+  assert.ok(
+    /onNodeImgMousemove\s*\(node,\s*img\)\s*\{[\s\S]*?const rect = this\.safeImgRbox\(\)/.test(plugin),
+    'onNodeImgMousemove() 应调用 safeImgRbox()'
+  )
+})
+
 
