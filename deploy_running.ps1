@@ -24,6 +24,13 @@ if (Test-Path $DstAsar) {
 }
 
 # 3) Overwrite with the freshly built asar
+# 目标父目录（resources\）可能尚不存在（首次部署 / 应用未安装到该路径），
+# Copy-Item 不会自动建目录会抛 DirectoryNotFoundException；这里先 New-Item 递归建好。
+$parentDir = [System.IO.Path]::GetDirectoryName($DstAsar)
+if (-not (Test-Path $parentDir)) {
+  New-Item -ItemType Directory -Force -Path $parentDir | Out-Null
+  Write-Host ("created dir -> " + $parentDir)
+}
 if (-not (Test-Path $SrcAsar)) {
   Write-Error ("src asar missing: " + $SrcAsar)
   exit 1
