@@ -16,7 +16,7 @@ const NEW_VIEWS = [
   'pages/Edit/components/ConflictDialog.vue',
   'pages/Edit/components/StatusBar.vue',
   'pages/Edit/components/MdToolbar.vue',
-  'pages/Edit/components/MdOutline.vue',
+  'pages/Edit/components/MdSidebar.vue',
   'pages/Edit/components/MindMapPreview.vue'
 ]
 
@@ -36,7 +36,7 @@ test('[视图接线] 新增视图不直连 services/io，且不直调 window.smm
 
 test('[视图接线] 新增视图经 @/utils/workspaceBridge 访问服务', () => {
   const bridged = NEW_VIEWS.filter(p => /from\s+['"]@\/utils\/workspaceBridge['"]/.test(read(p)))
-  // 纯展示组件（MdToolbar / MdOutline / StatusBar 部分）可只走 $bus，但至少主体必须接桥
+  // 纯展示组件（MdToolbar / MdSidebar / StatusBar 部分）可只走 $bus，但至少主体必须接桥
   for (const must of ['pages/Edit/components/MdEditor.vue', 'pages/Edit/components/WorkspacePanel.vue', 'pages/Edit/components/RefBlock.vue']) {
     assert.ok(bridged.includes(must), must + ' 未接 workspaceBridge')
   }

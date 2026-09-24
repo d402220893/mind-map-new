@@ -43,13 +43,13 @@ test('[md 页菜单] MdToolbar 补齐新建/打开/另存为，MdEditor 实现 s
   assert.ok(/saveTextDialog/.test(preload) && /pickFile/.test(preload), 'preload 应暴露 saveTextDialog/pickFile')
 })
 
-test('[md 排版] MdEditor 默认字体对齐 Typora（github 主题）', () => {
+test('[md 排版] MdEditor 默认主题对齐经典 classic4 导图', () => {
   const vue = read(new URL('pages/Edit/components/MdEditor.vue', SRC))
   assert.ok(/font-size:\s*16px/.test(vue), '正文应 16px')
   assert.ok(/line-height:\s*1\.6/.test(vue), '行高应 1.6')
   assert.ok(/PingFang SC/.test(vue) && /Microsoft YaHei/.test(vue), '应使用系统中文字体栈')
-  assert.ok(/#24292f/.test(vue), '浅色模式正文色应对齐 Typora #24292f')
-  assert.ok(/#0969da/.test(vue), '链接色应对齐 Typora #0969da')
+  assert.ok(/#2a3b52/.test(vue), '浅色模式正文色应对齐 classic4 藏青系 #2a3b52')
+  assert.ok(/#387be9/.test(vue), '链接色应对齐 classic4 概要蓝 #387be9')
   assert.ok(/body:not\(\.isDark\)/.test(vue), '文字色只钉浅色模式（深色仍走变量）')
 })
 
