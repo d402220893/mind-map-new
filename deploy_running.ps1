@@ -1,4 +1,4 @@
-# Deploy to the real running location.
+﻿# Deploy to the real running location.
 # Usage: powershell -File deploy_running.ps1 <SrcAsar> <DstAsar> <ProcName>
 # (Chinese paths/names are passed as arguments to avoid UTF-8 decoding issues.)
 param([string]$SrcAsar, [string]$DstAsar, [string]$ProcName)
