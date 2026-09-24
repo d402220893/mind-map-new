@@ -1825,3 +1825,41 @@ onChange → mdDoc.setContent + scheduleSave
 * 已 bump `electron-app/package.json` 2.0.35 → 2.0.36（NSIS VERSION 同步）。
 * 构建：`SKIP_BUMP=1 SKIP_CACHE_CLEAR=1 BUILD_LOW_MEM=1 VUE_BUILD_TIMEOUT=2400 bash build_now.sh`。
 * 产物核验：读 `electron-app/dist/build-info.json` 应 = `{version:2.0.36, …}`；bundle 应含 `rendererReady|pendingStartupFile|flushStartupFile|setTimeout(async () => { await openPath`。
+
+## §39 v2.0.37：修复切换/打开含图片节点工作表时 `Getting rbox of element "image" is not possible` 报错
+
+### 39.1 用户反馈
+
+* 双击打开 `E:\05_project\02_800G\思维导图测试用.smm` 后弹「页面脚本错误」对话框：
+  `[eventBus] handler error on "workbook-switched": Error: Getting rbox of element "image" is not possible`。
+
+### 39.2 根因分析
+
+* 报错来自 `@svgdotjs/svg.js`：对**未挂载到 DOM** 的 SVG `<image>` 元素调用 `rbox()` 时直接 throw。
+* 触发链：`workbook-switched` → `Edit.vue onWorkbookSwitched` → `loadSheetData` 重绘 → 若鼠标悬停在带图片节点上，`NodeImgAdjust` 插件的 `node_img_mousemove`/`scale` 处理器立即执行 `this.img.rbox()` → 异常沿事件链冒泡到 eventBus 包装器 → 弹错误框。
+* 该 .smm 内确有图片节点（`image: "smm_img_key_…"`，NodeBase64ImageStorage key 形态），切换 sheet 时图片元素重建期间的时序窗口必现。
+* 原插件在 `node_modules/simple-mind-map/src/plugins/NodeImgAdjust.js`，`onScale()`（L58）与 `onNodeImgMousemove()`（L72）两处裸调 `rbox()`，均无挂载检查/异常保护。
+
+### 39.3 修复内容
+
+1. **vendor 插件**：复制为 `web/src/plugins/NodeImgAdjust.js`（import 改为 `simple-mind-map/src/utils/index`、`simple-mind-map/src/svg/btns` 绝对包路径），新增 `safeImgRbox()`：检查 `this.img.node.isConnected` + try/catch，未挂载/抛异常时返回 null。
+2. **两处调用点改走 safeImgRbox**：`onScale()`、`onNodeImgMousemove()` 拿到 null 即静默 return，不显示调整手柄（该时机本就无法显示）。
+3. **Edit.vue 导入切换**：`import NodeImgAdjust from '@/plugins/NodeImgAdjust.js'`。
+4. **外层兜底**：`onWorkbookSwitched` 整体包 try/catch（console.error 记录），未来任何插件在切换期抛异常都不再弹页面脚本错误框。
+
+### 39.4 测试
+
+* 新增回归 `[图片调整 rbox 兜底]`：断言 Edit.vue 导入本地插件、onWorkbookSwitched 有 try/catch、插件含 safeImgRbox 且两处调用点改走安全路径 → 回归 49/49 pass。
+* 全量：web `node --test` **1060/1060 pass**；electron-app `node --test` **56/56 pass**。
+
+### 39.5 出包（v2.0.37）
+
+* bump 2.0.36 → 2.0.37；commit `889c76d`（含 §38 ready-ack 遗留未提交改动 + 本次修复，16 files）。
+* 构建：`SKIP_BUMP=1 BUILD_LOW_MEM=1 VUE_BUILD_TIMEOUT=2400 bash build_now.sh`（**不再加 SKIP_CACHE_CLEAR**——v2.0.36 经验：该标志在 vue build 阶段热缓存 IO 卡死 24min，去掉后 5min 完成）。
+
+### 39.6 真机待复测（用户侧）
+
+1. 双击 `思维导图测试用.smm`：应正常打开且**不再弹** `Getting rbox of element "image"` 错误框；
+2. 打开后鼠标悬停图片节点：调整手柄仍应正常出现（safeImgRbox 只在未挂载窗口期跳过，挂载后功能不变）；
+3. 切换 sheet（开发/测试/test）来回多次：无错误框；
+4. v2.0.36 清单（§38.5）项目保持通过。
