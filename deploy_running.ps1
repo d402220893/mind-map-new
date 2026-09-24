@@ -28,7 +28,9 @@ if (Test-Path $DstAsar) {
 # Copy-Item 不会自动建目录会抛 DirectoryNotFoundException；这里先 New-Item 递归建好。
 # PowerShell 的 Split-Path/GetDirectoryName 对 '/' 分隔的路径会返回 null（只认 '\'），
 # 这里先归一化为反斜杠再取父目录并复制，避免 DirectoryNotFoundException。
-$normalDst = $DstAsar -replace '/', '\'
+# 用字符串方法 Replace（不是正则 -replace）：PowerShell 正则替换里 '\' 是转义符，
+# '-replace '/', '\'' 实际不会发生替换，导致 $normalDst 仍带 '/'、Split-Path 返回 null。
+$normalDst = $DstAsar.Replace('/', '\')
 $parentDir = Split-Path -Parent $normalDst
 if (-not (Test-Path $parentDir)) {
   New-Item -ItemType Directory -Force -Path $parentDir | Out-Null
@@ -42,5 +44,5 @@ Copy-Item -Force $SrcAsar $normalDst
 Write-Host ("deployed -> " + $DstAsar)
 
 # 4) Verify
-$item = Get-Item $DstAsar
+$item = Get-Item $normalDst
 Write-Host ("size=" + $item.Length + " mtime=" + $item.LastWriteTime)
