@@ -644,6 +644,21 @@ test('[文件右键] 重命名与删除文件', () => {
   assert.ok(/mkdirp, move, trash/.test(svc), 'workspaceService 导出应含 move/trash')
 })
 
+test('[多选删除] 批量删除应删除全部选中文件而非仅一个', () => {
+  const vue = read(new URL('pages/Edit/components/WorkspacePanel.vue', SRC))
+  // 1) 多选态下右键菜单应出现「删除选中的 N 个文件」入口（修复「只删第一个」）
+  assert.ok(/v-if="selectedPaths\.length >= 1" class="danger" @click="deleteSelected">删除选中的/.test(vue), '多选时应出现「删除选中的 N 个文件」')
+  // 2) 单删入口保留为「删除此文件」，避免与批量入口语义混淆
+  assert.ok(/class="danger" @click="deleteCtxFile">删除此文件<\/li>/.test(vue), '单删入口应为「删除此文件」')
+  // 3) deleteSelected 必须遍历 selectedPaths（targets 来自 selectedPaths），不能只取单个
+  assert.ok(/const targets = this\.selectedPaths/.test(vue), 'deleteSelected 应以 selectedPaths 为删除目标')
+  // 4) 按 20 一批拆调 trash，规避主进程单次 20 条上限导致静默截断
+  assert.ok(/for \(let i = 0; i < targets\.length; i \+= 20\)/.test(vue), 'deleteSelected 应分批（每批 ≤20）调用 trash')
+  assert.ok(/svc\.trash\(batch\)/.test(vue), '每批应调用 trash(batch)')
+  // 5) 删除后必须清空多选态，否则下次操作会残留已删除路径
+  assert.ok(/this\.selectedPaths = \[\]/.test(vue), '删除完成后应清空 selectedPaths')
+})
+
 test('[错误诊断] renderer.log 改写到 userData（Program Files 不可写）', () => {
   const main = read(new URL('main.js', APP))
   assert.ok(/rendererLogPath/.test(main), 'main.js 应实现 rendererLogPath()')

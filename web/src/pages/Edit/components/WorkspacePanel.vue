@@ -165,9 +165,8 @@
       <li @click="newFileNear">新建文件</li>
       <li @click="newFolderNear">新建文件夹</li>
       <li v-if="ctxMenu.f && !ctxMenu.f.isDir" @click="renameCtxFile">重命名</li>
-      <li v-if="ctxMenu.f && !ctxMenu.f.isDir" class="danger" @click="deleteCtxFile">
-        删除文件
-      </li>
+      <li v-if="selectedPaths.length >= 1" class="danger" @click="deleteSelected">删除选中的 {{ selectedPaths.length }} 个文件</li>
+      <li v-if="ctxMenu.f && !ctxMenu.f.isDir" class="danger" @click="deleteCtxFile">删除此文件</li>
       <li v-if="ctxMenu.f" @click="showProps">属性</li>
       <li @click="copyPath">
         {{ ctxMenu.f && !ctxMenu.f.isDir ? '复制文件路径' : '复制路径' }}
@@ -905,6 +904,50 @@ export default {
       const { workbooks } = getWorkbookList()
       const hit = workbooks.find(w => w.filePath === f.path)
       if (hit) removeWorkbook(hit.id)
+      // 若它仍在多选集里，删掉后一并移除，避免残留已不存在的路径
+      this.selectedPaths = this.selectedPaths.filter(p => p !== f.path)
+      await this.refresh()
+    },
+    // 右键菜单「删除选中的 N 个文件」：把全部已选文件一次性移入回收站（按 20 一批拆调，
+    // 规避主进程 smm:trash 单次 20 条上限；单批失败不阻断其余批次）
+    async deleteSelected() {
+      if (!this.selectedPaths.length) return
+      // selectedPaths 仅含文件（Shift 区间与 Ctrl 切换都排除目录）；再保险过滤一次
+      const targets = this.selectedPaths
+        .map(p => this.flatFiles.find(n => n.path === p))
+        .filter(n => n && !n.isDir)
+        .map(n => n.path)
+      if (!targets.length) return
+      try {
+        await this.$confirm('将选中的 ' + targets.length + ' 个文件移入回收站？', '批量删除', {
+          confirmButtonText: '删除',
+          cancelButtonText: '取消',
+          type: 'warning'
+        })
+      } catch (e) {
+        return // 取消
+      }
+      const svc = getServices().workspaceService
+      let anyFail = false
+      // 主进程 smm:trash 单次最多 20 条（TRASH_BATCH），分批调用避免静默截断
+      for (let i = 0; i < targets.length; i += 20) {
+        const batch = targets.slice(i, i + 20)
+        const r = await svc.trash(batch)
+        if (!r.ok) anyFail = true
+      }
+      // 已成功移入回收站的文件若以标签打开，关掉标签（文件已不存在）
+      const { workbooks } = getWorkbookList()
+      for (const p of targets) {
+        const hit = workbooks.find(w => w.filePath === p)
+        if (hit) removeWorkbook(hit.id)
+      }
+      if (anyFail) {
+        this.$message.error('部分文件删除失败（可能正被占用），请重试')
+      } else {
+        this.$message.success('已删除 ' + targets.length + ' 个文件')
+      }
+      this.selectedPaths = []
+      this.ctxMenu = null
       await this.refresh()
     }
   }
