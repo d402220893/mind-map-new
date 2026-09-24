@@ -26,7 +26,10 @@ if (Test-Path $DstAsar) {
 # 3) Overwrite with the freshly built asar
 # 目标父目录（resources\）可能尚不存在（首次部署 / 应用未安装到该路径），
 # Copy-Item 不会自动建目录会抛 DirectoryNotFoundException；这里先 New-Item 递归建好。
-$parentDir = [System.IO.Path]::GetDirectoryName($DstAsar)
+# PowerShell 的 Split-Path/GetDirectoryName 对 '/' 分隔的路径会返回 null（只认 '\'），
+# 这里先归一化为反斜杠再取父目录并复制，避免 DirectoryNotFoundException。
+$normalDst = $DstAsar -replace '/', '\'
+$parentDir = Split-Path -Parent $normalDst
 if (-not (Test-Path $parentDir)) {
   New-Item -ItemType Directory -Force -Path $parentDir | Out-Null
   Write-Host ("created dir -> " + $parentDir)
@@ -35,7 +38,7 @@ if (-not (Test-Path $SrcAsar)) {
   Write-Error ("src asar missing: " + $SrcAsar)
   exit 1
 }
-Copy-Item -Force $SrcAsar $DstAsar
+Copy-Item -Force $SrcAsar $normalDst
 Write-Host ("deployed -> " + $DstAsar)
 
 # 4) Verify
