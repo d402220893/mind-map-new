@@ -70,6 +70,7 @@ export default {
     this.$bus.$on('md:save', this.saveNow)
     this.$bus.$on('md:saveAs', this.saveAs)
     this.$bus.$on('md:insert', this.onInsert)
+    this.$bus.$on('md:scroll-to-line', this.scrollToLineExternal)
   },
   beforeUnmount() {
     this.$bus.$off('md:exec', this.onExec)
@@ -78,6 +79,7 @@ export default {
     this.$bus.$off('md:save', this.saveNow)
     this.$bus.$off('md:saveAs', this.saveAs)
     this.$bus.$off('md:insert', this.onInsert)
+    this.$bus.$off('md:scroll-to-line', this.scrollToLineExternal)
     this.detachDomHandlers()
     this.unmountEmbeds()
     if (this._embedTimer) clearTimeout(this._embedTimer)
@@ -400,6 +402,11 @@ export default {
       if (target && target.scrollIntoView) target.scrollIntoView({ block: 'start' })
     },
 
+    // 供右侧菜单栏「查找」结果跳到指定行（MdSidebar 通过总线请求）
+    scrollToLineExternal({ line }) {
+      if (typeof line === 'number') this.scrollToLine(line)
+    },
+
     getContent() {
       return this.editor ? this.editor.getMarkdown() : ''
     },
@@ -483,8 +490,10 @@ body.isDark .mdEditor .toastui-editor-defaultUI {
   background: rgba(255, 255, 255, 0.92);
 }
 
-// ── Typora（github 主题）风格排版 ─────────────────────────────────
-// 字体栈/字号/行高两种模式通用；文字色只钉在浅色模式，深色仍走变量
+// ── 对齐当前导图默认主题 classic4 的视觉语言 ─────────────────────────
+// 调色板：藏青 #1E3556 / 浅青 #A9DADA / 蓝 #387BE9 / 浅灰底 #F1F1F1（圆角胶囊）
+// 仅把文档排版“染成”这套配色+圆角气质，标题保持文档形态（不塞色块），保证正文可读。
+// 字体栈/字号/行高两种模式通用；文字色浅色模式钉 exact 色，深色模式用同 hue 派生。
 .mdEditor .toastui-editor-contents {
   font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Helvetica Neue', Arial,
     'PingFang SC', 'Hiragino Sans GB', 'Microsoft YaHei', sans-serif;
@@ -495,8 +504,10 @@ body.isDark .mdEditor .toastui-editor-defaultUI {
 .mdEditor .toastui-editor-contents pre {
   font-family: ui-monospace, SFMono-Regular, 'SF Mono', Consolas, 'Liberation Mono', Menlo, monospace;
 }
+
+// 浅色模式：钉 classic4 配色
 body:not(.isDark) .mdEditor .toastui-editor-contents {
-  color: #24292f;
+  color: #2a3b52; // 藏青加深一点保证正文可读
 }
 body:not(.isDark) .mdEditor .toastui-editor-contents h1,
 body:not(.isDark) .mdEditor .toastui-editor-contents h2,
@@ -504,12 +515,90 @@ body:not(.isDark) .mdEditor .toastui-editor-contents h3,
 body:not(.isDark) .mdEditor .toastui-editor-contents h4,
 body:not(.isDark) .mdEditor .toastui-editor-contents h5,
 body:not(.isDark) .mdEditor .toastui-editor-contents h6 {
-  color: #1f2328;
+  color: #1e3556; // 藏青，对应导图根/节点文字色
+}
+// 标题层级用字号 + 浅青下边线表达“导图层级感”（圆角胶囊气质）
+body:not(.isDark) .mdEditor .toastui-editor-contents h1 {
+  font-size: 1.6em;
+  border-bottom: 2px solid #a9dada;
+  padding-bottom: .2em;
+}
+body:not(.isDark) .mdEditor .toastui-editor-contents h2 {
+  font-size: 1.35em;
+  border-bottom: 1px solid #a9dada;
+  padding-bottom: .15em;
+}
+body:not(.isDark) .mdEditor .toastui-editor-contents h3 {
+  font-size: 1.15em;
 }
 body:not(.isDark) .mdEditor .toastui-editor-contents a {
-  color: #0969da;
+  color: #387be9; // 蓝，对应导图概要线色
 }
 body:not(.isDark) .mdEditor .toastui-editor-contents blockquote {
-  color: #59636e;
+  color: #3a4d66;
+  border-left: 3px solid #1e3556;
+  background: rgba(241, 241, 241, 0.6); // 浅灰底，对应导图 backgroundColor
+  padding: .4em 1em;
+  border-radius: 0 8px 8px 0;
+}
+// 行内 code / 代码块：浅青边框 + 圆角，呼应导图节点描边
+body:not(.isDark) .mdEditor .toastui-editor-contents code {
+  color: #1e3556;
+  background: rgba(169, 218, 218, 0.25);
+  border: 1px solid #a9dada;
+  border-radius: 4px;
+  padding: .1em .35em;
+}
+body:not(.isDark) .mdEditor .toastui-editor-contents pre {
+  border: 1px solid #a9dada;
+  border-radius: 8px;
+  background: rgba(241, 241, 241, 0.6);
+}
+body:not(.isDark) .mdEditor .toastui-editor-contents pre code {
+  background: transparent;
+  border: none;
+  padding: 0;
+}
+
+// 深色模式：同 hue 派生，避免破坏现有深色适配
+body.isDark .mdEditor .toastui-editor-contents h1,
+body.isDark .mdEditor .toastui-editor-contents h2,
+body.isDark .mdEditor .toastui-editor-contents h3,
+body.isDark .mdEditor .toastui-editor-contents h4,
+body.isDark .mdEditor .toastui-editor-contents h5,
+body.isDark .mdEditor .toastui-editor-contents h6 {
+  color: #cfe0f2;
+}
+body.isDark .mdEditor .toastui-editor-contents h1 {
+  border-bottom: 2px solid rgba(169, 218, 218, 0.45);
+}
+body.isDark .mdEditor .toastui-editor-contents h2 {
+  border-bottom: 1px solid rgba(169, 218, 218, 0.45);
+}
+body.isDark .mdEditor .toastui-editor-contents a {
+  color: #5b9bf0;
+}
+body.isDark .mdEditor .toastui-editor-contents blockquote {
+  border-left: 3px solid #8fd3d3;
+  background: rgba(30, 53, 86, 0.4);
+  padding: .4em 1em;
+  border-radius: 0 8px 8px 0;
+}
+body.isDark .mdEditor .toastui-editor-contents code {
+  color: #cfe0f2;
+  background: rgba(169, 218, 218, 0.12);
+  border: 1px solid rgba(169, 218, 218, 0.4);
+  border-radius: 4px;
+  padding: .1em .35em;
+}
+body.isDark .mdEditor .toastui-editor-contents pre {
+  border: 1px solid rgba(169, 218, 218, 0.4);
+  border-radius: 8px;
+  background: rgba(30, 53, 86, 0.4);
+}
+body.isDark .mdEditor .toastui-editor-contents pre code {
+  background: transparent;
+  border: none;
+  padding: 0;
 }
 </style>

@@ -1863,3 +1863,40 @@ onChange → mdDoc.setContent + scheduleSave
 2. 打开后鼠标悬停图片节点：调整手柄仍应正常出现（safeImgRbox 只在未挂载窗口期跳过，挂载后功能不变）；
 3. 切换 sheet（开发/测试/test）来回多次：无错误框；
 4. v2.0.36 清单（§38.5）项目保持通过。
+
+---
+
+## §40 v2.0.38：修复「选中多个文件删除时只删了第一个」
+
+### 40.1 用户反馈
+
+* 在文件栏 Ctrl/Shift 选中多个文件后右键「删除」，结果只删除了其中一个（右键目标），其余选中文件残留未删。
+
+### 40.2 根因分析
+
+* 文件栏右键菜单只有一个删除入口 `deleteCtxFile`，它**只操作 `ctxMenu.f`（右键那个文件）**，完全不碰 `selectedPaths`（多选集）。于是多选后点删除，仅删右键目标 → 表现为「只删了第一个/一个」。
+* 同菜单已有「打开选中的 N 个文件」（`openSelected`）的多选入口，但删除缺少对应多选入口，是功能缺口而非逻辑 bug。
+
+### 40.3 修复内容
+
+1. **新增 `deleteSelected()`**：以 `selectedPaths` 为删除目标，确认后按主进程 `smm:trash` 单次 20 条上限（`TRASH_BATCH=20`，`main.js:298/442`）**分批调用 `trash()`**；单批失败仅置 `anyFail` 不阻断其余批次；删除后清空 `selectedPaths`、关闭右键菜单、刷新树。
+2. **右键菜单模板**（镜像 `openSelected` 模式）：
+   - 多选态（`selectedPaths.length >= 1`）显示「删除选中的 N 个文件」→ `deleteSelected`；
+   - 始终保留「删除此文件」→ `deleteCtxFile`（单删右键目标，删除后从选中集移除该路径，避免残留）。
+3. 注意 `fsApi.trash`（`web/src/services/io/fsApi.js:186`）会把主进程返回的 `{ok,failed,skipped}` 重新包装成 `{ok}`/`fail`，**丢掉 failed/skipped 明细**；故 `deleteSelected` 仅以 `r.ok` 判整批成败，不依赖明细（如需逐条失败提示，需先改 fsApi 透传明细——记为待办）。
+
+### 40.4 测试
+
+* 新增回归 `[多选删除] 批量删除应删除全部选中文件而非仅一个`：断言菜单出现「删除选中的 N 个文件」、单删入口改名「删除此文件」、`deleteSelected` 以 `selectedPaths` 为目标、分批循环 `for(i+=20)` + `svc.trash(batch)`、删后清空 `selectedPaths` → 回归 50/50 pass。
+* 全量：web `node --test` **1061/1061 pass**；electron-app 未改动未重跑（无源码变更）。
+
+### 40.5 出包（v2.0.38）
+
+* bump 2.0.37 → 2.0.38（NSIS VERSION 同步）；commit `ae7da48`。
+* 构建：`SKIP_BUMP=1 BUILD_LOW_MEM=1 VUE_BUILD_TIMEOUT=2400 bash build_now.sh`（沿用 §39.5 去掉 `SKIP_CACHE_CLEAR` 的配方）。
+
+### 40.6 真机待复测（用户侧）
+
+1. Ctrl/Shift 选中多个文件 → 右键「删除选中的 N 个文件」→ 确认 → 应全部进入回收站；
+2. 选中多个后右键「删除此文件」→ 只删右键那一个，其余保留；
+3. 删除后文件栏不再残留已删路径、已打开标签被关闭。

@@ -45,7 +45,8 @@
               :filePath="activePath"
               class="editWrap"
             />
-          <MdOutline v-if="showMdOutline && activeKind === 'markdown'"></MdOutline>
+          <!-- md 同款右侧菜单栏（图标栏+面板，自包含；含大纲/查找） -->
+          <MdSidebar v-if="activeKind === 'markdown'"></MdSidebar>
         </div>
       </div>
     </div>
@@ -62,7 +63,7 @@ import FileTabs from './components/FileTabs.vue'
 import WorkspacePanel from './components/WorkspacePanel.vue'
 import MdEditor from './components/MdEditor.vue'
 import MdToolbar from './components/MdToolbar.vue'
-import MdOutline from './components/MdOutline.vue'
+import MdSidebar from './components/MdSidebar.vue'
 import MissingLinkDialog from './components/MissingLinkDialog.vue'
 import { mapState, mapMutations } from 'vuex'
 import { getLocalConfig } from '@/api'
@@ -83,7 +84,7 @@ export default {
     WorkspacePanel,
     MdEditor,
     MdToolbar,
-    MdOutline,
+    MdSidebar,
     MissingLinkDialog
   },
   data() {
@@ -92,8 +93,7 @@ export default {
       workbooks: [],
       activeWorkbookId: '',
       workspaceDocked: true,
-      wsCollapsed: false,
-      showMdOutline: false
+      wsCollapsed: false
     }
   },
   computed: {
@@ -132,13 +132,11 @@ export default {
   mounted() {
     // 兜底：Edit.vue 内部对 workbook 列表的修改通过 bus 通知，保证 FileTabs 一定刷新
     this.$bus.$on('workbook-list-changed', this.refreshWorkbooks)
-    this.$bus.$on('toggle-md-outline', this.toggleMdOutline)
     // 全局快捷键（§7.9 / §8.1）：F11 禅模式 · Ctrl+Shift+T 工具栏折叠 · Ctrl+Shift+B 状态栏
     window.addEventListener('keydown', this.onGlobalKey)
   },
   beforeUnmount() {
     this.$bus.$off('workbook-list-changed', this.refreshWorkbooks)
-    this.$bus.$off('toggle-md-outline', this.toggleMdOutline)
     window.removeEventListener('keydown', this.onGlobalKey)
   },
   async created() {
@@ -167,10 +165,6 @@ export default {
   },
   methods: {
     ...mapMutations(['setLocalConfig']),
-
-    toggleMdOutline() {
-      this.showMdOutline = !this.showMdOutline
-    },
 
     onGlobalKey(e) {
       const meta = e.ctrlKey || e.metaKey
