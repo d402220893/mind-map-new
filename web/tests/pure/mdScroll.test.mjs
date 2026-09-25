@@ -1,9 +1,9 @@
 import { test } from 'node:test'
 import assert from 'node:assert'
-// mdScroll 是 UMD/CJS（module.exports = mod），Node ESM 互操作给 default = module.exports，
-// 用 default import + 解构最稳，避免 cjs-module-lexer 抓不到具名导出。
-import mdScroll from '../../src/utils/mdScroll.js'
 
+// mdScroll 现为 ESM（export function），Node 对含 export 的 .js 自动重解析为 ESM。
+// 但 .js 默认按 CJS 判定，静态 import 会语法错误；动态 import() 才触发重解析，故用顶层 await。
+const mdScroll = await import('../../src/utils/mdScroll.js')
 const { detectBlockStarts, resolveBlockIndex, plainTextOfLine, findBlockIndex, getTopLevelBlocks } = mdScroll
 
 // ── detectBlockStarts：各类顶层块的起始行识别 ──
