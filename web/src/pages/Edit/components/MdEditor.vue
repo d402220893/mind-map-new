@@ -31,6 +31,7 @@ import { mdDoc, navigate, getServices, resolveAbsLink, openPath, shell, baseName
 import { renameWorkbook, setCurrentFilePath, markDirty } from '@/api'
 import { clearHistoryBaseline } from '@/utils/mdHistory'
 import MindMapPreview from './MindMapPreview.vue'
+import { findBlockIndex, getTopLevelBlocks } from '@/utils/mdScroll'
 
 const BIG_FILE = 1024 * 1024
 
@@ -310,7 +311,11 @@ export default {
       try {
         this.editor.exec(cmd)
       } catch (e) {
+        // 不再静默吞错：命令名写错会在此暴露，避免"按钮无反应却无痕迹"
         console.error('[MdEditor] exec 失败:', cmd, e)
+        if (this.$message && this.$message.error) {
+          this.$message.error('命令执行失败：' + cmd)
+        }
       }
     },
 
@@ -395,10 +400,13 @@ export default {
     },
 
     scrollToLine(line) {
-      const el = this.$refs.host
-      if (!el) return
-      const nodes = el.querySelectorAll('.toastui-editor-ww-container *[data-nodeid], .toastui-editor-ww-container h1, .toastui-editor-ww-container h2, .toastui-editor-ww-container h3')
-      const target = nodes && nodes[Math.max(0, Math.min(line, nodes.length - 1))]
+      const host = this.$refs.host
+      if (!host || !this.editor) return
+      // 顶层块（与 markdown 顶层块一一对应），按行号解析落点，避免 data-nodeid 全量索引错位
+      const blocks = getTopLevelBlocks(host)
+      if (!blocks.length) return
+      const idx = findBlockIndex(this.editor.getMarkdown(), blocks, line)
+      const target = blocks[Math.max(0, Math.min(idx, blocks.length - 1))]
       if (target && target.scrollIntoView) target.scrollIntoView({ block: 'start' })
     },
 

@@ -17,10 +17,10 @@
         <span class="tbBtn" @click="exec('heading', { level: 3 })">H3</span>
       </div>
       <div class="tbGroup">
-        <span class="tbBtn" title="引用" @click="exec('blockquote')">引用</span>
-        <span class="tbBtn" title="无序列表" @click="exec('ul')">列表</span>
-        <span class="tbBtn" title="任务列表" @click="exec('task')">任务</span>
-        <span class="tbBtn" title="表格" @click="exec('table')">表格</span>
+        <span class="tbBtn" title="引用" @click="exec('blockQuote')">引用</span>
+        <span class="tbBtn" title="无序列表" @click="exec('bulletList')">列表</span>
+        <span class="tbBtn" title="任务列表" @click="exec('taskList')">任务</span>
+        <span class="tbBtn" title="表格" @click="exec('addTable')">表格</span>
         <span class="tbBtn" title="代码块" @click="exec('codeBlock')">代码</span>
         <span class="tbBtn" title="分割线" @click="exec('hr')">分割线</span>
       </div>
