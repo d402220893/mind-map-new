@@ -1,6 +1,6 @@
 {
   "name": "mind-map",
-  "version": "2.0.40",
+  "version": "2.0.41",
   "description": "思绪思维导图（多工作表离线版）",
   "main": "main.js",
   "author": "Jia Hao",
@@ -17,7 +17,7 @@
     "productName": "思绪思维导图",
     "copyright": "Copyright © 2026",
     "electronVersion": "25.7.0",
-    "asar": false,
+    "asar": true,
     "compression": "normal",
     "icon": "appicon.ico",
     "files": [

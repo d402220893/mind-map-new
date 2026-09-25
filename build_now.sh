@@ -227,56 +227,37 @@ if ! powershell -NoProfile -ExecutionPolicy Bypass -File "E:/03_学习文件/min
 fi
 echo "asar deploy OK" | tee -a "$LOG"
 
-# === [5/5b] 同步部署到 resources/app 目录（Electron 加载优先级：app/ 目录 > app.asar）===
-# 历史教训（2026-09-10~11）：D:\ 下存在 Sep 8 的旧 resources/app/ 目录，Electron 优先加载它，
-# 导致覆盖 app.asar 的多次部署用户全部看不到（一直跑 v1.0.21 旧 UI）。
-# 部署真源必须是 app/ 目录；asar 只是兜底，两处都要同步。
+# === [5/5b] 启用 app.asar 作为唯一真源（移除会盖掉 asar 的散目录 resources/app）===
+# 历史坑（2026-08-29 定位 / 2026-09-10 教训）：此前这里把 _appstage 整体 robocopy 到
+# resources/app，而 Electron 加载优先级是 app/ 目录 > app.asar，导致打好的 app.asar 永远被
+# 散目录盖住、从没真正生效；散目录里 265 个 svg + 9MB dist 在冷启动时被 Defender 逐文件实时
+# 扫描 + 随机读，是"打开慢"的最大根因。
+# 现改为：app.asar 已是唯一真源（[5/5] 已部署），这里只把陈旧的 resources/app 改名为
+# app.bak_<ts>（留作回滚点，绝不删除），让 Electron 落到 app.asar（只读、Defender 只扫一次、
+# 连续读取）。asar 下运行时只读、不写回包内，用户数据仍在 AppData/临时目录，安全。
+# 回滚：若 asar 异常，把 resources/app.bak_<ts> 改名回 resources/app 即可恢复散目录模式。
 APP_DIR_DST="D:/Program Files (x86)/思绪思维导图/resources/app"
 if [ -d "$APP_DIR_DST" ]; then
-  # 杀进程（app/ 目录被运行中进程锁住时改名会失败）
+  # 先杀进程（app/ 目录被运行中进程锁住时改名会失败）
   powershell -NoProfile -Command "Get-Process | Where-Object { \$_.ProcessName -like '*思绪思维导图*' } | Stop-Process -Force -ErrorAction SilentlyContinue; Start-Sleep -Milliseconds 1500" >> "$LOG" 2>&1
   APP_TS=$(date +%Y%m%d_%H%M%S)
   powershell -NoProfile -Command "Rename-Item '$APP_DIR_DST' ('app.bak_' + '$APP_TS')" >> "$LOG" 2>&1 \
-    || { echo "DEPLOY ASSERT FAILED: resources/app 改名失败（被锁）→ 不能继续：Electron 加载优先级 app/ > app.asar，asar 更新了用户仍会跑旧代码" | tee -a "$LOG"; exit 1; }
+    || { echo "DEPLOY ASSERT FAILED: resources/app 改名失败（被锁）→ 不能继续：必须移走散目录才能启用 asar" | tee -a "$LOG"; exit 1; }
+  echo "moved stale resources/app -> app.bak_$APP_TS (asar now active)" | tee -a "$LOG"
 fi
-if [ ! -d "$APP_DIR_DST" ]; then
-  # robocopy 的退出码语义特殊：0=无需复制、1=成功复制、>=8=真失败。
-  # 原来写成 `|| true` 会把 >=8 的失败也吞掉（负样式），这里显式判 rc。
-  ROB_RC=0
-  powershell -NoProfile -Command "robocopy 'E:/03_学习文件/mind-map-main/electron-app/_appstage' '$APP_DIR_DST' /E /NFL /NDL /NJH /NJS /NC /NS /NP" >> "$LOG" 2>&1 || ROB_RC=$?
-  if [ "$ROB_RC" -ge 8 ]; then
-    echo "DEPLOY ASSERT FAILED: resources/app 拷贝失败（robocopy rc=$ROB_RC）" | tee -a "$LOG"
-    exit 1
-  fi
-  echo "--- 校验 app/ 目录构建指纹 ---" | tee -a "$LOG"
-  cat "$APP_DIR_DST/dist/build-info.json" 2>/dev/null | tee -a "$LOG"
-  # app/ 目录守卫：noteCodeBar（v1.0.21 旧代码特征）必须为 0
-  if grep -a -q "noteCodeBar" "$APP_DIR_DST/dist/js/"*.js 2>/dev/null; then
-    echo "DEPLOY ASSERT FAILED: resources/app 目录仍含旧代码特征 noteCodeBar" | tee -a "$LOG"
-    exit 1
-  fi
-  # 版本号提取：cut -d'\"' 在双引号转义下会报 "the delimiter must be a single character"，改用 sed
-  VER=$(sed -n 's/.*"version"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' "$APP_DIR_DST/package.json" | head -1)
-  # 部署完整性：部署目录必须与打包源**文件集合完全一致**（防"部署没生效"或"旧文件污染"）
-  DEPLOY_DIFF=$(diff <(cd electron-app/_appstage/dist && find . -type f | sort) <(cd "$APP_DIR_DST/dist" && find . -type f | sort) || true)
-  if [ -n "$DEPLOY_DIFF" ]; then
-    echo "DEPLOY ASSERT FAILED: resources/app/dist 与打包源不一致（部署未生效或被旧文件污染）" | tee -a "$LOG"
-    echo "$DEPLOY_DIFF" | head -20 | tee -a "$LOG"
-    exit 1
-  fi
-  echo "deploy-assert OK: resources/app/dist 与打包源文件集合一致" | tee -a "$LOG"
-  # 防白屏代码必须真的在包里 —— 否则就是"我修了，你怎么还看到白屏"
-  if ! grep -a -q "应用启动失败" "$APP_DIR_DST/dist/js/app.js" 2>/dev/null; then
-    echo "DEPLOY ASSERT FAILED: 部署包缺少启动诊断代码（main.js 的防白屏兜底未编译进 bundle）" | tee -a "$LOG"
-    exit 1
-  fi
-  echo "deploy-assert OK: 启动诊断（防白屏兜底）已编译进 bundle" | tee -a "$LOG"
-  # 备份清理：上面每次改名都会产生 app.bak_<ts>，从不清理会无限累积
-  # （2026-09-20 实测已攒到 27 个 ≈ 数百 MB 旧代码）。保留最新 3 个作回滚点，其余删除。
-  # 只匹配 app.bak_*，绝不触碰正在运行的 app/ 与 app.asar。
-  powershell -NoProfile -Command "\$r='D:/Program Files (x86)/思绪思维导图/resources'; \$b=@(Get-ChildItem -LiteralPath \$r -Directory | Where-Object { \$_.Name -like 'app.bak_*' } | Sort-Object Name -Descending); if (\$b.Count -gt 3) { \$b | Select-Object -Skip 3 | ForEach-Object { try { [System.IO.Directory]::Delete(\$_.FullName, \$true) } catch {} }; Write-Output ('backup-prune: removed ' + (\$b.Count - 3) + ', kept 3') } else { Write-Output ('backup-prune: kept ' + \$b.Count) }" >> "$LOG" 2>&1 || true
-  echo "app-dir deploy OK (v${VER})" | tee -a "$LOG"
+# 守卫断言：改校验打包源 _appstage（与部署的 app.asar 逐字节一致，见下方 cmp）。
+# 旧代码特征 noteCodeBar 必须为 0；防白屏兜底"应用启动失败"必须编译进 bundle。
+if grep -a -q "noteCodeBar" electron-app/_appstage/dist/js/*.js 2>/dev/null; then
+  echo "DEPLOY ASSERT FAILED: 打包源仍含旧代码特征 noteCodeBar" | tee -a "$LOG"; exit 1
 fi
+if ! grep -a -q "应用启动失败" electron-app/_appstage/dist/js/app.js 2>/dev/null; then
+  echo "DEPLOY ASSERT FAILED: 打包源缺少启动诊断代码（防白屏兜底未编译进 bundle）" | tee -a "$LOG"; exit 1
+fi
+echo "stage-assert OK: 打包源无 noteCodeBar + 含防白屏兜底" | tee -a "$LOG"
+# 备份清理：每次改名产生 app.bak_<ts>，只匹配 app.bak_*，保留最新 3 个作回滚点，其余删除；
+# 绝不触碰正在运行的 app.asar。
+powershell -NoProfile -Command "\$r='D:/Program Files (x86)/思绪思维导图/resources'; \$b=@(Get-ChildItem -LiteralPath \$r -Directory | Where-Object { \$_.Name -like 'app.bak_*' } | Sort-Object Name -Descending); if (\$b.Count -gt 3) { \$b | Select-Object -Skip 3 | ForEach-Object { try { [System.IO.Directory]::Delete(\$_.FullName, \$true) } catch {} }; Write-Output ('backup-prune: removed ' + (\$b.Count - 3) + ', kept 3') } else { Write-Output ('backup-prune: kept ' + \$b.Count) }" >> "$LOG" 2>&1 || true
+echo "asar-active deploy OK" | tee -a "$LOG"
 
 echo "--- 校验已部署 asar（与本地打包产物逐字节比对 + 指纹提取）---" | tee -a "$LOG"
 # asar 的 ef/list 子命令在本环境输出为空且 node CLI 不认 /d/ 挂载路径（需用 D:/），
