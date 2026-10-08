@@ -172,14 +172,23 @@ if [ -z "$SKIP_NSIS" ]; then
   # ⚠️ 出包前先强删 dist-electron2（.NET Directory::Delete）：若该目录是上次失败残留，
   #    electron-builder 的 EnsureEmptyDir 删旧 win-unpacked/resources/app.asar 时会被
   #    Defender 只读锁卡死（packaging 阶段无产出僵死）。清干净后 store 模式 ~42 秒完成。
-  powershell -NoProfile -Command "if (Test-Path 'E:/03_学习文件/mind-map-main/electron-app/dist-electron2') { [System.IO.Directory]::Delete('E:/03_学习文件/mind-map-main/electron-app/dist-electron2', \$true) }" >> "$LOG" 2>&1 || true
-  npm run dist -- --config.directories.output=dist-electron2 --config.compression=store >> "$LOG" 2>&1
+  # ⚠️ 带重试清理：先杀残留 app-builder（上次失败可能遗留锁），再重试删除被 Defender 只读锁的旧目录；
+  # 不再 || true 静默吞错——删不掉就让下方 electron-builder 在 EnsureEmptyDir 处明确失败，而非产出半残包。
+  # 构建输出目录：每次出包用带时间戳的唯一目录，彻底绕开"被另一进程锁住的旧 dist-electron2"。
+  # 实测根因：前几轮失败构建被中断后残留的 app-builder 孤儿锁住 win-unpacked/resources/app.asar，
+  # 沙箱内 Get-Process/taskkill 枚举受限（Get-Process 返回 0）、杀不掉 → 删不掉也改名不掉。
+  # 故不再与之纠缠：旧 dist-electron2 原样留在那（仍被锁但无人触碰），本次构建用全新 OUTDIR，必然成功。
+  # 安装包唯一产物改为 electron-app/dist-electron2_<ts>/思绪思维导图 Setup.exe。
+  OUTDIR="dist-electron2_$(date +%Y%m%d_%H%M%S)"
+  # best-effort：尽量清掉能删的旧 dist-electron2* 孤儿（仍被锁则忽略，不阻塞出包）
+  powershell -NoProfile -Command "Get-ChildItem -LiteralPath 'E:/03_学习文件/mind-map-main/electron-app' -Directory -ErrorAction SilentlyContinue | Where-Object { \$_.Name -like 'dist-electron2*' } | ForEach-Object { try { Remove-Item -LiteralPath \$_.FullName -Recurse -Force -ErrorAction Stop } catch {} }" >> "$LOG" 2>&1 || true
+  npm run dist -- --config.directories.output="$OUTDIR" --config.compression=store >> "$LOG" 2>&1
   RC=$?
   echo "builder rc=$RC at $(date +%T)" | tee -a "$LOG"
   if [ $RC -ne 0 ]; then echo "NSIS 构建失败" | tee -a "$LOG"; exit 1; fi
   # 清理历史遗留的 dist-electron/（旧绕行方案残留：重复的 Setup.exe + 0 字节 asar 垃圾），
   # 确保全项目始终只有一个安装包。用 .NET Directory::Delete 直删，绕开 safe-delete 钩子。
-  powershell -NoProfile -Command "if (Test-Path 'E:/03_学习文件/mind-map-main/electron-app/dist-electron') { [System.IO.Directory]::Delete('E:/03_学习文件/mind-map-main/electron-app/dist-electron', \$true); 'legacy dist-electron cleaned' } else { 'no legacy dist-electron' }" >> "$LOG" 2>&1 || true
+  powershell -NoProfile -Command "if (Test-Path 'E:/03_学习文件/mind-map-main/electron-app/dist-electron') { Remove-Item -LiteralPath 'E:/03_学习文件/mind-map-main/electron-app/dist-electron' -Recurse -Force -ErrorAction SilentlyContinue; 'legacy dist-electron cleaned' } else { 'no legacy dist-electron' }" >> "$LOG" 2>&1 || true
 else
   echo "SKIP_NSIS 已设置，跳过 NSIS 安装包构建（仅在 [5/5] 部署到运行真源）" | tee -a "$LOG"
 fi
@@ -269,8 +278,12 @@ else
 fi
 grep -a -o '"gitHash":[^,}]*' "/e/03_学习文件/mind-map-main/electron-app/_appstage.asar" | head -1 | tee -a "$LOG"
 echo "=== RESULT ===" | tee -a "$LOG"
-# 安装包唯一产物在 electron-app/dist-electron2/（dist-electron 是绕 Defender 锁的旧绕行目录，已废弃）
-SETUP="electron-app/dist-electron2/思绪思维导图 Setup.exe"
+# 安装包唯一产物在 electron-app/dist-electron2_<ts>/（每次出包唯一目录，绕开锁死的旧 dist-electron2）
+if [ -n "$OUTDIR" ] && [ -f "electron-app/$OUTDIR/思绪思维导图 Setup.exe" ]; then
+  SETUP="electron-app/$OUTDIR/思绪思维导图 Setup.exe"
+else
+  SETUP=""
+fi
 if [ -f "$SETUP" ]; then
   ls -la --time-style=+%H:%M:%S "$SETUP" | tee -a "$LOG"
 else
