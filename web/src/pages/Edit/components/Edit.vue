@@ -1405,10 +1405,17 @@ export default {
       }
     },
 
-    // 从各种标准 simple-mind-map 文件形状中提取思维导图数据
+    // 从各种标准 simple-mind-map 文件形状中提取思维导图数据。
+    // ⚠️ 返回值必须是容器载荷形状 {root:…}（与本应用落盘的 sheets[].data 一致）：
+    // 裸根节点直接当 sheet.data 会让 loadSheetData 走 mindMap.setData(裸节点) 分支
+    // → 画布回退默认模板 + 自动保存污染写回（与 smmCodec.decodeSmm 单图归一化同源，v2.0.41）。
     extractMindmapData(data) {
       if (data && data.content && data.content.root) return data.content
       if (data && data.data && data.data.root) return data.data
+      // 单图 {type:'mindmap', data:…}：先取出 data 部分
+      if (data && data.type === 'mindmap' && data.data) data = data.data
+      // 裸根节点（有 children 数组）：包一层 {root}
+      if (data && Array.isArray(data.children)) return { root: data }
       return data
     },
 

@@ -11,14 +11,19 @@ export CSC_IDENTITY_AUTO_DISCOVERY=false
 # 这里显式补齐 git 的 usr/bin + bin + node，使脚本不再依赖外层环境 PATH。
 # 自动探测 WorkBuddy 托管的 node 版本目录（版本号会随环境变化，写死易失效 → 2026-09 多次踩坑）
 NODE_BASE="/c/Users/d36847/.workbuddy/binaries/node/versions"
-NODE_VER=""
+NODE=""
 if [ -d "$NODE_BASE" ]; then
-  NODE_VER=$(ls -1 "$NODE_BASE" 2>/dev/null | grep -E '^[0-9]' | sort -V | tail -1)
+  # 遍历版本目录、优先最新，找第一个含可执行 node.exe 的（不写死版本号 → 升级不失效）
+  for d in $(ls -1 "$NODE_BASE" 2>/dev/null | grep -E '^[0-9]' | sort -V -r); do
+    if [ -x "$NODE_BASE/$d/node.exe" ]; then
+      NODE="$NODE_BASE/$d/node.exe"; break
+    fi
+  done
 fi
-if [ -n "$NODE_VER" ] && [ -x "$NODE_BASE/$NODE_VER/node.exe" ]; then
-  NODE="$NODE_BASE/$NODE_VER/node.exe"
-else
-  NODE=/c/Users/d36847/.workbuddy/binaries/node/versions/22.22.2-3/node.exe
+if [ -z "$NODE" ]; then
+  # 兜底：系统 PATH 的 node；再不行退到当前已知的 managed 版本
+  NODE="$(command -v node 2>/dev/null)"
+  [ -z "$NODE" ] && NODE="/c/Users/d36847/.workbuddy/binaries/node/versions/22.22.2-6/node.exe"
 fi
 export PATH="$(dirname "$NODE"):/c/Users/d36847/.workbuddy/binaries/PortableGit/versions/1.2.0/usr/bin:/c/Users/d36847/.workbuddy/binaries/PortableGit/versions/1.2.0/bin:$PATH"
 NPM="npm"
@@ -110,7 +115,7 @@ fi
 # 注意：传给 node 的绝对路径必须用 Windows 风格 E:/...，不能用 git-bash 的 /e/ 前缀
 # （/e/ 作为 argv 传给原生 node 会被错拼成 E:\e\... 导致 MODULE_NOT_FOUND）。
 # BUILD_LOW_MEM 默认 1（低内存防 OOM），可被外层 BUILD_LOW_MEM=0 覆盖（低内存触发 worker 死锁时改用）。
-BUILD_LOW_MEM="${BUILD_LOW_MEM:-1}" env -u NODE_OPTIONS "$NODE" E:/03_学习文件/mind-map-main/run_vue_build.js >> "$LOG" 2>&1
+BUILD_LOW_MEM="${BUILD_LOW_MEM:-1}" RUN_VUE_NODE="$NODE" env -u NODE_OPTIONS "$NODE" E:/03_学习文件/mind-map-main/run_vue_build.js >> "$LOG" 2>&1
 RC=$?
 echo "vue rc=$RC at $(date +%T)" | tee -a "$LOG"
 if [ $RC -ne 0 ] || [ ! -f /e/03_学习文件/mind-map-main/dist/index.html ]; then
@@ -192,7 +197,7 @@ if [ -z "$SKIP_NSIS" ]; then
 else
   echo "SKIP_NSIS 已设置，跳过 NSIS 安装包构建（仅在 [5/5] 部署到运行真源）" | tee -a "$LOG"
 fi
-echo "=== [5/5] 打包并部署到运行真源 D:\Program Files (x86)\思绪思维导图\resources\app.asar ===" | tee -a "$LOG"
+echo "=== [5/5] 打包并部署到运行真源 D:\Program Files (x86)\mind-map\resources\app.asar ===" | tee -a "$LOG"
 cd /e/03_学习文件/mind-map-main/electron-app
 # ⚠️ 清 _appstage 必须"删干净 + 断言删干净"。
 # 历史坑（2026-09-20 查白屏时发现）：这里原为 `rm -rf _appstage 2>/dev/null || true`，
@@ -225,7 +230,10 @@ echo "stage-assert OK: _appstage/dist 与构建产物文件集合一致（$(cd d
 "$NODE" node_modules/@electron/asar/bin/asar.js pack _appstage _appstage.asar >> "$LOG" 2>&1
 SRC_ASAR="E:/03_学习文件/mind-map-main/electron-app/_appstage.asar"
 cd /e/03_学习文件/mind-map-main
-DST="D:/Program Files (x86)/思绪思维导图/resources/app.asar"
+# ⚠️ 2026-10-09 实证修正：真实安装目录是 D:\Program Files (x86)\mind-map\（注册表 .smm
+# 关联 + 实际运行 exe 都指向这里）；原目标 D:\...\思绪思维导图\ 是个只有 resources、没有 exe
+# 的死目录，历次部署从未触达用户实际运行的 app（线上生效全靠用户手动装 Setup.exe）。
+DST="D:/Program Files (x86)/mind-map/resources/app.asar"
 # ⚠️ 原来这里是 `... | tee -a "$LOG" || echo "DEPLOY 步骤返回非0，请检查日志" | tee -a "$LOG"`
 # —— 部署失败只打一行字就继续往下跑，最后还会打印 RESULT 和安装包大小，
 # 看起来"构建成功"，实际 D 盘还是旧代码。这类"报成功实则没部署"最耗排查时间，改为硬失败。
@@ -245,7 +253,7 @@ echo "asar deploy OK" | tee -a "$LOG"
 # app.bak_<ts>（留作回滚点，绝不删除），让 Electron 落到 app.asar（只读、Defender 只扫一次、
 # 连续读取）。asar 下运行时只读、不写回包内，用户数据仍在 AppData/临时目录，安全。
 # 回滚：若 asar 异常，把 resources/app.bak_<ts> 改名回 resources/app 即可恢复散目录模式。
-APP_DIR_DST="D:/Program Files (x86)/思绪思维导图/resources/app"
+APP_DIR_DST="D:/Program Files (x86)/mind-map/resources/app"
 if [ -d "$APP_DIR_DST" ]; then
   # 先杀进程（app/ 目录被运行中进程锁住时改名会失败）
   powershell -NoProfile -Command "Get-Process | Where-Object { \$_.ProcessName -like '*思绪思维导图*' } | Stop-Process -Force -ErrorAction SilentlyContinue; Start-Sleep -Milliseconds 1500" >> "$LOG" 2>&1
@@ -265,8 +273,21 @@ fi
 echo "stage-assert OK: 打包源无 noteCodeBar + 含防白屏兜底" | tee -a "$LOG"
 # 备份清理：每次改名产生 app.bak_<ts>，只匹配 app.bak_*，保留最新 3 个作回滚点，其余删除；
 # 绝不触碰正在运行的 app.asar。
-powershell -NoProfile -Command "\$r='D:/Program Files (x86)/思绪思维导图/resources'; \$b=@(Get-ChildItem -LiteralPath \$r -Directory | Where-Object { \$_.Name -like 'app.bak_*' } | Sort-Object Name -Descending); if (\$b.Count -gt 3) { \$b | Select-Object -Skip 3 | ForEach-Object { try { [System.IO.Directory]::Delete(\$_.FullName, \$true) } catch {} }; Write-Output ('backup-prune: removed ' + (\$b.Count - 3) + ', kept 3') } else { Write-Output ('backup-prune: kept ' + \$b.Count) }" >> "$LOG" 2>&1 || true
+powershell -NoProfile -Command "\$r='D:/Program Files (x86)/mind-map/resources'; \$b=@(Get-ChildItem -LiteralPath \$r -Directory | Where-Object { \$_.Name -like 'app.bak_*' } | Sort-Object Name -Descending); if (\$b.Count -gt 3) { \$b | Select-Object -Skip 3 | ForEach-Object { try { [System.IO.Directory]::Delete(\$_.FullName, \$true) } catch {} }; Write-Output ('backup-prune: removed ' + (\$b.Count - 3) + ', kept 3') } else { Write-Output ('backup-prune: kept ' + \$b.Count) }" >> "$LOG" 2>&1 || true
 echo "asar-active deploy OK" | tee -a "$LOG"
+
+# === [5/5c] 随包发布 code2mm 契约文档 + CLI 到运行真源 resources/devtools/ ===
+# code2mm 是「AI 读代码建脑图」的桥接工具，其契约文档（scripts/code2mm.md）与脚本
+# 需随 app 一起发布，使安装目录下的 resources/devtools/ 即可取用（松散文件，不被 asar 包裹，
+# 可直接被 AI/脚本读取）。NSIS 安装包侧由 package.json 的 extraResources 负责同一件事。
+RES_DIR="D:/Program Files (x86)/mind-map/resources"
+mkdir -p "$RES_DIR/devtools" 2>/dev/null || true
+cp -f "E:/03_学习文件/mind-map-main/scripts/code2mm.md" "$RES_DIR/devtools/" 2>/dev/null \
+  && echo "copied code2mm.md -> $RES_DIR/devtools/" | tee -a "$LOG" \
+  || echo "WARN: code2mm.md 拷贝失败（不影响主包）" | tee -a "$LOG"
+cp -f "E:/03_学习文件/mind-map-main/scripts/code2mm.mjs" "$RES_DIR/devtools/" 2>/dev/null \
+  && echo "copied code2mm.mjs -> $RES_DIR/devtools/" | tee -a "$LOG" \
+  || echo "WARN: code2mm.mjs 拷贝失败（不影响主包）" | tee -a "$LOG"
 
 echo "--- 校验已部署 asar（与本地打包产物逐字节比对 + 指纹提取）---" | tee -a "$LOG"
 # asar 的 ef/list 子命令在本环境输出为空且 node CLI 不认 /d/ 挂载路径（需用 D:/），

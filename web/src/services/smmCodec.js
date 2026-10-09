@@ -84,11 +84,18 @@ export function decodeSmm(text) {
   // 容器（本应用保存 / 快照写回）→ 原样返回 sheets + activeId
   const cont = containerSheets(obj)
   if (cont) return cont
-  // 单图：包成单 sheet
+  // 单图：包成单 sheet。
+  // ⚠️ sheet.data 必须归一化成容器载荷形状 {root:…}（与本应用落盘的 sheets[].data 一致）：
+  // 把裸根节点直接当 sheet.data，下游 loadSheetData 会走 mindMap.setData(裸节点) 分支，
+  // 库按整图数据取 .root 落空 → 画布回退默认模板，且自动保存把污染数据写回文件
+  // （v2.0.41 实证：code2mm 单图打开后 services.smm 被写坏成
+  //   {data,children,root:默认模板,view,layout,theme} 混合体）。
   const id = 'root'
-  const data = obj.type === 'mindmap' && obj.data
+  let data = obj.type === 'mindmap' && obj.data
     ? obj.data
     : (looksLikeNode(obj) ? obj : (obj.data || obj))
+  // 已带 .root 的（容器载荷/污染混合体）原样透传；其余一律包成 {root:…}
+  if (data && typeof data === 'object' && !data.root) data = { root: data }
   return { sheets: [{ id, data }], activeId: id }
 }
 

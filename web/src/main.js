@@ -173,6 +173,15 @@ function renderStartupFailure() {
   } catch (e) {}
 })()
 
+// 移除首屏静态 loading 遮罩（index.html 里的 #boot-loading）：须等首屏组件树
+// （Edit 异步 chunk 699.js 加载+渲染）真正就绪后才移除，否则会闪一下白屏。
+function removeBootLoading() {
+  try {
+    const el = document.getElementById('boot-loading')
+    if (el && el.parentNode) el.parentNode.removeChild(el)
+  } catch (e) {}
+}
+
 const initApp = () => {
   i18n.global.locale = getLang()
 
@@ -209,6 +218,10 @@ const initApp = () => {
     recordError('app.mount', e, true)
   }
 
+  // 首屏组件树（Edit 异步 chunk 699.js 加载+渲染）就绪后再移除静态 loading 遮罩，
+  // 避免“窗口出来还是白屏假死”的体感——用户立刻看到加载动画，内容就绪才切换。
+  router.isReady().then(removeBootLoading).catch(removeBootLoading)
+
   // 系统双击/命令行传入的文件路径：主进程经 smm:open-file 推送，渲染端经 bridge 打开。
   // 收口到 workspaceBridge 的 shell 网关（视图不得直连宿主外壳，违背契约⑥）；
   // 注册需在 did-finish-load 之前完成，故放在 initApp 同步流程里（mount 已完成、服务层已装配）。
@@ -227,6 +240,30 @@ const initApp = () => {
       renderStartupFailure()
     }
   }, 2500)
+
+  // 首屏可交互后再恢复上次工作区：原逻辑在 wireServices 内同步执行，会在 699.js
+  // 解析/首屏渲染期间同步触发文件扫描 + 建索引（I/O 密集），拖慢启动。现延后到
+  // 首屏路由就绪 + 浏览器空闲，工作区面板稍后填充，不影响首屏显示 Edit 内容。
+  router.isReady().then(() => {
+    const runRestore = () => {
+      try {
+        const lastRoot = localStorage.getItem('wsLastRoot')
+        const svc = getServices()
+        if (lastRoot && svc && svc.workspaceService) {
+          openWorkspace(lastRoot).then(r => {
+            if (!r || !r.ok) localStorage.removeItem('wsLastRoot')
+          }).catch(() => {})
+        }
+      } catch (e) {
+        recordError('restoreLastWorkspace', e)
+      }
+    }
+    if (typeof window.requestIdleCallback === 'function') {
+      window.requestIdleCallback(runRestore, { timeout: 2500 })
+    } else {
+      setTimeout(runRestore, 400)
+    }
+  }).catch(() => {})
 
   return app
 }
@@ -269,18 +306,9 @@ function wireServices() {
   } catch (e) {
     recordError('startFsBridge', e)
   }
-  // 启动恢复上次打开的工作区文件夹（openWorkspace 内部会广播 workspace-opened；
-  // IPC 往返必然晚于 Vue 挂载完成，WorkspacePanel 的监听已就绪）
-  try {
-    const lastRoot = localStorage.getItem('wsLastRoot')
-    if (lastRoot && services.workspaceService) {
-      openWorkspace(lastRoot).then(r => {
-        if (!r || !r.ok) localStorage.removeItem('wsLastRoot')
-      }).catch(() => {})
-    }
-  } catch (e) {
-    recordError('restoreLastWorkspace', e)
-  }
+  // 注意：恢复上次打开的工作区（openWorkspace）已移出 wireServices，改到 initApp 末尾、
+  // 首屏 router.isReady 之后再空闲执行（见 initApp 末尾），避免文件扫描+建索引在
+  // 699.js 解析/首屏渲染期间同步触发，拖慢“打开即可操作”的体感。
   // 运行时补挂：Tab 适配器（服务层 open 一个文件 → 既有 workbook 状态机）
   try {
     if (services.fileRouter && typeof services.fileRouter.setTabs === 'function') {

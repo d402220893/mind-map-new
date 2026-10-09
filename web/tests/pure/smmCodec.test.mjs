@@ -123,8 +123,8 @@ test('pickActiveData 缺 activeId → 第一个', () => {
   assert.strictEqual(pickActiveData(container(SHEETS)).id, 'r1')
 })
 
-test('pickActiveData 单图 → data', () => {
-  assert.strictEqual(pickActiveData(JSON.stringify({ data: { id: 'q' } })).id, 'q')
+test('pickActiveData 单图 → 容器载荷（{root:…}，与 app 落盘 sheet.data 同形状）', () => {
+  assert.strictEqual(pickActiveData(JSON.stringify({ data: { id: 'q' } })).root.id, 'q')
 })
 
 // ── extractImages ──
@@ -312,14 +312,14 @@ test('单图（type=mindmap）被包成单 sheet，id 为 root', () => {
   const d = decodeSmm(t)
   assert.strictEqual(d.sheets.length, 1)
   assert.strictEqual(d.activeId, 'root')
-  assert.strictEqual(d.sheets[0].data.id, 'root')
+  assert.strictEqual(d.sheets[0].data.root.id, 'root')
 })
 
 test('裸 root（无 data 包裹）也能解码成单 sheet', () => {
   const t = JSON.stringify({ id: 'raw', data: { text: 'B' }, children: [] })
   const d = decodeSmm(t)
   assert.strictEqual(d.sheets.length, 1)
-  assert.strictEqual(d.sheets[0].data.id, 'raw')
+  assert.strictEqual(d.sheets[0].data.root.id, 'raw')
 })
 
 test('decode（单数据访问器）对容器返回 active 表的数据', () => {
@@ -436,4 +436,42 @@ test('单图（mindmap/mindmap 裸节点）不受 app 容器分支影响（仍�
   const d = decodeSmm(JSON.stringify({ type: 'mindmap', data: { id: 'root', children: [] } }))
   assert.strictEqual(d.sheets.length, 1)
   assert.strictEqual(d.activeId, 'root')
+})
+
+// ── v2.0.41 单图打开污染事故契约锁 ──────────────────────────────────
+// 事故：code2mm 产 {type:'mindmap',data:裸根}，decodeSmm 曾把裸根节点直接当 sheet.data
+// → loadSheetData 走 mindMap.setData(裸节点) 分支 → 画布回退默认模板，
+//   且自动保存把文件写坏成 {data,children,root:默认模板,view,layout,theme} 混合体。
+// 契约：decodeSmm 单图产物 sheet.data 必须归一化为 {root:…}，与 app 自存容器同形状。
+
+test('单图 decode → sheet.data 必须有 .root（loadSheetsContainer 契约）', () => {
+  const root = { data: { text: 'services/' }, children: [{ data: { text: 'a.js' }, children: [] }] }
+  const { sheets } = decodeSmm(JSON.stringify({ type: 'mindmap', data: root }))
+  const sd = sheets[0].data
+  assert.ok(sd && sd.root, 'sheet.data 必须是 {root:…} 载荷，否则 loadSheetData 走错分支')
+  assert.strictEqual(sd.root.data.text, 'services/')
+  assert.strictEqual(sd.root.children.length, 1)
+})
+
+test('单图 decode → loadSheetData 分支模拟：必须命中 setFullData（data.root 在场）', () => {
+  const root = { data: { text: 'R' }, children: [] }
+  const { sheets } = decodeSmm(JSON.stringify({ type: 'mindmap', data: root }))
+  const d = sheets[0].data
+  // Edit.vue loadSheetData：if (data && data.root) setFullData else setData
+  assert.ok(d && d.root, '走 setFullData 分支')
+})
+
+test('单图 decode 已是 {root,view,layout} 包装体时原样保留（不二次包裹）', () => {
+  const wrapper = { root: { data: { text: 'W' }, children: [] }, view: {}, layout: 'logicalStructure' }
+  const { sheets } = decodeSmm(JSON.stringify({ type: 'mindmap', data: wrapper }))
+  assert.strictEqual(sheets[0].data.root.data.text, 'W')
+  assert.strictEqual(sheets[0].data.layout, 'logicalStructure')
+})
+
+test('被污染的混合体 sheet.data（含 data+children+root）不被二次包裹', () => {
+  // app 自存容器里 sheet.data 本就可能带任意键；只有「纯裸根节点」（有 children 无 root）才包
+  const poisoned = { data: { text: 'services/' }, children: [], root: { data: { text: '<p>根节点</p>' }, children: [] } }
+  const { sheets } = decodeSmm(JSON.stringify({ type: 'mindmap', data: poisoned }))
+  assert.strictEqual(sheets[0].data.root.data.text, '<p>根节点</p>', '已有 .root 时不覆盖')
+  assert.deepStrictEqual(Object.keys(sheets[0].data).sort(), ['children', 'data', 'root'], '原样透传，不新增包裹键')
 })

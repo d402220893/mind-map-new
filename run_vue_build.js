@@ -10,7 +10,10 @@
 const { spawn, exec } = require('child_process');
 const fs = require('fs');
 
-const NODE = 'C:/Users/d36847/.workbuddy/binaries/node/versions/22.22.2-3/node.exe';
+// 跟随启动本脚本的 node（build_now.sh 已探测好正确的 managed node 版本并以它启动本脚本），
+// 不再写死版本号——WorkBuddy 升级 managed node（如 22.22.2-3 → -6）后旧路径会 ENOENT。
+// RUN_VUE_NODE 为 build_now.sh 显式传入的探测结果，优先使用；否则回退到 process.execPath（即本进程 node）。
+const NODE = process.env.RUN_VUE_NODE || process.execPath;
 const CLI = 'E:/03_学习文件/mind-map-main/web/node_modules/@vue/cli-service/bin/vue-cli-service.js';
 const WEB = 'E:/03_学习文件/mind-map-main/web';
 
