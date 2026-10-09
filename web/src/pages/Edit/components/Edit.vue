@@ -150,6 +150,7 @@ import OutlineEdit from './OutlineEdit.vue'
 import { showLoading, hideLoading } from '@/utils/loading'
 import handleClipboardText from '@/utils/handleClipboardText'
 import { getParentWithClass } from '@/utils'
+import { isElVisible } from '@/utils/rectGuard'
 import {
   harvestImageKeysFromTree,
   harvestImageKeysFromContainer,
@@ -447,7 +448,16 @@ export default {
 
     handleResize() {
       // 实例可能尚未创建（md 页启动时画布隐藏、initWhenReady 延后），窗口 resize/全屏切换都会触发这里
-      if (this.mindMap) this.mindMap.resize()
+      if (!this.mindMap) return
+      // 全屏进入/退出的过渡瞬间容器可能短暂为 0 尺寸，smm resize() 内部
+      // getElRectInfo 会 throw「容器元素el的宽高不能为0」并弹致命错误框。
+      // 跳过本次，由 fullscreenchange 处理器的延迟 resize 补偿（Fullscreen.vue）。
+      if (!isElVisible(this.$refs.mindMapContainer)) return
+      try {
+        this.mindMap.resize()
+      } catch (e) {
+        // 兜底：resize 异常绝不冒泡成用户可见错误框
+      }
     },
 
     // 显示loading

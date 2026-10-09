@@ -197,15 +197,17 @@ test('[dirty 误报] Edit.vue loadSheetData 用 node_tree_render_end 兜底，�
   const preview = read(new URL('pages/Edit/components/MindMapPreview.vue', SRC))
   assert.ok(/catch \(e\)/.test(preview), 'MindMapPreview 的 new MindMap 应 try/catch 兜底')
   assert.ok(/getBoundingClientRect\(\)/.test(preview), 'MindMapPreview 构造前应校验容器尺寸非 0')
-  // 实例未就绪期（mindMap=null）的连带空指针：窗口 resize / 全屏切换都会触达 resize
+  // 实例未就绪期（mindMap=null）的连带空指针：窗口 resize / 全屏切换都会触达 resize。
+  // 2026-10-09 v2.0.42 全屏报错：过渡瞬间容器 0 尺寸，smm resize() 内部 getElRectInfo
+  // throw「容器元素el的宽高不能为0」并弹致命错误框 → 新契约 = 判空 + isElVisible 尺寸守卫 + try/catch 兜底。
   assert.ok(
-    /handleResize\(\)\s*\{[\s\S]{0,200}?if \(this\.mindMap\) this\.mindMap\.resize\(\)/.test(vue),
-    'handleResize 必须判空（md 页启动时实例未建，窗口 resize/全屏会触发）'
+    /handleResize\(\)\s*\{[\s\S]{0,400}?if \(!this\.mindMap\) return[\s\S]{0,400}?isElVisible\(this\.\$refs\.mindMapContainer\)[\s\S]{0,400}?try\s*\{[\s\S]{0,200}?this\.mindMap\.resize\(\)[\s\S]{0,200}?\}\s*catch\s*\(e\)/.test(vue),
+    'handleResize 必须判空 + isElVisible 尺寸守卫 + try/catch（实例未建/0 尺寸过渡态/异常都不得冒泡）'
   )
   const fullscreen = read(new URL('pages/Edit/components/Fullscreen.vue', SRC))
   assert.ok(
-    /if \(this\.mindMap\) this\.mindMap\.resize\(\)/.test(fullscreen),
-    'Fullscreen 的 fullscreenchange 回调必须判空（mindMap prop 经事件广播，可能为 null）'
+    /if \(!this\.mindMap\) return[\s\S]{0,300}?isElVisible\(this\.mindMap\.el\)[\s\S]{0,300}?try\s*\{[\s\S]{0,200}?this\.mindMap\.resize\(\)[\s\S]{0,200}?\}\s*catch\s*\(e\)/.test(fullscreen),
+    'Fullscreen 的 fullscreenchange 回调必须判空 + isElVisible 尺寸守卫 + try/catch（mindMap prop 可能为 null，全屏过渡容器可能 0 尺寸）'
   )
   assert.ok(
     /toFullscreenShow\(\)\s*\{\s*if \(!this\.mindMap\) return/.test(fullscreen),
