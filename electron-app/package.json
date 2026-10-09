@@ -1,6 +1,6 @@
 {
   "name": "mind-map",
-  "version": "2.0.43",
+  "version": "2.0.44",
   "description": "思绪思维导图（多工作表离线版）",
   "main": "main.js",
   "author": "Jia Hao",
@@ -43,16 +43,16 @@
       "output": "dist-electron",
       "buildResources": "."
     },
-  "extraResources": [
-    {
-      "from": "../scripts/code2mm.md",
-      "to": "devtools/code2mm.md"
-    },
-    {
-      "from": "../scripts/code2mm.mjs",
-      "to": "devtools/code2mm.mjs"
-    }
-  ],
+    "extraResources": [
+      {
+        "from": "../scripts/code2mm.md",
+        "to": "devtools/code2mm.md"
+      },
+      {
+        "from": "../scripts/code2mm.mjs",
+        "to": "devtools/code2mm.mjs"
+      }
+    ],
     "win": {
       "target": [
         {
