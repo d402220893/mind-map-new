@@ -43,16 +43,16 @@
       "output": "dist-electron",
       "buildResources": "."
     },
-    "extraResources": [
-      {
-        "from": "../scripts/code2mm.md",
-        "to": "devtools"
-      },
-      {
-        "from": "../scripts/code2mm.mjs",
-        "to": "devtools"
-      }
-    ],
+  "extraResources": [
+    {
+      "from": "../scripts/code2mm.md",
+      "to": "devtools/code2mm.md"
+    },
+    {
+      "from": "../scripts/code2mm.mjs",
+      "to": "devtools/code2mm.mjs"
+    }
+  ],
     "win": {
       "target": [
         {

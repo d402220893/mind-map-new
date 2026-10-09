@@ -281,6 +281,10 @@ echo "asar-active deploy OK" | tee -a "$LOG"
 # 需随 app 一起发布，使安装目录下的 resources/devtools/ 即可取用（松散文件，不被 asar 包裹，
 # 可直接被 AI/脚本读取）。NSIS 安装包侧由 package.json 的 extraResources 负责同一件事。
 RES_DIR="D:/Program Files (x86)/mind-map/resources"
+# 历史 NSIS extraResources 误把 devtools 写成同名文件（from=文件/to=裸名），必须清掉才能建目录
+if [ -e "$RES_DIR/devtools" ] && [ ! -d "$RES_DIR/devtools" ]; then
+  rm -f "$RES_DIR/devtools" && echo "removed stray file $RES_DIR/devtools (was code2mm.mjs, not a dir)" | tee -a "$LOG"
+fi
 mkdir -p "$RES_DIR/devtools" 2>/dev/null || true
 cp -f "E:/03_学习文件/mind-map-main/scripts/code2mm.md" "$RES_DIR/devtools/" 2>/dev/null \
   && echo "copied code2mm.md -> $RES_DIR/devtools/" | tee -a "$LOG" \
