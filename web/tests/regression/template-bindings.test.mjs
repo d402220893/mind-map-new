@@ -474,6 +474,60 @@ test('[备注二选一] NodeNote 写备注/引用章节互斥，永不共存', (
   )
 })
 
+// ===== v2.0.47 备注弹窗透明玻璃 + 主题色边框 =====
+
+test('[备注弹窗透明化] 玻璃底 + 主题色边框（随主题加深 15%）', () => {
+  const vue = read(new URL('pages/Edit/components/NodeNote.vue', SRC))
+  const util = read(new URL('utils/noteThemeColor.js', SRC))
+  // 边框：el-dialog 根上挂 --note-theme-border CSS 变量（经 :style 注入）
+  assert.ok(
+    /:style="dialogStyle"/.test(vue),
+    'el-dialog 应绑定 :style 注入 --note-theme-border'
+  )
+  assert.ok(
+    /'--note-theme-border':\s*this\.themeBorderColor/.test(vue),
+    'dialogStyle 应下发 --note-theme-border 变量'
+  )
+  assert.ok(
+    /border:\s*1px solid var\(--note-theme-border,\s*var\(--macos-border-strong\)\)/.test(vue),
+    '弹窗边框应走 --note-theme-border（主题色），缺省回退中性边框'
+  )
+  // 玻璃透明底：弹窗与编辑区逐层透明，画布经玻璃透出
+  assert.ok(
+    /background:\s*var\(--macos-bg-glass\)/.test(vue),
+    '弹窗底应为 --macos-bg-glass 玻璃透明'
+  )
+  assert.ok(
+    /\.noteBox\s*\{[^}]*background:\s*transparent;/s.test(vue),
+    '编辑区 noteBox 应透明（不得回退 #fff 实心底）'
+  )
+  assert.ok(
+    /\.toastui-editor-defaultUI\s*\{[^}]*background:\s*transparent;/s.test(vue),
+    'Toast UI 容器应透明'
+  )
+  // 暗色模式：玻璃下文字必须翻亮（透明后深底不允许再留深字）
+  assert.ok(
+    /body\.isDark \.nodeNoteDialog \{[\s\S]*?color:\s*var\(--macos-text\)/.test(vue),
+    '暗色模式透明玻璃底上编辑文字应为亮色 var(--macos-text)'
+  )
+  // 主题色计算：打开弹窗时刷新，经节点反查 mindMap
+  assert.ok(
+    /refreshThemeBorder\(\)/.test(vue) && /n\.mindMap\.getTheme\(\)/.test(vue),
+    '打开弹窗应经 targetNode.mindMap.getTheme() 刷新主题边框色'
+  )
+  // 纯函数契约：加深比例 15%、解析失败不 throw
+  assert.ok(
+    /export function noteThemeBorderColor/.test(util) &&
+      /export function darkenColor/.test(util) &&
+      /export function pickThemeMainColor/.test(util),
+    'noteThemeColor.js 应导出 noteThemeBorderColor/darkenColor/pickThemeMainColor'
+  )
+  assert.ok(
+    /1 - ratio/.test(util),
+    '加深实现应为向黑色按比例混合（1 - ratio）'
+  )
+})
+
 test('[引用块视觉弱化] RefBlock 左紫竖线+浅紫底，去四边框', () => {
   const vue = read(new URL('pages/Edit/components/RefBlock.vue', SRC))
   // 去四边框（"像输入框"主因）→ 左侧 4px 紫竖线 + 浅紫底（§v1.6 2.4）

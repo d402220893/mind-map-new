@@ -6,6 +6,7 @@
     :top="isMobile ? '20px' : '15vh'"
     :close-on-click-modal="false"
     :draggable="true"
+    :style="dialogStyle"
   >
     <!-- 标题行：标题 + 二选一模式切换（v1.6：写备注 / 引用章节，永不共存） -->
     <template #header>
@@ -147,6 +148,7 @@ import 'prismjs/components/prism-markdown'
 import 'prismjs/components/prism-xml-doc'
 import { isMobile } from 'simple-mind-map/src/utils/index'
 import { markRaw } from 'vue'
+import { noteThemeBorderColor } from '@/utils/noteThemeColor'
 import RefBlock from './RefBlock.vue'
 import SectionPicker from './SectionPicker.vue'
 import ConflictDialog from './ConflictDialog.vue'
@@ -203,10 +205,18 @@ export default {
         'yaml',
         'css',
         'markup'
-      ]
+      ],
+      // v2.0.47 透明玻璃弹窗：边框色随导图主题（主色加深 15%），打开时计算
+      themeBorderColor: ''
     }
   },
   computed: {
+    // 边框色经 CSS 变量下传全局样式块（el-dialog 落在弹窗根元素上）
+    dialogStyle() {
+      return this.themeBorderColor
+        ? { '--note-theme-border': this.themeBorderColor }
+        : null
+    },
     targetNode() {
       return this.appointNode || (this.activeNodes && this.activeNodes[0]) || null
     },
@@ -248,6 +258,20 @@ export default {
     handleNodeActive(...args) {
       this.activeNodes = [...args[1]]
       this.updateNoteInfo()
+    },
+
+    // v2.0.47：从目标节点反查 mindMap 实例读当前主题，计算弹窗边框色。
+    // MindMapNode 构造时挂有 this.mindMap（opt.mindMap），经节点拿实例可避免
+    // NodeNote 在 Toolbar 下无 mindMap prop 的问题；任何异常都吞掉走 CSS 兜底。
+    refreshThemeBorder() {
+      let theme = null
+      try {
+        const n = this.targetNode
+        theme = n && n.mindMap ? n.mindMap.getTheme() : null
+      } catch (e) {
+        theme = null
+      }
+      this.themeBorderColor = noteThemeBorderColor(theme) || ''
     },
 
     updateNoteInfo() {
@@ -400,6 +424,8 @@ export default {
       }
       // v1.6：按 _mindlink.mode 决定弹窗打开时的模式（旧数据走推断规则）
       this.mode = this.targetNode ? getMode(this.targetNode) : 'note'
+      // v2.0.47：边框色随当前导图主题（root 主色加深），每次打开时取最新
+      this.refreshThemeBorder()
       this.loadRefs()
       this.dialogVisible = true
       // 编辑器只在 note 模式渲染（v-if）；ref 模式下不创建
@@ -659,9 +685,15 @@ export default {
 // 且 Toast UI 内部结构（.toastui-editor-*）不在本组件模板内。
 // ============================================================
 .nodeNoteDialog {
-  // ── v2.0.46 新视觉稿：480 宽、圆角 12、无边框、8% 灰柔阴影浮起 ──
+  // ── v2.0.47 透明玻璃弹窗：底随主题玻璃透出画布，边框随导图主题色（主色
+  //    加深 15%，经 :style 注入的 --note-theme-border 下传；拿不到主题色时
+  //    回退中性边框）──
   border-radius: 12px;
-  border: none;
+  border: 1px solid var(--note-theme-border, var(--macos-border-strong));
+  // 同时压 CSS 变量与 background：Element Plus 的 el-dialog 底色走
+  // --el-dialog-bg-color，双保险确保玻璃底生效
+  --el-dialog-bg-color: var(--macos-bg-glass);
+  background: var(--macos-bg-glass);
   box-shadow: 0 12px 40px rgba(0, 0, 0, 0.08);
   overflow: hidden;
 
@@ -683,11 +715,11 @@ export default {
     color: var(--macos-text);
   }
 
-  // Toast UI 编辑器容器：v2.0.46 纯白无框（外框由 noteBox 统一承担）
+  // Toast UI 编辑器容器：v2.0.47 逐层透明（玻璃底统一透出）
   .toastui-editor-defaultUI {
     border: none;
     border-radius: 8px;
-    background: #fff;
+    background: transparent;
     box-shadow: none;
   }
   // 自带顶部工具栏隐藏（v2.0.46 视觉稿：编辑区纯内容，插入代码块走 footer；
@@ -708,12 +740,12 @@ export default {
   // ============================================================
   // v1.6 二选一：noteBox 只在「写备注」模式包裹编辑器（引用块在
   // ref 模式独立平铺，不再与编辑器同框）。
-  // v2.0.46 新视觉稿：纯白无框大编辑区（去边框/去玻璃底）。
+  // v2.0.47 透明化：编辑区无框无底，弹窗玻璃底直接透出。
   // ============================================================
   .noteBox {
     border: none;
     border-radius: 8px;
-    background: #fff;
+    background: transparent;
     overflow: hidden;
 
     // 编辑器融入外框：去掉自带边框与底色（层级更高，压过上方 .toastui-editor-defaultUI 规则）
@@ -758,14 +790,22 @@ body:not(.isDark) .nodeNoteDialog {
   }
 }
 
-// 暗色模式：Toast UI 图标 sprite 是深色，内容面保持浅色才可读
-// （仅把框变薄，不把内容面翻成深色，避免图标不可见）
+// 暗色模式：玻璃底同样透明（深色玻璃透出画布），内容文字翻亮——
+// v2.0.47 之前靠 rgba 白底承托 Toast UI 默认深色文字，透明后必须给亮字，
+// 否则深底深字不可读（自带工具栏已隐藏，内容区无深色 sprite 图标，安全）
 body.isDark .nodeNoteDialog .toastui-editor-defaultUI {
-  background: rgba(255, 255, 255, 0.92);
+  background: transparent;
+}
+body.isDark .nodeNoteDialog {
+  .toastui-editor-ww-container .toastui-editor,
+  .toastui-editor-ww-container .toastui-editor p,
+  .toastui-editor-ww-container .toastui-editor div {
+    color: var(--macos-text);
+  }
 }
 
-// 暗色模式：合并框同步保持浅色底（引用块透明区也落在浅底上，紫色引用文字可读）
+// 暗色模式：合并框同步透明
 body.isDark .nodeNoteDialog .noteBox {
-  background: rgba(255, 255, 255, 0.92);
+  background: transparent;
 }
 </style>

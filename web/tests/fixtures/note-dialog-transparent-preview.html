@@ -1,0 +1,97 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<title>备注弹窗 v2.0.47 视觉稿 — 透明玻璃 + 主题色边框</title>
+<style>
+  :root {
+    --macos-text: #1E3556;
+    --macos-text-2: #8a919f;
+    --macos-text-3: #a0a6b1;
+    --macos-accent: #409eff;
+    --macos-bg-glass: rgba(255, 255, 255, 0.72);
+    --macos-border-strong: rgba(0, 0, 0, 0.12);
+    --note-theme-border: #478074; /* default 主题 #549688 加深 15% */
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    font-family: 'Microsoft YaHei', sans-serif;
+    /* 模拟画布：default 主题画布 + 节点色块，验证玻璃透出效果 */
+    background:
+      radial-gradient(circle at 15% 20%, rgba(84,150,136,.35), transparent 30%),
+      radial-gradient(circle at 85% 75%, rgba(84,150,136,.30), transparent 35%),
+      #fafafa;
+    min-height: 100vh;
+    position: relative;
+    overflow: hidden;
+  }
+  /* 模拟画布上的导图节点 */
+  .fake-node { position: absolute; border-radius: 6px; color: #fff; font-size: 13px; padding: 8px 16px; background: #549688; }
+  .fake-node.second { background: #fff; color: #1E3556; border: 1px solid #549688; }
+  .overlay { position: absolute; inset: 0; background: rgba(0,0,0,0.25); }
+  .dialog {
+    position: absolute; left: 50%; top: 15vh; transform: translateX(-50%);
+    width: 480px; border-radius: 12px;
+    border: 1px solid var(--note-theme-border);
+    background: var(--macos-bg-glass);
+    box-shadow: 0 12px 40px rgba(0,0,0,0.08);
+    overflow: hidden;
+    backdrop-filter: blur(10px);
+  }
+  .dHeader { display: flex; align-items: center; gap: 16px; padding: 14px 16px 10px; }
+  .dTitle { font-size: 16px; font-weight: 700; color: var(--macos-text); }
+  .dTabs { margin-left: auto; display: flex; gap: 14px; font-size: 13px; }
+  .dTabs .active { color: var(--macos-accent); font-weight: 600; }
+  .dTabs .idle { color: var(--macos-text-2); }
+  .dClose { color: #909399; font-size: 16px; margin-left: 14px; }
+  .dBody { padding: 4px 16px 8px; }
+  .editor {
+    min-height: 220px; border-radius: 8px; padding: 10px 12px;
+    font-size: 14px; color: #c0c4cc; background: transparent;
+  }
+  .dFooter { display: flex; align-items: center; justify-content: space-between; padding: 6px 16px 14px; }
+  .fLeft, .fRight { display: flex; align-items: center; gap: 8px; }
+  .sel {
+    height: 28px; font-size: 12px; padding: 0 6px; border-radius: 6px;
+    border: 1px solid var(--macos-border-strong); background: transparent; color: var(--macos-text);
+  }
+  .btn {
+    height: 26px; padding: 0 12px; font-size: 12px; border-radius: 5px;
+    border: 1px solid var(--macos-border-strong); background: var(--macos-bg-glass-strong, rgba(255,255,255,.86));
+    color: var(--macos-text); cursor: pointer;
+  }
+  .btn.primary { background: var(--macos-accent); border-color: var(--macos-accent); color: #fff; }
+  .hint { font-size: 12px; color: var(--macos-text-3); }
+  .caption { position: fixed; left: 12px; bottom: 8px; font-size: 12px; color: #666; }
+</style>
+</head>
+<body>
+  <div class="fake-node" style="left:8%; top:12%">中心主题</div>
+  <div class="fake-node second" style="left:2%; top:45%">分支 A</div>
+  <div class="fake-node second" style="left:4%; top:78%">分支 B</div>
+  <div class="fake-node" style="right:6%; top:20%">分支 C</div>
+  <div class="fake-node second" style="right:3%; bottom:18%">分支 D</div>
+  <div class="overlay"></div>
+
+  <div class="dialog">
+    <div class="dHeader">
+      <span class="dTitle">备注</span>
+      <div class="dTabs"><span class="active">写备注</span><span class="idle">引用章节</span></div>
+      <span class="dClose">✕</span>
+    </div>
+    <div class="dBody"><div class="editor">请输入备注内容...</div></div>
+    <div class="dFooter">
+      <div class="fLeft">
+        <select class="sel"><option>python</option></select>
+        <button class="btn">插入代码块</button>
+      </div>
+      <div class="fRight">
+        <span class="hint">(Ctrl+Enter)</span>
+        <button class="btn">取消</button>
+        <button class="btn primary">确定</button>
+      </div>
+    </div>
+  </div>
+  <div class="caption">v2.0.47：玻璃透明底 + 边框随主题（#549688 → 加深 15% → #478074），画布透过玻璃可见</div>
+</body>
+</html>
