@@ -7,6 +7,7 @@ import { decodeSmm, encode } from './smmCodec.js'
 import { parseSections, samePath } from './sectionParser.js'
 import { contentHashOf } from './hash.js'
 import { EVT } from './events.js'
+import { resolveRefFileCandidates } from '../utils/refFileResolve.js'
 
 const IMMEDIATE_LIMIT = 10
 
@@ -167,12 +168,24 @@ export const createRefService = (ctx = {}) => {
     return ok({ calibrated, cleared: cleared.ok ? markers.length : 0 })
   }
 
+  // 解析引用文件真实绝对路径：工作区根拼不出时，从 sourceAbs（当前 .smm）所在目录
+  // 向上逐级回退探测（resolveRefFileCandidates，v2.0.45 引用失效修复）。
+  // 返回原始拼接值（全 miss 时），保证行为向后兼容。
+  async function resolveRefFileAbs(file, sourceAbs) {
+    const cands = resolveRefFileCandidates({ file, root: workspaceService.getRoot(), sourceAbs })
+    for (const c of cands) {
+      const e = await fsApi.exists(c)
+      if (e.ok && e.data && e.data.exists) return c
+    }
+    return cands[0] != null ? cands[0] : workspaceService.abs(file)
+  }
+
   // 失效检测（批量）：ok/stale/missing/file-missing/ambiguous
-  async function checkValidity(file, refs) {
-    const abs = workspaceService.abs(file)
+  async function checkValidity(file, refs, { sourceAbs } = {}) {
+    const abs = await resolveRefFileAbs(file, sourceAbs)
     const existsR = await fsApi.exists(abs)
     if (!existsR.ok || !existsR.data.exists) {
-      return ok({ results: (refs || []).map(r => ({ sectionId: r.sectionId, status: 'file-missing', current: null })) })
+      return ok({ results: (refs || []).map(r => ({ sectionId: r.sectionId, status: 'file-missing', current: null, resolvedAbs: abs })) })
     }
     const read = await fsApi.readText(abs)
     if (!read.ok) return fail(read.error)
@@ -186,19 +199,19 @@ export const createRefService = (ctx = {}) => {
       if (wholeRef) {
         const watched = r.baseHash || r.contentHash
         if (!watched || watched === fileHash) {
-          return { sectionId: null, status: 'ok', current: { content: read.data.content, contentHash: fileHash } }
+          return { sectionId: null, status: 'ok', current: { content: read.data.content, contentHash: fileHash }, resolvedAbs: abs }
         }
-        return { sectionId: null, status: 'stale', current: { content: read.data.content, contentHash: fileHash } }
+        return { sectionId: null, status: 'stale', current: { content: read.data.content, contentHash: fileHash }, resolvedAbs: abs }
       }
       const byId = sections.find(s => s.id === r.sectionId)
       if (byId) {
-        if (byId.contentHash === (r.baseHash || r.contentHash)) return { sectionId: r.sectionId, status: 'ok', current: byId }
-        return { sectionId: r.sectionId, status: 'stale', current: byId }
+        if (byId.contentHash === (r.baseHash || r.contentHash)) return { sectionId: r.sectionId, status: 'ok', current: byId, resolvedAbs: abs }
+        return { sectionId: r.sectionId, status: 'stale', current: byId, resolvedAbs: abs }
       }
       const byPath = sections.filter(s => samePath(s.path, r.sectionPath))
-      if (!byPath.length) return { sectionId: r.sectionId, status: 'missing', current: null }
-      if (byPath.length > 1) return { sectionId: r.sectionId, status: 'ambiguous', current: byPath }
-      return { sectionId: r.sectionId, status: 'stale', current: byPath[0] }
+      if (!byPath.length) return { sectionId: r.sectionId, status: 'missing', current: null, resolvedAbs: abs }
+      if (byPath.length > 1) return { sectionId: r.sectionId, status: 'ambiguous', current: byPath, resolvedAbs: abs }
+      return { sectionId: r.sectionId, status: 'stale', current: byPath[0], resolvedAbs: abs }
     })
     return ok({ results })
   }
@@ -207,7 +220,7 @@ export const createRefService = (ctx = {}) => {
   return {
     getNodeRefs: getNodeRefs_, setNodeRefs: setNodeRefs_, addRef: addRef_, removeRef: removeRef_,
     getMode: getMode_, setMode: setMode_,
-    findBacklinks, rebuildIndex, checkValidity,
+    findBacklinks, rebuildIndex, checkValidity, resolveRefFileAbs,
     syncRefSnapshots, calibratePendingSnapshots, parseLegacyRefs: parseLegacyRefs_,
     updateRefSnapshot
   }

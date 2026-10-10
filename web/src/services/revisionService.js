@@ -54,9 +54,15 @@ export const createRevisionService = (ctx = {}) => {
     if (log && log.info) log.info('revision.rebind', { file: refCtx.file, from, to: newSection.id })
   }
 
+  // 引用文件真实绝对路径：refCtx.fileAbs（视图经回退解析得到的 abs）优先，
+  // 否则按工作区根拼接（v2.0.45：单文件打开时工作区根≠文件真实位置）
+  function refFileAbs(refCtx) {
+    return (refCtx && refCtx.fileAbs) || workspaceService.abs(refCtx.file)
+  }
+
   // 写盘 + 索引 + 同步引用快照 + 广播（keep-mine/manual-merge/整文件共用；text 为完整 md）
   async function writeAndBroadcast(refCtx, text, rev) {
-    const w = await fsApi.writeText(workspaceService.abs(refCtx.file), text)
+    const w = await fsApi.writeText(refFileAbs(refCtx), text)
     if (!w.ok) return w
     const wholeFile = refCtx.sectionId == null
     let newHash
@@ -99,7 +105,7 @@ export const createRevisionService = (ctx = {}) => {
       return ok({ noop: true })
     }
     // ② 读盘 → 解析（永远以磁盘为真相源，不用缓存文本）
-    const read = await fsApi.readText(workspaceService.abs(file))
+    const read = await fsApi.readText(refFileAbs(refCtx))
     if (!read.ok) return read
     const fullText = read.data.content
 

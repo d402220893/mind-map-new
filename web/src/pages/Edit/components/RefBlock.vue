@@ -80,6 +80,7 @@ import {
   openPath,
   navigate
 } from '@/utils/workspaceBridge'
+import { getCurrentFilePath } from '@/api'
 
 const STATUS_LABEL = {
   ok: '已同步',
@@ -98,13 +99,15 @@ export default {
     nodeLink: { type: String, default: '' }
   },
   emits: ['conflict', 'unref', 'reselect'],
-  data() {
+    data() {
     return {
       status: 'loading',
       editing: false,
       expanded: false,
       draft: '',
       content: '',
+      // 引用文件真实绝对路径（checkValidity 回退解析产出；绝对 file 或工作区根命中时=根拼接值）
+      resolvedAbs: '',
       committing: false,
       backlinks: 0,
       backlinkList: [],
@@ -135,13 +138,18 @@ export default {
   },
   methods: {
     async check() {
-      const r = await checkValidity(this.refObj.file, [this.refObj])
+      // sourceAbs = 当前 .smm：工作区根解析落空时（单文件打开、.smm 在子目录），
+      // 服务会从 .smm 所在目录向上回退找引用文件（v2.0.45 引用失效修复）
+      const r = await checkValidity(this.refObj.file, [this.refObj], {
+        sourceAbs: getCurrentFilePath() || ''
+      })
       if (!r.ok) {
         this.status = 'missing'
         return
       }
       const hit = (r.data.results || [])[0]
       this.status = hit ? hit.status : 'missing'
+      this.resolvedAbs = (hit && hit.resolvedAbs) || ''
       if (hit && hit.current) this.content = hit.current.content || ''
       else this.content = this.refObj.cachedContent || ''
     },
@@ -178,6 +186,9 @@ export default {
       this.committing = true
       const refCtx = {
         file: this.refObj.file,
+        // 回退解析得到的绝对路径：单文件打开时工作区根≠文件真实位置，
+        // revisionService 写盘/读盘必须用它，否则会写错路径
+        fileAbs: this.resolvedAbs || undefined,
         sectionId: this.refObj.sectionId,
         sectionPath: this.refObj.sectionPath || [],
         baseHash: this.refObj.baseHash,
@@ -216,7 +227,8 @@ export default {
       if (r.ok) await this.check()
     },
     openFile() {
-      openPath(this.refObj.file)
+      // 优先用回退解析出的绝对路径（相对 file 在单文件打开模式下按工作区根拼会落空）
+      openPath(this.resolvedAbs || this.refObj.file)
     },
     jumpLink() {
       if (this.nodeLink) navigate(this.nodeLink, this.refObj.file)

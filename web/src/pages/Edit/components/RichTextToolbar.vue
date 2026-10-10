@@ -208,69 +208,91 @@ export default {
 
     toggleBold() {
       this.formatInfo.bold = !this.formatInfo.bold
-      this.mindMap.richText.formatText({
+      this.safeFormatText({
         bold: this.formatInfo.bold
       })
     },
 
     toggleItalic() {
       this.formatInfo.italic = !this.formatInfo.italic
-      this.mindMap.richText.formatText({
+      this.safeFormatText({
         italic: this.formatInfo.italic
       })
     },
 
     toggleUnderline() {
       this.formatInfo.underline = !this.formatInfo.underline
-      this.mindMap.richText.formatText({
+      this.safeFormatText({
         underline: this.formatInfo.underline
       })
     },
 
     toggleStrike() {
       this.formatInfo.strike = !this.formatInfo.strike
-      this.mindMap.richText.formatText({
+      this.safeFormatText({
         strike: this.formatInfo.strike
       })
     },
 
     changeFontFamily(font) {
       this.formatInfo.font = font
-      this.mindMap.richText.formatText({
+      this.safeFormatText({
         font
       })
     },
 
     changeFontSize(size) {
       this.formatInfo.size = size
-      this.mindMap.richText.formatText({
+      this.safeFormatText({
         size: size + 'px'
       })
     },
 
     changeFontColor(color) {
       this.formatInfo.color = color
-      this.mindMap.richText.formatText({
+      this.safeFormatText({
         color
       })
     },
 
     changeFontBackgroundColor(background) {
       this.formatInfo.background = background
-      this.mindMap.richText.formatText({
+      this.safeFormatText({
         background
       })
     },
 
     changeTextAlign(align) {
       this.formatInfo.align = align
-      this.mindMap.richText.formatText({
+      this.safeFormatText({
         align
       })
     },
 
     removeFormat() {
-      this.mindMap.richText.removeFormat()
+      this.safeRemoveFormat()
+    },
+
+    // 选区失效窗口期守卫（v2.0.45 启动报错修复）：悬浮工具栏显示后、点击前，
+    // 节点可能已重渲染/脱离 DOM，quill 保存的原生选区指向已卸载节点，
+    // formatText → getRange → normalizedToRange 会读 null.offset 抛错
+    // （实测栈：onClick → changeTextAlign → formatText → setSelection →
+    //   getRange → normalizedToRange → Array.map 读 null.offset，2026-10-10 renderer.log）。
+    // 降级为静默放弃本次格式化，绝不冒泡成「启动时有 N 项异常」横幅。
+    safeFormatText(format) {
+      try {
+        this.mindMap.richText.formatText(format)
+      } catch (e) {
+        // 选区已失效：放弃本次格式化
+      }
+    },
+
+    safeRemoveFormat() {
+      try {
+        this.mindMap.richText.removeFormat()
+      } catch (e) {
+        // 同上
+      }
     }
   }
 }

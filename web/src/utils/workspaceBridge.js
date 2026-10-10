@@ -228,8 +228,8 @@ export function removeRef(node, refId) {
 export function findBacklinks(file, sectionId) {
   return services.refService.findBacklinks({ file, sectionId })
 }
-export function checkValidity(file, refs) {
-  return services.refService.checkValidity(file, refs)
+export function checkValidity(file, refs, opts = {}) {
+  return services.refService.checkValidity(file, refs, opts)
 }
 export function commitEdit(refCtx, content) {
   return services.revisionService.commitEdit(refCtx, content)

@@ -1,6 +1,6 @@
 # code2mm — 代码转思维导图（AI 集成契约文档）
 
-> **契约版本**：v1.3 ｜ **最后更新**：2026-10-09 ｜ **对应 CLI**：`scripts/code2mm.mjs`（v2.0.41 规范容器形状修复后）
+> **契约版本**：v1.4 ｜ **最后更新**：2026-10-10 ｜ **对应 CLI**：`scripts/code2mm.mjs`（v2.0.41 规范容器形状修复后）
 > **受众**：AI 编程助手 / 自动化 Agent。
 > **用途**：让 AI 在“阅读代码”时，把目录或单文件的**真实结构骨架**抽成一张可被「思绪思维导图」直接打开的 `.smm` 脑图。
 > **当前形态**：CLI（MVP）。
@@ -226,7 +226,7 @@ shape    : { app:"smm-multisheet", sheets:[{data:{root}}] }  (app 规范容器�
 |---|---|---|
 | `v` | 建议 | 结构版本，当前 `1` |
 | `mode` | 是 | `'ref'`＝引用模式；与 `data.note` **互斥**（ref 模式下 note 置 `null`） |
-| `refs[].file` | 是 | **相对当前工作区根**的路径（应用按 `workspaceService.abs()` 解析） |
+| `refs[].file` | 是 | **相对当前工作区根**的路径（解析语义见下方 ⚠️ 路径解析与回退；也接受 Windows 盘符开头的绝对路径） |
 | `refs[].sectionId` | 是 | `null`＝整文件引用；否则为 md 章节 id |
 | `refs[].sectionPath` | 建议 | 章节标题路径数组；`sectionId` 失效时的降级定位线索 |
 | `refs[].mode` | 是 | 固定 `'content'`（内容引用） |
@@ -234,6 +234,13 @@ shape    : { app:"smm-multisheet", sheets:[{data:{root}}] }  (app 规范容器�
 | `refs[].title` / `cachedContent` | 建议 | 悬浮卡片显示的标题与正文缓存；缺省时标题退化为 `file · sectionPath` |
 
 **渲染行为**：hover 节点 → 悬浮卡片显示 `📎 title` + `cachedContent`（应用把 `refs` 合并进备注预览）；节点显示备注标识图标（refs 非空即显示）；备注区出现引用块（RefBlock）。同 `file` + `sectionId` + `mode` 视为同一引用（去重）。
+
+**⚠️ 路径解析与回退（v2.0.45+，AI 必读）**：`refs[].file` 的实际解析基准＝**打开 .smm 时生效的工作区根**，而工作区根不一定是 .smm 所在目录——
+
+- 先开工作区（打开文件夹）再开 .smm → 根＝该文件夹；
+- 双击 .smm 单文件打开且祖先目录无 `.mindlink/` → 根兜底为 **.smm 所在目录**。
+
+因此「.smm 在子目录、md 在上层」的相对引用会落空（显示「引用失效」）。应用侧已做**向上回退**：根拼不到时，从 .smm 所在目录逐级向上（≤8 级）找同名相对路径。AI 侧仍建议按优先级：**① 绝对路径（最稳）；② 确保 .smm 与工作区根同层或根可解析；③ 相对路径 + 应用 v2.0.45+ 回退**。
 
 **② 跳转链接 — `data.hyperlink`（+ `data.hyperlinkTitle`）/ `data.link`**
 
@@ -332,7 +339,8 @@ shape    : { app:"smm-multisheet", sheets:[{data:{root}}] }  (app 规范容器�
 | `Cannot find module 'typescript'` | 通常是**仓库结构不完整**——`electron-app/node_modules/typescript` 缺失或被移走（解析基于脚本自身位置，与运行目录无关，已实证任意目录可运行）。不要自行 `npm i typescript`。 |
 | 输出文件没出现在预期位置 | 默认输出到**当前工作目录** `./<basename>.smm`，用 `--out` 显式指定绝对路径最稳妥。 |
 | 限深没生效 / 行号还在 | 先查选项**拼写**——未知选项会被静默忽略（如 `--max-dept 2` 少个 h 等于没传，见 §3 ⚠️）。 |
-| 节点挂了 md 关联但无悬浮卡片 / 无跳转图标 | 字段名必须准确：引用卡片＝`data._mindlink`、跳转图标＝`data.hyperlink`（§4.4），自创字段不被识别；`refs[].file` 按**工作区根**相对路径解析；`_mindlink.mode='ref'` 与 `data.note` 互斥。 |
+| 节点挂了 md 关联但无悬浮卡片 / 无跳转图标 | 字段名必须准确：引用卡片＝`data._mindlink`、跳转图标＝`data.hyperlink`（§4.4），自创字段不被识别；`refs[].file` 解析语义与回退见 §4.4「⚠️ 路径解析与回退」（优先绝对路径）；`_mindlink.mode='ref'` 与 `data.note` 互斥。 |
+| 引用显示「引用失效」但 md 文件明明存在 | 九成是路径基准错位：.smm 在子目录、md 在上层，且是双击单文件打开（无 `.mindlink`，根＝.smm 目录）。应用 v2.0.45+ 会向上回退找；老版本请把 .smm 移到 md 同层或改绝对路径。 |
 | 节点数异常少 | 检查是否触发 `--max-depth` 裁剪或 `SKIP_DIRS`；未 `export` 的符号本就不入图（属预期）。 |
 | 第二实例秒退 / 报 `bad option` | 沙箱/某些环境带 `ELECTRON_RUN_AS_NODE=1`，直接用 exe 传文件会被当纯 Node 执行。正常用户双击走文件关联不受影响；脚本唤起应用请用 `explorer.exe <file.smm>`。 |
 | 节点层级 / 顺序与预期不符 | 当前 CLI 只能按**文件夹层级**镜像，不按模块语义聚合。如需聚合，打开后在画布内手动调整；"按模块聚合"属 §9 的 C 方案（**未来项，当前不可用**）。 |
@@ -341,6 +349,7 @@ shape    : { app:"smm-multisheet", sheets:[{data:{root}}] }  (app 规范容器�
 
 ## 变更记录
 
+- **v1.4**（2026-10-10）：**§4.4 路径解析语义写实 + 回退说明**（对应应用 v2.0.45）：`refs[].file` 实际基准＝打开时生效的工作区根（双击单文件打开且无 `.mindlink` 时根＝.smm 所在目录），新增「⚠️ 路径解析与回退」必读块（应用侧从 .smm 目录向上逐级回退 ≤8 级；AI 建议绝对路径最稳）；§10 排障表同步更新。
 - **v1.3**（2026-10-09）：**新增 §4.4「节点关联外部文件」契约**（`_mindlink` 引用卡片 / `hyperlink`·`link` 跳转 / `note` 备注，含字段表、路径解析基准、渲染行为——源自 refData/refService/linkResolver/Edit.vue 源码）；§4.2 补扩展字段说明；铁律新增第 3 条（关联字段约束）；§10 补关联排障行；退出码 `1` 并入表格；快速开始标注"假设在仓库根目录执行"；变更记录分条。
 - **v1.2**（2026-10-09）：
   - 退出码补"1 不使用"；未知选项静默忽略加 ⚠️ 警示 + §10 限深排障行
