@@ -2,7 +2,7 @@
   <el-dialog
     class="nodeNoteDialog"
     v-model="dialogVisible"
-    :width="isMobile ? '90%' : '50%'"
+    :width="isMobile ? '90%' : '480px'"
     :top="isMobile ? '20px' : '15vh'"
     :close-on-click-modal="false"
     :draggable="true"
@@ -18,47 +18,35 @@
             role="tab"
             :aria-selected="mode === 'note'"
             @click="switchMode('note')"
-          >✏️ 写备注</button>
+          >写备注</button>
           <button
             class="modeBtn"
             :class="{ active: mode === 'ref' }"
             role="tab"
             :aria-selected="mode === 'ref'"
             @click="switchMode('ref')"
-          >🔗 引用章节</button>
+          >引用章节</button>
         </div>
       </div>
     </template>
 
-    <!-- ═══ 模式一：写备注（Toast UI 编辑器，内容绑定 data.note）═══ -->
+    <!-- ═══ 模式一：写备注（Toast UI 编辑器，内容绑定 data.note）═══
+         v2.0.46 按新视觉稿：语言下拉+插入代码块移到底部 footer 左侧，
+         编辑区纯白无框占满 body；Ctrl+Enter 直接触发确定。 -->
     <template v-if="mode === 'note'">
-      <div class="noteToolbar">
-        <div class="toolGroup">
-          <select v-model="codeLang" class="codeLangSelect" title="代码块语言">
-            <option v-for="l in codeLangs" :key="l" :value="l">{{ l }}</option>
-          </select>
-          <el-button size="small" type="primary" @click="insertCodeBlock"
-            >插入代码块</el-button
-          >
-        </div>
-      </div>
-
       <div class="noteBox">
-        <div class="noteEditor" ref="noteEditor" @keyup.stop @keydown.stop></div>
+        <div
+          class="noteEditor"
+          ref="noteEditor"
+          @keyup.stop
+          @keydown.stop
+          @keydown.ctrl.enter.prevent="confirm"
+        ></div>
       </div>
     </template>
 
     <!-- ═══ 模式二：引用章节（RefBlock 只读渲染，头部 ✏️ 进入编辑）═══ -->
     <template v-else>
-      <div class="noteToolbar">
-        <div class="toolGroup">
-          <el-button size="small" @click="pickVisible = true"
-            >🔗 引用文档章节</el-button
-          >
-          <el-button size="small" @click="refreshAll">🔄 刷新</el-button>
-        </div>
-      </div>
-
       <div class="refArea">
         <RefBlock
           v-for="r in refs"
@@ -89,12 +77,29 @@
       - 图片双击由全局 NoteImgLightbox 拦截打开缩放查看器
     -->
     <template #footer>
-      <span class="dialog-footer">
-        <el-button @click="cancel">{{ $t('dialog.cancel') }}</el-button>
-        <el-button type="primary" @click="confirm">{{
-          $t('dialog.confirm')
-        }}</el-button>
-      </span>
+      <div class="noteFooter">
+        <div class="footLeft">
+          <template v-if="mode === 'note'">
+            <select v-model="codeLang" class="codeLangSelect" title="代码块语言">
+              <option v-for="l in codeLangs" :key="l" :value="l">{{ l }}</option>
+            </select>
+            <el-button size="small" @click="insertCodeBlock">插入代码块</el-button>
+          </template>
+          <template v-else>
+            <el-button size="small" @click="pickVisible = true"
+              >🔗 引用文档章节</el-button
+            >
+            <el-button size="small" @click="refreshAll">🔄 刷新</el-button>
+          </template>
+        </div>
+        <div class="footRight">
+          <span v-if="mode === 'note'" class="shortcutHint">(Ctrl+Enter)</span>
+          <el-button @click="cancel">{{ $t('dialog.cancel') }}</el-button>
+          <el-button type="primary" @click="confirm">{{
+            $t('dialog.confirm')
+          }}</el-button>
+        </div>
+      </div>
     </template>
 
     <!-- 章节选择器 + 冲突弹窗 -->
@@ -330,9 +335,11 @@ export default {
       this.$message.success('已引用章节')
     },
 
-    async onUnref(refId) {
+    async onUnref(refObj) {
+      // v2.0.46：refObj 整体传给 removeRef（按 file+sectionId+mode 身份匹配），
+      // 兼容 AI 产的最简引用（落盘无 refId）与 refs 重排后的旧句柄
       const node = this.targetNode
-      if (node) removeRef(node, refId)
+      if (node) removeRef(node, refObj)
       this.loadRefs()
     },
 
@@ -524,71 +531,75 @@ export default {
     color: #dcdfe6;
   }
 
-  // ── v1.6 标题行：标题 + 二选一模式切换（写备注 / 引用章节）──
+  // ── v1.6 标题行 + v2.0.46 新视觉稿：标题左、纯文字页签右（active 蓝字，无胶囊底）──
   .noteHeader {
     display: flex;
     align-items: center;
     gap: 16px;
+    // 给 element 内置右上 × 让位，避免页签与关闭钮重叠
+    padding-right: 30px;
 
     .noteTitle {
       font-size: 16px;
-      font-weight: 600;
+      font-weight: 700;
       color: var(--macos-text);
     }
 
     .modeSwitch {
       display: inline-flex;
-      padding: 2px;
-      border-radius: 8px;
-      background: var(--macos-hover, rgba(0, 0, 0, 0.05));
-      gap: 2px;
+      align-items: center;
+      gap: 14px;
+      margin-left: auto;
 
       .modeBtn {
         border: none;
         background: transparent;
-        padding: 4px 14px;
-        font-size: 12px;
-        line-height: 18px;
-        border-radius: 6px;
-        color: var(--macos-text-2);
+        padding: 2px 0;
+        font-size: 13px;
+        line-height: 20px;
+        color: var(--macos-text-2, #8a919f);
         cursor: pointer;
         white-space: nowrap;
-        transition: all 0.15s ease;
+        transition: color 0.15s ease;
 
         &:hover {
           color: var(--macos-text);
         }
 
         &.active {
-          background: var(--macos-bg-glass-strong, #fff);
           color: var(--macos-accent, #409eff);
           font-weight: 600;
-          box-shadow: 0 1px 3px rgba(0, 0, 0, 0.12);
         }
       }
     }
   }
 
-  // 顶部紧凑工具栏（note 模式：语言选择+插入代码块；ref 模式：引用文档章节+刷新）
-  .noteToolbar {
+  // ── v2.0.46 footer 单行：左（模式工具）右（取消/确定 + 快捷键提示）──
+  .noteFooter {
     display: flex;
     align-items: center;
-    justify-content: flex-start;
+    justify-content: space-between;
     gap: 8px;
-    margin-bottom: 8px;
 
-    .toolGroup {
+    .footLeft,
+    .footRight {
       display: flex;
       align-items: center;
-      gap: 6px;
+      gap: 8px;
+    }
+
+    .shortcutHint {
+      font-size: 12px;
+      color: var(--macos-text-3, #a0a6b1);
+      user-select: none;
     }
 
     .codeLangSelect {
-      height: 26px;
+      height: 28px;
       font-size: 12px;
-      padding: 0 4px;
+      padding: 0 6px;
       border: 1px solid var(--macos-border);
-      border-radius: 4px;
+      border-radius: 6px;
       background: transparent;
       color: var(--macos-text);
       outline: none;
@@ -599,15 +610,16 @@ export default {
     }
   }
 
-  // ref 模式：引用块列表容器（无外框，块自带左紫竖线+浅紫底）
-  // 弹窗高度翻倍（2026-09-21 反馈「框再大一点，高度增加一倍」）：
-  // 引用区最小高度 400px（原内容区仅约 170px），弹窗整体从约 285px → 约 580px。
+  // ref 模式：引用块列表容器（无外框，块自带左紫竖线+浅紫底）。
+  // v2.0.46 弹窗紧凑化（480×340 视觉稿）：引用区跟随内容、内部滚动封顶。
   .refArea {
     display: flex;
     flex-direction: column;
     gap: 8px;
     margin-bottom: 0;
-    min-height: 400px;
+    min-height: 200px;
+    max-height: 46vh;
+    overflow-y: auto;
 
     // 引用卡片撑满引用区（读作一整块引用内容，而非浮在上方的小卡片）
     > .refBlock {
@@ -647,15 +659,21 @@ export default {
 // 且 Toast UI 内部结构（.toastui-editor-*）不在本组件模板内。
 // ============================================================
 .nodeNoteDialog {
+  // ── v2.0.46 新视觉稿：480 宽、圆角 12、无边框、8% 灰柔阴影浮起 ──
+  border-radius: 12px;
+  border: none;
+  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.08);
+  overflow: hidden;
+
   // 弹窗内边距收紧（旧版 header 18/24、body 22/24、footer 14/24）
   .el-dialog__header {
-    padding: 12px 16px;
+    padding: 14px 16px 10px;
   }
   .el-dialog__body {
-    padding: 10px 12px 12px;
+    padding: 4px 16px 8px;
   }
   .el-dialog__footer {
-    padding: 10px 12px 12px;
+    padding: 6px 16px 14px;
   }
 
   // 语言条融入玻璃底：去白底实心块感
@@ -665,18 +683,17 @@ export default {
     color: var(--macos-text);
   }
 
-  // Toast UI 编辑器容器：不透明白框 → 半透明玻璃 + 细边
+  // Toast UI 编辑器容器：v2.0.46 纯白无框（外框由 noteBox 统一承担）
   .toastui-editor-defaultUI {
-    border: 1px solid var(--macos-border);
-    border-radius: var(--macos-radius-sm);
-    background: rgba(255, 255, 255, 0.45);
+    border: none;
+    border-radius: 8px;
+    background: #fff;
     box-shadow: none;
   }
-  // 顶部工具栏：去白底与双层分隔线观感
+  // 自带顶部工具栏隐藏（v2.0.46 视觉稿：编辑区纯内容，插入代码块走 footer；
+  // 加粗/斜体等走 Toast UI 键盘快捷键）
   .toastui-editor-defaultUI-toolbar {
-    background: transparent;
-    border-bottom: 1px solid var(--macos-divider);
-    box-shadow: none;
+    display: none;
   }
   // 内容区逐层放透明，让弹窗玻璃底透出来
   .toastui-editor-main,
@@ -691,11 +708,12 @@ export default {
   // ============================================================
   // v1.6 二选一：noteBox 只在「写备注」模式包裹编辑器（引用块在
   // ref 模式独立平铺，不再与编辑器同框）。
+  // v2.0.46 新视觉稿：纯白无框大编辑区（去边框/去玻璃底）。
   // ============================================================
   .noteBox {
-    border: 1px solid var(--macos-border);
-    border-radius: var(--macos-radius-sm);
-    background: rgba(255, 255, 255, 0.45);
+    border: none;
+    border-radius: 8px;
+    background: #fff;
     overflow: hidden;
 
     // 编辑器融入外框：去掉自带边框与底色（层级更高，压过上方 .toastui-editor-defaultUI 规则）
@@ -707,7 +725,7 @@ export default {
 
   // 编辑器自适应高度（配合 initEditor height:'auto'）：
   // 空内容时给足编辑落点(min-height)，过长时编辑区内部滚动(max-height)。
-  // 2026-09-21 弹窗高度翻倍：min-height 140px → 400px，与 ref 模式（引用区 400px）等高。
+  // v2.0.46 弹窗紧凑化（480×340 视觉稿）：编辑区约 220px 起、44vh 封顶内部滚动。
   //
   // ⚠️ 2026-09-22 修复「备注内容太长没有滚动条」：
   // Toast UI 自带 .toastui-editor-ww-container 是 `overflow:hidden; height:inherit`，
@@ -717,8 +735,8 @@ export default {
   //       ②断开 height:inherit 链（父级 height:auto 时 inherit=auto → 内层不受约束，
   //         若继续 inherit 则内层同样被裁，永不产生滚动条）。
   .toastui-editor-ww-container {
-    min-height: 400px;
-    max-height: 56vh;
+    min-height: 220px;
+    max-height: 44vh;
     overflow-y: auto;
     overflow-x: hidden;
 

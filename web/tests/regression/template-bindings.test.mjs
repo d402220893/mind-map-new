@@ -445,19 +445,32 @@ test('[备注二选一] NodeNote 写备注/引用章节互斥，永不共存', (
   assert.ok(!/height:\s*'500px'/.test(vue), '编辑器不应再固定 500px 高度')
   assert.ok(/\.toastui-editor-ww-container\s*\{[^}]*min-height/s.test(vue), '编辑区应有 min-height 保底编辑落点')
   assert.ok(/\.toastui-editor-ww-container\s*\{[^}]*max-height/s.test(vue), '编辑区应有 max-height 过长内部滚动')
-  // 2026-09-21 反馈「框再大一点，高度增加一倍」：弹窗高度翻倍，
-  // ref 模式（引用区）与 note 模式（编辑区）最小高度同时提到 400px，两模式等高
+  // v2.0.46 新视觉稿（480×340 紧凑弹窗）：编辑区/引用区收紧为 ~220px 起、
+  // 内部滚动封顶（vh），不再是 400px 等高大弹窗
   assert.ok(
-    /\.refArea\s*\{[^}]*min-height:\s*400px/s.test(vue),
-    '引用区应有 400px 最小高度（弹窗高度翻倍）'
+    /\.toastui-editor-ww-container\s*\{[^}]*min-height:\s*220px/s.test(vue),
+    '编辑区最小高度应收紧为 220px（480×340 视觉稿）'
+  )
+  assert.ok(
+    /\.toastui-editor-ww-container\s*\{[^}]*max-height:\s*44vh/s.test(vue),
+    '编辑区 max-height 44vh 封顶（过长内部滚动）'
+  )
+  assert.ok(
+    /\.refArea\s*\{[^}]*min-height:\s*200px/s.test(vue),
+    '引用区应收紧为 200px 起并内部滚动（v2.0.46 紧凑弹窗）'
+  )
+  assert.ok(
+    /\.refArea\s*\{[^}]*overflow-y:\s*auto/s.test(vue),
+    '引用区过长应内部滚动'
   )
   assert.ok(
     />\s*\.refBlock\s*\{[^}]*flex:\s*1/s.test(vue),
-    '引用卡片应撑满引用区（占满放大的弹窗）'
+    '引用卡片应撑满引用区'
   )
+  // v2.0.46 Ctrl+Enter 直接触发确定
   assert.ok(
-    /\.toastui-editor-ww-container\s*\{[^}]*min-height:\s*400px/s.test(vue),
-    '编辑区最小高度应与引用区等高(400px)'
+    /@keydown\.ctrl\.enter\.prevent="confirm"/.test(vue),
+    '编辑区应绑定 Ctrl+Enter 触发 confirm（footer 快捷键提示配套）'
   )
 })
 
@@ -726,7 +739,7 @@ test('[备注弹窗] 内容过长必须可滚动（不得被裁掉且无滚动�
   const vue = read(new URL('pages/Edit/components/NodeNote.vue', SRC))
   const seg = vue.match(/\.toastui-editor-ww-container\s*\{[\s\S]*?\n  \}/)
   assert.ok(seg, '找不到 .toastui-editor-ww-container 规则')
-  assert.ok(/max-height:\s*56vh/.test(seg[0]), '应保留 max-height:56vh 上限')
+  assert.ok(/max-height:\s*44vh/.test(seg[0]), '应保留 max-height:44vh 上限（v2.0.46 紧凑弹窗）')
   // Toast UI 自带 overflow:hidden + height:inherit，只给 max-height 不给滚动 →
   // 超出部分被外层 .noteBox{overflow:hidden} 裁掉且不产生滚动条（用户报的 bug）。
   assert.ok(

@@ -121,9 +121,22 @@ export function addRef(node, { file, sectionId = null, sectionPath = [], mode = 
   return ref
 }
 
-export function removeRef(node, refId) {
+// 解除引用。v2.0.46 起支持两种入参：
+// ① refId（字符串，兼容旧调用）——按运行时合成 id 匹配。⚠️ 合成 id 基于数组索引，
+//    refs 变动（删除/刷新重排）后外部持有的旧 refId 会错位。
+// ② 引用身份对象 { file, sectionId, mode }（推荐）——与 addRef 去重键同源，
+//    不依赖索引，AI 产的最简引用（落盘无 refId）也稳定可删。
+export function removeRef(node, refIdOrSpec) {
   const before = getNodeRefs(node)
-  const after = before.filter(r => r.refId !== refId)
+  let after
+  if (refIdOrSpec && typeof refIdOrSpec === 'object') {
+    const { file, sectionId, mode = 'content' } = refIdOrSpec
+    after = before.filter(
+      r => !(r.file === file && r.sectionId === sectionId && r.mode === mode)
+    )
+  } else {
+    after = before.filter(r => r.refId !== refIdOrSpec)
+  }
   setNodeRefs(node, after)
   return after.length < before.length
 }

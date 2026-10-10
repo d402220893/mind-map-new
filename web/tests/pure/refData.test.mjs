@@ -207,6 +207,42 @@ test('removeRef 只删指定项', () => {
   assert.strictEqual(getNodeRefs(n)[0].file, 'a.md')
 })
 
+// ── removeRef 身份元组（v2.0.46：AI 产最简引用落盘无 refId / refs 重排后旧 refId 错位）──
+test('removeRef 按身份对象删除（落盘无 refId 的最简引用）', () => {
+  // 模拟 AI 直接写盘的形状：refs 无 refId 字段
+  const n = node()
+  setNodeRefs(n, [
+    { file: '详细设计.md', sectionId: 'sec-1', sectionPath: [], mode: 'content' },
+    { file: 'b.md', sectionId: null, sectionPath: ['用法'], mode: 'content' }
+  ])
+  const ok = removeRef(n, { file: '详细设计.md', sectionId: 'sec-1', mode: 'content' })
+  assert.strictEqual(ok, true)
+  const left = getNodeRefs(n)
+  assert.strictEqual(left.length, 1)
+  assert.strictEqual(left[0].file, 'b.md')
+})
+test('removeRef 身份对象：sectionId=null 整文件引用也按身份删', () => {
+  const n = node()
+  setNodeRefs(n, [{ file: 'x.md', sectionId: null, sectionPath: [], mode: 'content' }])
+  assert.strictEqual(removeRef(n, { file: 'x.md', sectionId: null, mode: 'content' }), true)
+  assert.strictEqual(getNodeRefs(n).length, 0)
+})
+test('removeRef 身份对象：mode 不匹配不误删', () => {
+  const n = node()
+  setNodeRefs(n, [{ file: 'x.md', sectionId: 's1', sectionPath: [], mode: 'outline' }])
+  assert.strictEqual(removeRef(n, { file: 'x.md', sectionId: 's1', mode: 'content' }), false)
+  assert.strictEqual(getNodeRefs(n).length, 1)
+})
+test('removeRef 身份对象：refs 重排后旧句柄仍删对条目（refId 索引错位防护）', () => {
+  const n = node()
+  const a = addRef(n, { file: 'a.md', sectionId: 's1' })
+  addRef(n, { file: 'b.md', sectionId: 's2' })
+  removeRef(n, a.refId) // 删掉 a 后 b 的合成 refId 从 r1 变 r0
+  // 外部若仍持 a 的旧 refId 'r0'，字符串删法会误删 b；身份对象不受影响
+  assert.strictEqual(removeRef(n, { file: 'b.md', sectionId: 's2', mode: 'content' }), true)
+  assert.strictEqual(getNodeRefs(n).length, 0)
+})
+
 // ── updateRefSnapshot ──
 test('updateRefSnapshot 未命中 refId 不影响其它项', () => {
   const n = node()

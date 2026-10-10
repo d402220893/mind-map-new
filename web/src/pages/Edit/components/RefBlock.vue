@@ -237,7 +237,9 @@ export default {
       if (b.source) openPath(b.source)
     },
     unref() {
-      this.$emit('unref', this.refObj.refId)
+      // v2.0.46：发整个 refObj（身份元组 file+sectionId+mode），不再只发 refId——
+      // 合成 refId 基于索引，refs 变动后旧 refId 会错位删错条目
+      this.$emit('unref', this.refObj)
     },
     reselect() {
       this.$emit('reselect', this.refObj)
@@ -254,8 +256,9 @@ export default {
       ).catch(() => false)
       if (!okd) return
       this.node.setData({ note: merged })
-      removeRef(this.node, this.refObj.refId)
-      this.$emit('unref', this.refObj.refId)
+      // v2.0.46：按身份元组删，防合成 refId 索引错位；unref 事件同步改发 refObj
+      removeRef(this.node, this.refObj)
+      this.$emit('unref', this.refObj)
     }
   }
 }

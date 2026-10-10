@@ -87,28 +87,36 @@ test('[F2] NodeNoteContentShow.vue 不再内联 lightbox（已抽出到 NoteImgL
 // 初版在底部加 .noteCodeBar（语言下拉+插入代码块+长提示），用户反馈 UI 难看；
 // 且 exec('codeBlock', { language }) 的入参在 WYSIWYG 下不存在、被静默吞掉 → 插入的是无语言代码块。
 // 二版直接删掉整条栏改用自带 </> 按钮 → 用户反馈"编程语言选择都没了"（找不到入口）。
-// 现行方案：编辑器**上方**一行紧凑工具条 .noteToolbar（无长提示），
-// 语言选择 + 插入代码块 + 引用操作合并为顶部工具栏；
-// 插入走 ProseMirror 直接建带 language attrs 的 codeBlock 节点，确保语言真的生效。
+// v2.0.46 新视觉稿：语言选择 + 插入代码块从编辑器上方工具条移到弹窗
+// **底部 footer 左侧**（.noteFooter.footLeft）；编辑区纯白无框占满 body。
+// 插入仍走 ProseMirror 直接建带 language attrs 的 codeBlock 节点，确保语言真的生效。
 
-test('[F1 语言选择] NodeNote.vue 保留紧凑语言工具条，且不再用底部 .noteCodeBar', () => {
+test('[F1 语言选择] NodeNote.vue 语言工具条位于底部 footer，且不再用旧 .noteCodeBar / 顶部 .noteToolbar', () => {
   const s = read(new URL('pages/Edit/components/NodeNote.vue', SRC))
   assert.ok(
     !/class=["']noteCodeBar["']/.test(s),
     'NodeNote.vue 不应再含底部 .noteCodeBar（旧版 UI 难看）'
   )
   assert.ok(
-    /class=["']noteToolbar["']/.test(s),
-    'NodeNote.vue 应含紧凑顶部工具条 .noteToolbar'
+    !/class=["']noteToolbar["']/.test(s),
+    'NodeNote.vue 不应再含顶部 .noteToolbar（v2.0.46 已移至 footer）'
+  )
+  assert.ok(
+    /class="noteFooter"/.test(s) && /class="footLeft"/.test(s),
+    'NodeNote.vue 应含 .noteFooter/.footLeft（底部左侧工具区）'
   )
   assert.ok(
     /codeLangs\s*:/.test(s) && /codeLang:\s*['"]/.test(s),
     'NodeNote.vue 应含 codeLang / codeLangs（语言选择数据）'
   )
-  // 工具条必须在编辑器之前（顶部），不能是底部旧样式
+  // footer 必须在编辑器之后（底部），语言下拉与插入代码块都在 footer 内
+  const iFooter = s.indexOf('class="noteFooter"')
+  const iEditor = s.indexOf('ref="noteEditor"')
+  assert.ok(iFooter > -1 && iEditor > -1 && iFooter > iEditor, 'footer 应位于编辑器之后（底部工具行）')
+  const footerSeg = s.slice(iFooter, s.indexOf('</template>', iFooter))
   assert.ok(
-    s.indexOf('noteToolbar') < s.indexOf('ref="noteEditor"'),
-    '工具条应位于编辑器上方（旧版在底部被反馈难看）'
+    /codeLangSelect/.test(footerSeg) && /insertCodeBlock/.test(footerSeg),
+    '语言下拉与插入代码块按钮应都在 footer 内（v2.0.46 视觉稿）'
   )
 })
 
