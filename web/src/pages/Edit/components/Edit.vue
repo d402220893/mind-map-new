@@ -152,6 +152,11 @@ import handleClipboardText from '@/utils/handleClipboardText'
 import { getParentWithClass } from '@/utils'
 import { isElVisible } from '@/utils/rectGuard'
 import {
+  applyBackground,
+  patchCanvasBackgroundDecouple,
+  patchExportBackground
+} from '@/utils/bgTheme'
+import {
   harvestImageKeysFromTree,
   harvestImageKeysFromContainer,
   repairDanglingImageKeys
@@ -788,7 +793,7 @@ export default {
       this.mindMap.view.reset()
       this.mindMapData = data
       // 每次载入后重应用全局画布背景，覆盖文件自带主题背景（修复"背景色串"）
-      this.applyStoredCanvasBackground()
+      this.applyThemeBackground()
       // 监听本轮渲染结束，放开 dirty 守卫；用一次性 off 避免泄漏。
       // 注：simple-mind-map 的 addHistory 被节流 100ms（参见 Command.js + utils throttle），
       //   而 node_tree_render_end 通常在 reRender 后 ~16ms 就触发。
@@ -1312,7 +1317,7 @@ export default {
         setCurrentFilePath(res.filePath)
         this.updateTitle()
         // 新建文件后立刻重应用全局画布背景，防止主题默认背景覆盖
-        this.applyStoredCanvasBackground()
+        this.applyThemeBackground()
         this.$message.success('已创建：' + this.fileName)
         this.$bus.$emit('workbook-list-changed')
       } catch (err) {
@@ -1338,7 +1343,7 @@ export default {
         this.currentFilePath = getCurrentFilePath()
         this.updateTitle()
         // 切换文件时同步画布背景
-        this.applyStoredCanvasBackground()
+        this.applyThemeBackground()
       } catch (e) {
         // simple-mind-map 插件（如 NodeImgAdjust）在重绘期间调用 image.rbox()
         // 可能因 SVG 元素未挂载而抛异常；这里兜底捕获，避免冒泡成页面脚本错误弹窗。
@@ -1353,53 +1358,50 @@ export default {
       this.updateTitle()
     },
 
-    // 应用全局画布背景到容器（初始化 / 切换文件 / 每次载入 / 每次渲染结束都会调用）。
-    // 背景为全局设置，存于 localConfig，不写入 .smm 文件，因此切换/打开不同文件不会串。
-    // 使用 !important 防止 simple-mind-map 在渲染时把背景重置为默认色。
-    // 兜底策略：在 node_tree_render_end（每次渲染必触发，含编辑/切换/改主题后）重应用，
-    // 比 MutationObserver 更可靠——不会再出现“编辑节点后背景变回默认色”。
-    applyStoredCanvasBackground() {
+    // 应用全局画布背景（初始化 / 切换文件 / 每次载入 / 每次渲染结束都会调用）。
+    // 背景为全局设置，存于 localConfig，不写入 .smm，切换/打开不同文件不会串。
+    // 单一入口 applyBackground()：把背景灌入 simple-mind-map 的 themeConfig（库据此把背景写到容器 el，
+    // 撤销了此前对 initTheme 的源码级阻断），并派生 UI 框架变量写入 :root 实现全组件跟随。
+    // node_tree_render_end → onBgRenderEnd 兜底，确保编辑/切换/改主题/打开文件后背景不丢、UI 跟随。
+    applyThemeBackground() {
       try {
         if (!this.mindMap || !this.mindMap.el) return
-        const el = this.mindMap.el
         const localCfg =
           this.$store && this.$store.state && this.$store.state.localConfig
         const bg = localCfg && localCfg.canvasBackground
-        const clearBg = () => {
-          el.style.removeProperty('background-color')
-          el.style.removeProperty('background-image')
-          el.style.removeProperty('background-size')
-          el.style.removeProperty('background-repeat')
-          el.style.removeProperty('background-position')
-        }
-        if (!bg || bg.type === 'default') {
-          clearBg()
-          el.style.setProperty('background-color', '#ffffff', 'important')
-          return
-        }
-        clearBg()
-        if (bg.type === 'image') {
-          el.style.setProperty('background-color', '#ffffff', 'important')
-          el.style.setProperty(
-            'background-image',
-            `url(${bg.value})`,
-            'important'
-          )
-          el.style.setProperty('background-size', 'cover', 'important')
-          el.style.setProperty('background-repeat', 'no-repeat', 'important')
-          el.style.setProperty('background-position', 'center', 'important')
-        } else {
-          el.style.setProperty('background-color', bg.value, 'important')
-        }
+        applyBackground(this.mindMap, bg)
       } catch (e) {
-        console.error('applyStoredCanvasBackground error', e)
+        console.error('applyThemeBackground error', e)
       }
     },
 
-    // node_tree_render_end 兜底：每次渲染结束（编辑/切换/改主题）后重应用全局背景，
-    // 防止 simple-mind-map 渲染时把背景重置为默认色。
+    // 编辑框背景透出画布（读取容器当前背景色），而非节点填充色，分离「节点样式」与「画布背景」。
+    // 注：此前 decoupleCanvasBackground() 还阻断了库 initTheme 对容器的背景写入、并包装了导出对齐；
+    // 现背景已回归 simple-mind-map 主题（由库原生渲染），这两段已撤销——库把主题背景写到容器即期望行为，
+    // 导出读 themeConfig 天然与屏幕一致，无需 monkey-patch。
+    patchTextEditBackground() {
+      const mm = this.mindMap
+      if (!mm) return
+      try {
+        const te = mm.renderer && mm.renderer.textEdit
+        if (te && !te.__bgPatched) {
+          te.getBackground = function (/* node */) {
+            const el = this.mindMap && this.mindMap.el
+            return el && el.style && el.style.backgroundColor
+              ? el.style.backgroundColor
+              : 'transparent'
+          }
+          te.__bgPatched = true
+        }
+      } catch (e) {
+        console.warn('[patchTextEditBackground] 覆写 textEdit.getBackground 失败', e)
+      }
+    },
+
+    // node_tree_render_end 兜底：每次渲染结束（编辑/切换/改主题/打开文件）后重应用全局背景 +
+    // 刷新派生 UI 变量，覆盖库/文件自带背景，确保背景始终为全局画布背景、UI 跟随。
     onBgRenderEnd() {
-      this.applyStoredCanvasBackground()
+      this.applyThemeBackground()
     },
 
     // 更新窗口标题并触发路径显示
@@ -1680,6 +1682,15 @@ export default {
           })
         }
       })
+      // 画布背景：源头阻断库 initTheme 对容器的背景写入（交由本项目独占绘制，避免被主题覆盖/泄漏 .smm）
+      patchCanvasBackgroundDecouple(this.mindMap)
+      // 导出对齐：导出前临时把全局背景同步进 themeConfig，使导出与屏幕一致
+      patchExportBackground(this.mindMap, () => {
+        const s = this.$store && this.$store.state
+        return s && s.localConfig
+      })
+      // 编辑框背景透出画布（节点样式与画布背景分离）
+      this.patchTextEditBackground()
       // 广播 mindMap 实例：WorkspacePanel 的 live 搜索需要访问实时节点树。
       // ⚠️ 不能用 Index.vue computed 读 $refs.editComp.mindMap —— $refs 非响应式，
       //    computed 首次求值（mindMap 尚未创建）后恒为 null → 当前打开的脑图永远搜不到。
@@ -1735,9 +1746,9 @@ export default {
       })
       // 协同测试
       this.cooperateTest()
-      // 应用已保存的画布背景；之后每次渲染结束（编辑/切换/改主题）都会兜底重应用，
-      // 不会再出现“编辑节点后背景变回默认色”的问题。
-      this.applyStoredCanvasBackground()
+      // 应用已保存的画布背景：背景已回归 simple-mind-map 主题（库原生渲染到容器），
+      // 之后每次渲染结束由 node_tree_render_end → onBgRenderEnd 兜底重应用，确保不丢、UI 跟随。
+      this.applyThemeBackground()
     },
 
     // 加载相关插件

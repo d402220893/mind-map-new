@@ -505,6 +505,7 @@
 import Sidebar from './Sidebar.vue'
 import { storeConfig } from '@/api'
 import { mapState, mapMutations } from 'vuex'
+import { applyBackground } from '@/utils/bgTheme'
 import Color from './Color.vue'
 
 export default {
@@ -741,28 +742,10 @@ export default {
       }
     },
 
-    // 统一应用画布背景到容器 + 持久化到全局 localConfig（不写入 .smm 文件）
-    // 使用 !important 防止 simple-mind-map 渲染时覆盖。
+    // 用户设置画布背景的入口：应用背景（库原生渲染到容器 + 派生 UI 变量）+ 持久化到全局 localConfig（不写入 .smm 文件）。
+    // 单一入口 applyBackground() 与 Edit.vue 共用，消除双份逻辑漂移。
     applyCanvasBackground(bg) {
-      const el = this.mindMap && this.mindMap.el
-      if (el) {
-        el.style.removeProperty('background-color')
-        el.style.removeProperty('background-image')
-        el.style.removeProperty('background-size')
-        el.style.removeProperty('background-repeat')
-        el.style.removeProperty('background-position')
-        if (bg.type === 'image') {
-          el.style.setProperty('background-color', '#ffffff', 'important')
-          el.style.setProperty('background-image', `url(${bg.value})`, 'important')
-          el.style.setProperty('background-size', 'cover', 'important')
-          el.style.setProperty('background-repeat', 'no-repeat', 'important')
-          el.style.setProperty('background-position', 'center', 'important')
-        } else if (bg.type === 'color') {
-          el.style.setProperty('background-color', bg.value, 'important')
-        } else {
-          el.style.setProperty('background-color', '#ffffff', 'important')
-        }
-      }
+      applyBackground(this.mindMap, bg)
       this.setLocalConfig({ canvasBackground: bg })
     },
 

@@ -123,14 +123,17 @@ export default {
       menu.style.left = e.clientX + 'px'
       menu.style.top = e.clientY + 'px'
       menu.style.zIndex = 5000
-      menu.style.background = this.isDark ? '#262a2e' : '#fff'
-      menu.style.border =
-        '1px solid ' + (this.isDark ? 'rgba(255,255,255,0.1)' : '#dcdfe6')
+      const cv = (name, fb) => {
+        const v = getComputedStyle(document.body).getPropertyValue(name).trim()
+        return v || fb
+      }
+      menu.style.background = cv('--macos-surface', '#fff')
+      menu.style.border = '1px solid ' + cv('--macos-border-strong', '#dcdfe6')
       menu.style.borderRadius = '6px'
       menu.style.boxShadow = '0 2px 12px rgba(0,0,0,0.15)'
       menu.style.padding = '4px 0'
       menu.style.fontSize = '13px'
-      menu.style.color = this.isDark ? 'rgba(255,255,255,0.9)' : '#333'
+      menu.style.color = cv('--macos-text', '#333')
 
       const addItem = (label, fn) => {
         const item = document.createElement('div')
@@ -138,7 +141,7 @@ export default {
         item.style.padding = '8px 18px'
         item.style.cursor = 'pointer'
         item.onmouseenter = () => {
-          item.style.background = this.isDark ? 'rgba(255,255,255,0.08)' : '#f5f7fa'
+          item.style.background = cv('--macos-hover', '#f5f7fa')
         }
         item.onmouseleave = () => {
           item.style.background = 'transparent'
