@@ -446,18 +446,19 @@ test('[备注二选一] NodeNote 写备注/引用章节互斥，永不共存', (
   assert.ok(/\.toastui-editor-ww-container\s*\{[^}]*min-height/s.test(vue), '编辑区应有 min-height 保底编辑落点')
   assert.ok(/\.toastui-editor-ww-container\s*\{[^}]*max-height/s.test(vue), '编辑区应有 max-height 过长内部滚动')
   // v2.0.46 新视觉稿（480×340 紧凑弹窗）：编辑区/引用区收紧为 ~220px 起、
-  // 内部滚动封顶（vh），不再是 400px 等高大弹窗
+  // 内部滚动封顶（vh），不再是 400px 等高大弹窗。v2.0.51 用户要求「高度增加 5%」：
+  // 220→231 / 200→210 / 44vh→46vh。
   assert.ok(
-    /\.toastui-editor-ww-container\s*\{[^}]*min-height:\s*220px/s.test(vue),
-    '编辑区最小高度应收紧为 220px（480×340 视觉稿）'
+    /\.toastui-editor-ww-container\s*\{[^}]*min-height:\s*231px/s.test(vue),
+    '编辑区最小高度 231px（v2.0.51 高度+5%：220→231）'
   )
   assert.ok(
-    /\.toastui-editor-ww-container\s*\{[^}]*max-height:\s*44vh/s.test(vue),
-    '编辑区 max-height 44vh 封顶（过长内部滚动）'
+    /\.toastui-editor-ww-container\s*\{[^}]*max-height:\s*46vh/s.test(vue),
+    '编辑区 max-height 46vh 封顶（v2.0.51 高度+5%：44→46）'
   )
   assert.ok(
-    /\.refArea\s*\{[^}]*min-height:\s*200px/s.test(vue),
-    '引用区应收紧为 200px 起并内部滚动（v2.0.46 紧凑弹窗）'
+    /\.refArea\s*\{[^}]*min-height:\s*210px/s.test(vue),
+    '引用区最小高度 210px（v2.0.51 高度+5%：200→210）'
   )
   assert.ok(
     /\.refArea\s*\{[^}]*overflow-y:\s*auto/s.test(vue),
@@ -793,7 +794,7 @@ test('[备注弹窗] 内容过长必须可滚动（不得被裁掉且无滚动�
   const vue = read(new URL('pages/Edit/components/NodeNote.vue', SRC))
   const seg = vue.match(/\.toastui-editor-ww-container\s*\{[\s\S]*?\n  \}/)
   assert.ok(seg, '找不到 .toastui-editor-ww-container 规则')
-  assert.ok(/max-height:\s*44vh/.test(seg[0]), '应保留 max-height:44vh 上限（v2.0.46 紧凑弹窗）')
+  assert.ok(/max-height:\s*46vh/.test(seg[0]), '应保留 max-height:46vh 上限（v2.0.51 高度+5%）')
   // Toast UI 自带 overflow:hidden + height:inherit，只给 max-height 不给滚动 →
   // 超出部分被外层 .noteBox{overflow:hidden} 裁掉且不产生滚动条（用户报的 bug）。
   assert.ok(

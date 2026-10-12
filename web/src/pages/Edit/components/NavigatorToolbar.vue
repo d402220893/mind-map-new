@@ -261,7 +261,11 @@ export default {
   right: 20px;
   /* 留出底部 SheetTabs 高度(40px) + 10px 间距，避免被切掉一半 */
   bottom: 50px;
-  background: hsla(0, 0%, 100%, 0.8);
+  // v2.0.51：硬编码 hsla 白底改为主题派生玻璃（画布背景色变化时跟随）
+  background: var(--macos-bg-glass);
+  backdrop-filter: var(--macos-blur);
+  -webkit-backdrop-filter: var(--macos-blur);
+  border: 1px solid var(--macos-border);
   border-radius: 5px;
   height: 44px;
   font-size: 12px;
@@ -269,15 +273,15 @@ export default {
   align-items: center;
 
   &.isDark {
-    background: #262a2e;
+    background: var(--macos-bg-glass-strong);
 
     .item {
       a {
-        color: hsla(0, 0%, 100%, 0.6);
+        color: var(--macos-text-2);
       }
 
       .btn {
-        color: hsla(0, 0%, 100%, 0.6);
+        color: var(--macos-text-2);
       }
     }
   }
@@ -290,7 +294,7 @@ export default {
     }
 
     a {
-      color: #303133;
+      color: var(--macos-text);
       text-decoration: none;
     }
 

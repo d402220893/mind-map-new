@@ -2,7 +2,7 @@
   <el-dialog
     class="nodeNoteDialog"
     v-model="dialogVisible"
-    :width="isMobile ? '90%' : '480px'"
+    :width="isMobile ? '90%' : '624px'"
     :top="isMobile ? '20px' : '15vh'"
     :close-on-click-modal="false"
     :draggable="true"
@@ -637,14 +637,14 @@ export default {
   }
 
   // ref 模式：引用块列表容器（无外框，块自带左紫竖线+浅紫底）。
-  // v2.0.46 弹窗紧凑化（480×340 视觉稿）：引用区跟随内容、内部滚动封顶。
+  // v2.0.51 高度 +5%：引用区 200→210px、46vh→48vh。
   .refArea {
     display: flex;
     flex-direction: column;
     gap: 8px;
     margin-bottom: 0;
-    min-height: 200px;
-    max-height: 46vh;
+    min-height: 210px;
+    max-height: 48vh;
     overflow-y: auto;
 
     // 引用卡片撑满引用区（读作一整块引用内容，而非浮在上方的小卡片）
@@ -723,8 +723,14 @@ export default {
     box-shadow: none;
   }
   // 自带顶部工具栏隐藏（v2.0.46 视觉稿：编辑区纯内容，插入代码块走 footer；
-  // 加粗/斜体等走 Toast UI 键盘快捷键）
-  .toastui-editor-defaultUI-toolbar {
+  // 加粗/斜体等走 Toast UI 键盘快捷键）。
+  // ⚠️ v2.0.51 修复：Toast UI v3.2.2 实际渲染的工具栏类名是 .toastui-editor-toolbar
+  // （46px 高），.toastui-editor-defaultUI-toolbar 是另一处（未出现在 DOM）——
+  // 旧规则只隐藏了后者，ghost 工具栏一直占着 50px，把编辑区/光标顶下来
+  // （用户感知为「输入不从最上面开始」）。两个类名一起隐藏，实测探针确认
+  // .toastui-editor-main 回到 defaultUI 顶部。
+  .toastui-editor-defaultUI-toolbar,
+  .toastui-editor-toolbar {
     display: none;
   }
   // 内容区逐层放透明，让弹窗玻璃底透出来
@@ -757,7 +763,7 @@ export default {
 
   // 编辑器自适应高度（配合 initEditor height:'auto'）：
   // 空内容时给足编辑落点(min-height)，过长时编辑区内部滚动(max-height)。
-  // v2.0.46 弹窗紧凑化（480×340 视觉稿）：编辑区约 220px 起、44vh 封顶内部滚动。
+  // v2.0.51 用户要求高度增加 5%：min-height 220→231、max-height 44vh→46vh。
   //
   // ⚠️ 2026-09-22 修复「备注内容太长没有滚动条」：
   // Toast UI 自带 .toastui-editor-ww-container 是 `overflow:hidden; height:inherit`，
@@ -767,8 +773,8 @@ export default {
   //       ②断开 height:inherit 链（父级 height:auto 时 inherit=auto → 内层不受约束，
   //         若继续 inherit 则内层同样被裁，永不产生滚动条）。
   .toastui-editor-ww-container {
-    min-height: 220px;
-    max-height: 44vh;
+    min-height: 231px;
+    max-height: 46vh;
     overflow-y: auto;
     overflow-x: hidden;
 

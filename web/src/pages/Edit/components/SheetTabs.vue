@@ -182,17 +182,20 @@ export default {
   right: 0;
   bottom: 0;
   height: 40px;
-  // 透明背景，让画布延伸到底部，告别"黑框"；边框做视觉分隔
-  background: transparent;
-  border-top: 1px solid rgba(0, 0, 0, 0.06);
+  // v2.0.51：画布容器 bottom:40px 到窗口底部这 40px 露的是静态 body 底色
+  // （不随画布背景变），透明底等于「永不跟随主题」。改用主题派生玻璃。
+  background: var(--macos-bg-glass);
+  backdrop-filter: var(--macos-blur);
+  -webkit-backdrop-filter: var(--macos-blur);
+  border-top: 1px solid var(--macos-border);
   z-index: 2000;
   display: flex;
   align-items: center;
   user-select: none;
 
   &.isDark {
-    background: transparent;
-    border-top-color: rgba(255, 255, 255, 0.08);
+    background: var(--macos-bg-glass);
+    border-top-color: var(--macos-border);
   }
 
   .sheetTabsInner {
@@ -218,7 +221,7 @@ export default {
     margin-right: 4px;
     border-radius: 8px 8px 4px 4px;
     cursor: pointer;
-    color: rgba(60, 64, 70, 0.75);
+    color: var(--macos-text-2);
     background: transparent;
     border: 1px solid transparent;
     font-size: 13px;
@@ -227,7 +230,7 @@ export default {
 
     &:hover {
       background: rgba(64, 158, 255, 0.10);
-      color: #409eff;
+      color: var(--macos-accent, #409eff);
     }
 
     &.active {
@@ -253,8 +256,8 @@ export default {
       border-radius: 6px;
       outline: none;
       font-size: 13px;
-      color: #303133;
-      background: #fff;
+      color: var(--macos-text);
+      background: var(--macos-surface);
     }
 
     .sheetClose {
@@ -265,7 +268,7 @@ export default {
       text-align: center;
       border-radius: 50%;
       font-size: 14px;
-      color: rgba(0, 0, 0, 0.45);
+      color: var(--macos-text-3);
       transition: background 0.15s ease, color 0.15s ease;
 
       &:hover {
@@ -284,23 +287,23 @@ export default {
     margin-left: 4px;
     border-radius: 8px;
     cursor: pointer;
-    color: rgba(60, 64, 70, 0.65);
+    color: var(--macos-text-2);
     font-size: 16px;
     flex-shrink: 0;
     transition: background 0.15s ease, color 0.15s ease;
 
     &:hover {
       background: rgba(64, 158, 255, 0.12);
-      color: #409eff;
+      color: var(--macos-accent, #409eff);
     }
   }
 
   &.isDark {
     .sheetTab {
-      color: rgba(255, 255, 255, 0.7);
+      color: var(--macos-text-2);
 
       &:hover {
-        color: #409eff;
+        color: var(--macos-accent, #409eff);
         background: rgba(64, 158, 255, 0.15);
       }
 
@@ -311,7 +314,7 @@ export default {
       }
 
       .sheetClose {
-        color: rgba(255, 255, 255, 0.6);
+        color: var(--macos-text-3);
 
         &:hover {
           background: #f56c6c;
@@ -320,18 +323,18 @@ export default {
       }
 
       .sheetNameInput {
-        color: rgba(255, 255, 255, 0.9);
-        background: #1f2326;
-        border-color: #409eff;
+        color: var(--macos-text);
+        background: var(--macos-surface);
+        border-color: var(--macos-accent, #409eff);
       }
     }
 
     .sheetAdd {
-      color: rgba(255, 255, 255, 0.6);
+      color: var(--macos-text-3);
 
       &:hover {
         background: rgba(64, 158, 255, 0.18);
-        color: #409eff;
+        color: var(--macos-accent, #409eff);
       }
     }
   }

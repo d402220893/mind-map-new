@@ -109,13 +109,14 @@ export default {
 
   &.isDark {
     .trigger {
-      background-color: #262a2e;
+      // v2.0.51：跟随画布背景派生玻璃色（原硬编码 #262a2e 不随主题变）
+      background-color: var(--macos-bg-glass);
 
       .triggerItem {
-        color: hsla(0, 0%, 100%, 0.6);
+        color: var(--macos-text-2);
 
         &:hover {
-          background-color: hsla(0, 0%, 100%, 0.05);
+          background-color: var(--macos-hover);
         }
       }
     }
@@ -167,8 +168,11 @@ export default {
   .trigger {
     position: relative;
     width: 60px;
-    border-color: #eee;
-    background-color: #fff;
+    // v2.0.51：硬编码 #fff/#eee 改为主题派生玻璃（画布背景色变化时跟随）
+    border-color: var(--macos-border);
+    background-color: var(--macos-bg-glass);
+    backdrop-filter: var(--macos-blur);
+    -webkit-backdrop-filter: var(--macos-blur);
     box-shadow: 0 2px 16px 0 rgba(0, 0, 0, 0.06);
     border-radius: 6px;
     // 容器不再 fixed bottom，max-height 改用 calc(100vh - 190px) 防溢出
@@ -184,16 +188,16 @@ export default {
       justify-content: center;
       align-items: center;
       cursor: pointer;
-      color: #464646;
+      color: var(--macos-text);
       user-select: none;
       white-space: nowrap;
 
       &:hover {
-        background-color: #ededed;
+        background-color: var(--macos-hover);
       }
 
       &.active {
-        color: #409eff;
+        color: var(--macos-accent, #409eff);
         font-weight: bold;
       }
 
