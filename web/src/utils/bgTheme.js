@@ -143,33 +143,75 @@ export function applyUiThemeFromBg(bg, root) {
 // 配合 patchCanvasBackgroundDecouple()：initTheme（每次 render）会把「真实全局背景」写回容器，
 // 本函数再做幂等兜底，使画布恒为全局背景、且不会泄漏进 .smm。
 //
-// 关键修复（v2.0.48）：用 __bgSignature 缓存「背景签名」，签名未变则整段跳过。
-// 否则每次 render（实时编辑每键入一次）都重写 backgroundImage，浏览器会重新解码/加载图片，
-// 导致画布背景在「白底↔图片」间高频闪动——即「修改节点内容时背景一直在变」的根因。
+// 关键修复（v2.0.50）：幂等判定改为「inline 实际值快照比对」而非「目标签名比对」。
+// 背景：库 render()→initTheme()→Style.setBackgroundStyle（主类 index.js:302/375，Style.js:44-51）
+// 每次 render 都会把容器背景重置为主题默认色（#fafafa）+ backgroundImage:'none'。
+// 若只比对「我想写的值」（签名），库在两次调用之间污染 el 后会错误跳过——这正是
+// 「编辑节点后画布背景变成 #fafafa（视觉灰紫）」的根因（v2.0.49 签名缓存的缺陷），
+// 也是 v2.0.48「编辑时背景高频闪」（#fafafa 帧↔真实背景帧跨帧交替）的同一根因。
+// 现在：写后记录浏览器规范化形态快照 __bgApplied；下次调用先比对 el 当前 inline 值——
+// 被污染（≠快照）则强制重写恢复；未污染（==快照）则跳过，杜绝图片背景重复解码闪烁。
 export function applyCanvasBackgroundToEl(mindMap, bg) {
   const el = mindMap && mindMap.el
   if (!el || !el.style) return
-  const sig = bg && bg.type && bg.type !== 'default' ? `${bg.type}:${bg.value}` : 'default'
-  if (el.__bgSignature === sig) return
-  el.__bgSignature = sig
+  let target
   if (!bg || bg.type === 'default') {
-    el.style.backgroundColor = ''
-    el.style.backgroundImage = 'none'
-    el.style.backgroundSize = ''
-    el.style.backgroundRepeat = ''
-    el.style.backgroundPosition = ''
+    target = {
+      backgroundColor: '',
+      backgroundImage: 'none',
+      backgroundSize: '',
+      backgroundRepeat: '',
+      backgroundPosition: ''
+    }
   } else if (bg.type === 'image') {
-    el.style.backgroundColor = '#ffffff'
-    el.style.backgroundImage = `url("${bg.value}")`
-    el.style.backgroundSize = 'cover'
-    el.style.backgroundRepeat = 'no-repeat'
-    el.style.backgroundPosition = 'center'
+    target = {
+      backgroundColor: '#ffffff',
+      backgroundImage: `url("${bg.value}")`,
+      backgroundSize: 'cover',
+      backgroundRepeat: 'no-repeat',
+      backgroundPosition: 'center'
+    }
   } else {
-    el.style.backgroundColor = bg.value || '#ffffff'
-    el.style.backgroundImage = 'none'
-    el.style.backgroundSize = ''
-    el.style.backgroundRepeat = ''
-    el.style.backgroundPosition = ''
+    target = {
+      backgroundColor: bg.value || '#ffffff',
+      backgroundImage: 'none',
+      backgroundSize: '',
+      backgroundRepeat: '',
+      backgroundPosition: ''
+    }
+  }
+  // 幂等判定（双条件，缺一不可）：
+  // ① __bgSignature（目标签名）：目标背景没变才可能跳过——用户换色时必须重写；
+  // ② __bgApplied（写入后实际形态快照）：el 当前 inline 值 == 快照（未被库污染）才可跳过——
+  //    库 render()→initTheme→Style.setBackgroundStyle 在两次调用之间把 el 改为主题默认色，
+  //    此时即使签名相同也必须强制重写恢复（v2.0.49 只查签名导致污染值驻留的缺陷）。
+  const sig = bg && bg.type && bg.type !== 'default' ? `${bg.type}:${bg.value}` : 'default'
+  const prev = el.__bgApplied
+  if (
+    el.__bgSignature === sig &&
+    prev &&
+    el.style.backgroundColor === prev.backgroundColor &&
+    el.style.backgroundImage === prev.backgroundImage &&
+    el.style.backgroundSize === prev.backgroundSize &&
+    el.style.backgroundRepeat === prev.backgroundRepeat &&
+    el.style.backgroundPosition === prev.backgroundPosition
+  ) {
+    return
+  }
+  el.__bgSignature = sig
+  el.style.backgroundColor = target.backgroundColor
+  el.style.backgroundImage = target.backgroundImage
+  el.style.backgroundSize = target.backgroundSize
+  el.style.backgroundRepeat = target.backgroundRepeat
+  el.style.backgroundPosition = target.backgroundPosition
+  // 记录写入后的实际形态（浏览器可能规范化颜色，如 '#fff'→'rgb(255, 255, 255)'），
+  // 后续以此快照判定「el 是否被库改过」。
+  el.__bgApplied = {
+    backgroundColor: el.style.backgroundColor,
+    backgroundImage: el.style.backgroundImage,
+    backgroundSize: el.style.backgroundSize,
+    backgroundRepeat: el.style.backgroundRepeat,
+    backgroundPosition: el.style.backgroundPosition
   }
 }
 

@@ -143,6 +143,31 @@ test('applyCanvasBackgroundToEl 缺 el 安全 no-op', () => {
   assert.doesNotThrow(() => applyCanvasBackgroundToEl({}, { type: 'color', value: '#000' }))
 })
 
+test('applyCanvasBackgroundToEl 库污染后自动恢复（v2.0.50 根因契约）', () => {
+  // 模拟真机 bug：库 render()→initTheme→setBackgroundStyle 在两次调用之间把
+  // el 背景改写为主题默认色；同 bg 再调用必须恢复目标值，而不是被签名挡住。
+  const mm = { el: fakeEl() }
+  const bg = { type: 'color', value: '#e1f0e1' }
+  applyCanvasBackgroundToEl(mm, bg)
+  assert.equal(mm.el.style.backgroundColor, '#e1f0e1')
+  // 库污染
+  mm.el.style.backgroundColor = '#fafafa'
+  mm.el.style.backgroundImage = 'none'
+  // 同 bg 再调用（render-end / wrapper 路径）：必须恢复，不能跳过
+  applyCanvasBackgroundToEl(mm, bg)
+  assert.equal(mm.el.style.backgroundColor, '#e1f0e1')
+  assert.equal(mm.el.style.backgroundImage, 'none')
+})
+
+test('applyCanvasBackgroundToEl 换色时必须重写（签名变化不受快照拦截）', () => {
+  const mm = { el: fakeEl() }
+  applyCanvasBackgroundToEl(mm, { type: 'color', value: '#e1f0e1' })
+  assert.equal(mm.el.style.backgroundColor, '#e1f0e1')
+  // el 未被污染，但用户换了新颜色 → 必须生效
+  applyCanvasBackgroundToEl(mm, { type: 'color', value: '#ffeedd' })
+  assert.equal(mm.el.style.backgroundColor, '#ffeedd')
+})
+
 test('buildExportThemeOverride(color) 返回纯背景覆盖', () => {
   assert.deepEqual(buildExportThemeOverride({ type: 'color', value: '#abcdef' }), {
     backgroundColor: '#abcdef',
@@ -202,6 +227,10 @@ test('patchCanvasBackgroundDecouple 在 initTheme 后写回真实全局背景（
   mm.initTheme()
   assert.equal(initCount, 1)
   // 库写下的主题背景被项目真实背景覆盖
+  assert.equal(mm.el.style.backgroundColor, '#abcdef')
+  // 连续第二次 render：库再次污染为主题背景色，wrapper 必须再次恢复
+  // （v2.0.49 缺陷回归锁：签名缓存会在此时错误跳过，导致 #xxxxxx 驻留）
+  mm.initTheme()
   assert.equal(mm.el.style.backgroundColor, '#abcdef')
 })
 

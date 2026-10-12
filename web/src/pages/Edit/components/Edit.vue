@@ -1400,11 +1400,13 @@ export default {
 
     // node_tree_render_end 兜底：每次渲染结束（编辑/切换/改主题/打开文件）后重应用全局背景 +
     // 刷新派生 UI 变量，覆盖库/文件自带背景，确保背景始终为全局画布背景、UI 跟随。
-    // 编辑节点期间（实时渲染每键入一次都触发本事件）画布背景不会变化，跳过以避免与
-    // initTheme 写真实背景产生冗余写盘、并杜绝图片背景在高频重渲染下的闪烁。
+    // 编辑节点期间（实时渲染每键入一次都触发本事件）画布背景不会变化，跳过以避免冗余调用。
+    // 注意：富文本模式下编辑态真源是 richText.showTextEdit，必须走 isShowTextEdit() 方法
+    // （TextEdit.js:192-196），直接读 te.showTextEdit 属性在富文本模式下恒 false。
+    // 即使此处漏跳过，applyCanvasBackgroundToEl 的快照比对也会自动恢复被库污染的背景（v2.0.50）。
     onBgRenderEnd() {
       const te = this.mindMap && this.mindMap.renderer && this.mindMap.renderer.textEdit
-      if (te && te.showTextEdit) return
+      if (te && typeof te.isShowTextEdit === 'function' && te.isShowTextEdit()) return
       this.applyThemeBackground()
     },
 
