@@ -5,6 +5,9 @@ const path = require('path')
 const { execFile, spawn } = require('child_process')
 const os = require('os')
 const { getAppExeName } = require('./install-meta')
+// 本地分层备份管理器（思绪思维导图）：仅本地、按内容哈希去重、30min/6h/day 三层轮转
+const { createBackupManager } = require('./backupManager')
+const backupManager = createBackupManager()
 
 // 安装器模式：--install 参数或环境变量 MINDMAP_INSTALL=1
 const IS_INSTALL_MODE = process.argv.includes('--install') || process.env.MINDMAP_INSTALL === '1'
@@ -50,6 +53,14 @@ let pendingStartupFile = null
 
 function pushStartupFile(filePath) {
   if (!filePath || !mainWindow || mainWindow.isDestroyed()) return
+  // 打开即快照：在把路径推给渲染端之前，先从磁盘抓一份“修改前”好版本，
+  // 防“打开即覆写”（系统双击/文件关联/启动/第二实例 这几条入口都走这里）。
+  try {
+    if (fs.existsSync(filePath)) {
+      const content = fs.readFileSync(filePath, 'utf8')
+      backupSnapshotNow(filePath, content)
+    }
+  } catch (e) {}
   try {
     mainWindow.webContents.send('smm:open-file', filePath)
   } catch (e) {}
@@ -60,6 +71,43 @@ function flushStartupFile() {
     pushStartupFile(pendingStartupFile)
     pendingStartupFile = null
   }
+}
+
+// ── 本地分层备份：保存成功钩子 ──────────────────────────────────────────
+// backupManager 内部已做防御（disabled/异常均不抛出），此处再包一层确保绝不拖累保存主流程。
+function backupNotify(filePath, content) {
+  try {
+    if (backupManager && typeof backupManager.notifyWrite === 'function') {
+      backupManager.notifyWrite(filePath, content)
+    }
+  } catch (e) {
+    try { console.error('[backup] notifyWrite 异常(已忽略):', e) } catch (_) {}
+  }
+}
+
+// 打开即快照：捕获“修改前”的好版本，防“打开即覆写”（独立于时间窗口的即时层）
+function backupSnapshotNow(filePath, content) {
+  try {
+    if (backupManager && typeof backupManager.snapshotNow === 'function') {
+      backupManager.snapshotNow(filePath, content)
+    }
+  } catch (e) {
+    try { console.error('[backup] snapshotNow 异常(已忽略):', e) } catch (_) {}
+  }
+}
+
+function defaultBackupRoot() {
+  // 软件数据目录（%APPDATA% 下的 userData）之外、本机固定位置；可用环境变量覆盖。
+  return process.env.MINDMAP_BACKUP_ROOT || path.join(os.homedir(), 'ThoughtsMindMapBackups')
+}
+
+let backupTimer = null
+function startBackupScheduler() {
+  if (backupTimer) return
+  try { backupManager.tick() } catch (e) { console.error('[backup] tick 异常:', e) }
+  backupTimer = setInterval(() => {
+    try { backupManager.tick() } catch (e) { console.error('[backup] tick 异常:', e) }
+  }, 30000)
 }
 
 const APP_DIR = __dirname
@@ -176,6 +224,7 @@ ipcMain.handle('smm:save-workbook', async (e, { content, defaultPath, defaultNam
   if (result.canceled || !result.filePath) return { canceled: true }
   try {
     fs.writeFileSync(result.filePath, content, 'utf8')
+    backupNotify(result.filePath, content)
     return { canceled: false, filePath: result.filePath }
   } catch (err) {
     return { canceled: false, filePath: result.filePath, error: err.message }
@@ -186,6 +235,7 @@ ipcMain.handle('smm:save-workbook', async (e, { content, defaultPath, defaultNam
 ipcMain.handle('smm:write-file', async (e, { filePath, content }) => {
   try {
     fs.writeFileSync(filePath, content, 'utf8')
+    backupNotify(filePath, content)
     return { ok: true }
   } catch (err) {
     return { ok: false, error: err.message }
@@ -206,6 +256,7 @@ ipcMain.handle('smm:save-text', async (e, { content, defaultPath, title, filters
   if (result.canceled || !result.filePath) return { canceled: true }
   try {
     fs.writeFileSync(result.filePath, content, 'utf8')
+    backupNotify(result.filePath, content)
     return { canceled: false, filePath: result.filePath }
   } catch (err) {
     return { canceled: false, filePath: result.filePath, error: err.message }
@@ -232,6 +283,7 @@ ipcMain.handle('smm:pick-file', async (e, { title, filters } = {}) => {
 ipcMain.on('smm:write-file-sync', (event, { filePath, content }) => {
   try {
     fs.writeFileSync(filePath, content, 'utf8')
+    backupNotify(filePath, content)
     event.returnValue = { ok: true }
   } catch (err) {
     event.returnValue = { ok: false, error: err.message }
@@ -272,6 +324,7 @@ ipcMain.handle('smm:open-workbook', async e => {
   const p = result.filePaths[0]
   try {
     const content = fs.readFileSync(p, 'utf8')
+    backupSnapshotNow(p, content) // 打开瞬间先抓“修改前”好版本，防打开即覆写
     return { canceled: false, filePath: p, content }
   } catch (err) {
     return { canceled: false, filePath: p, error: err.message }
@@ -383,6 +436,7 @@ ipcMain.handle('smm:write-text', async (e, { filePath, content = '', expectMtime
   }
   try {
     fs.writeFileSync(filePath, content, 'utf8')
+    backupNotify(filePath, content)
     const st = fs.statSync(filePath)
     return mtimeChanged
       ? { ok: false, code: 'E_MTIME_CHANGED', mtimeMs: st.mtimeMs, written: true }
@@ -390,6 +444,32 @@ ipcMain.handle('smm:write-text', async (e, { filePath, content = '', expectMtime
   } catch (err) {
     return { ok: false, code: 'E_WRITE', message: err.message }
   }
+})
+
+// ── 本地分层备份：查询 / 列举 / 恢复 / 立即落盘 ──────────────────────────
+ipcMain.handle('smm:backup:status', () => {
+  try { return { ok: true, ...backupManager.getStatus() } }
+  catch (e) { return { ok: false, error: String(e) } }
+})
+
+ipcMain.handle('smm:backup:list', async (e, { filePath } = {}) => {
+  try { return { ok: true, list: backupManager.listBackups(filePath) } }
+  catch (e) { return { ok: false, error: String(e) } }
+})
+
+ipcMain.handle('smm:backup:restore', async (e, { filePath, snapshotFile, destPath } = {}) => {
+  try { return backupManager.restoreSnapshot(filePath, snapshotFile, destPath) }
+  catch (e) { return { ok: false, error: String(e) } }
+})
+
+ipcMain.handle('smm:backup:flush', () => {
+  try { return backupManager.flushPending() }
+  catch (e) { return { flushed: 0, error: String(e) } }
+})
+
+ipcMain.handle('smm:backup:instant', async (e, { filePath, content } = {}) => {
+  try { return backupManager.snapshotNow(filePath, content) }
+  catch (e) { return { ok: false, error: String(e) } }
 })
 
 // 6 写二进制（base64 入参，上限 10MB）
@@ -1019,6 +1099,14 @@ app.whenReady().then(() => {
   if (IS_INSTALL_MODE) {
     startInstaller()
   } else {
+    // 初始化本地分层备份（失败仅记日志，不影响主程序启动）
+    try {
+      const info = backupManager.init({ backupRoot: defaultBackupRoot() })
+      console.log('[backup] 已启用，备份根目录:', info.backupRoot)
+      startBackupScheduler()
+    } catch (e) {
+      console.error('[backup] 初始化失败（已降级，不影响使用）:', e)
+    }
     tryListen(PORT, () => {
       createWindow()
     })
@@ -1027,6 +1115,11 @@ app.whenReady().then(() => {
 
 app.on('window-all-closed', () => {
   if (process.platform !== 'darwin') app.quit()
+})
+
+// 退出前把待修改文件兜底快照一次，避免“修改后未到下一个时间窗口就关机”导致丢失
+app.on('before-quit', () => {
+  try { backupManager.flushPending() } catch (e) { console.error('[backup] flushPending 异常:', e) }
 })
 
 app.on('activate', () => {

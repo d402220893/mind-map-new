@@ -1900,3 +1900,50 @@ onChange → mdDoc.setContent + scheduleSave
 1. Ctrl/Shift 选中多个文件 → 右键「删除选中的 N 个文件」→ 确认 → 应全部进入回收站；
 2. 选中多个后右键「删除此文件」→ 只删右键那一个，其余保留；
 3. 删除后文件栏不再残留已删路径、已打开标签被关闭。
+
+---
+
+## 41. 本地分层备份机制（v2.0.52 计划）
+
+> 背景：用户重装 v2.0.51 打开 `E:\05_project\06_内存测试\01_doc\内存测试.smm` 时该 .smm 被覆写成 4 节点骨架（P1 数据丢失事故，根因=打开即覆写 bug，磁盘扇区扫描已确认旧 .smm 正文不可恢复）。事后实现一套**仅本地、按内容哈希去重、时间窗口分层**的备份机制，作为防复发防线。
+
+### 41.1 设计要点（对照需求）
+
+- **核心原则**
+  - 仅本地：快照存于 `os.homedir()/ThoughtsMindMapBackups`（可用 `MINDMAP_BACKUP_ROOT` 覆盖），位于软件数据目录（%APPDATA% userData）之外；无云端。
+  - 有修改才备份：`notifyWrite` 用 SHA1 比对内容，相同则跳过、不置修改标志。
+  - 窗口内多次修改只留最后一份：快照只在时间窗口边界（tick）生成，不在每次保存生成。
+- **分层策略**
+  - 最近 30 分钟：每 10 分钟、有修改才备、保留 **3** 份（tier `30min`）。
+  - 最近 6 小时：每小时、有修改才备、保留 **6** 份（tier `6h`）。
+  - 最近 7 天：每天、有修改才备、保留 **7** 份（tier `day`）。
+  - 超过 7 天：全局轮转清理（`pruneGlobal`，`MAX_RETENTION_DAYS=7`），不无限保留。
+- **执行逻辑**
+  - 保存时：`notifyWrite(filePath, content)` 算哈希，与 `lastHash` 比对；不同→置 `m30/m6h/mday` 三标志，相同→跳过。
+  - 到点：`tick()` 每 30s 检查窗口边界，跨边界且标志为真→在该层生成 1 份快照并清标志。
+  - 每份快照携带内容 SHA1（文件名前缀 + `meta.json`/`listBackups`），便于识别与同层去重。
+- **存储**
+  - 目录：`<backupRoot>/<sha1(绝对路径)>/{30min,6h,day,instant}/<YYYYMMDD_HHMMSS>_<hash8>.<ext>`；`<key>/path.txt` 记录原路径。
+  - 格式：源文件原样副本（.smm/.md 可直接打开恢复）；文件名含时间戳 + 哈希。
+- **注意事项**
+  - 失败不静默：所有写操作异常均写 `<backupRoot>/backup.log` + 内存 `lastError` + `console.error`；`getStatus().lastError` 可查。
+  - 窗口内多改只留最后一份（tick 边界单次生成）。
+
+### 41.2 额外加固：打开即快照（instant 层）
+
+- 需求里的窗口机制只会在“保存”时触发；但用户的丢失是“打开即覆写”，覆盖发生时窗口快照里已是坏内容。故新增 **instant 层**：`snapshotNow(filePath, content)` 在**打开文件瞬间**抓一份“修改前”好版本，不走时间窗口、单文件最多 20 份、同样受 7 天清理。
+- 主进程 `smm:open-workbook`（打开对话框）读取内容后先 `backupSnapshotNow(p, content)`；另暴露 IPC `smm:backup:instant` + `preload backup.instant`，供渲染端在“双击/文件关联打开 / md 打开”入口调用（渲染端那处 one-liner 钩子待接入）。
+
+### 41.3 文件与改动
+
+- 新增 `electron-app/backupManager.js`（纯逻辑、可注入 fs/now 便于单测）。
+- `electron-app/main.js`：require 并 `createBackupManager()`；`whenReady` 非安装模式下调 `init({backupRoot})` + 启动 30s `tick` 调度器；新增 `before-quit` 调 `flushPending()`（退出前把待修改文件兜底快照）；5 个写处理器（`smm:save-workbook/write-file/save-text/write-file-sync/write-text`）成功后调 `backupNotify`；`smm:open-workbook` 读后调 `backupSnapshotNow`；新增 IPC `smm:backup:{status,list,restore,flush,instant}`。
+- `electron-app/preload.js`：暴露 `smmApi.backup.{status,list,restore,flush,instant}`。
+- 扩展名白名单：`.smm/.md/.markdown`；备份根目录内文件自递归跳过（`isInsideBackupRoot`）。
+- 测试：`electron-app/tests/backupManager.test.mjs`（15 项：哈希去重、分层计数上限轮转、7天清理、去重跳过、失败日志、打开即快照、非破坏式恢复），`node --test` 全绿（electron-app 71/71）。
+
+### 41.4 局限与待办
+
+1. **真正的防丢在根因**：窗口/即时备份都是“覆写后”才抓，若打开瞬间已把原文件覆写成骨架，备份里也是骨架。必须同步修“打开 .smm 被覆写为骨架”的 load/decode bug（v2.0.41 smmCodec 同类事故路径），并保存前写 `.bak`。
+2. **渲染端打开钩子**：双击/文件关联/md 打开应补调 `smmApi.backup.instant(filePath, content)`，目前仅 `smm:open-workbook` 对话框路径已接。
+3. **恢复 UI**：目前仅 IPC + 非破坏式 `restoreSnapshot`（默认复制到 `<原名>.restored_<时间戳>.<ext>`）；可选在设置/文件菜单加“从历史备份恢复”面板。

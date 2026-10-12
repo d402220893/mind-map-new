@@ -118,6 +118,10 @@ async function openMindMap(abs) {
   }
   const read = await services.workspaceService.readText(abs)
   if (!read.ok) return read
+  // 打开即快照：抓到“修改前”好版本，防“打开即覆写”。
+  // openMindMap 是所有 .smm 打开的统一收口（文件标签/工作区/引用链接/系统双击都经此），
+  // 在 load/decode 之前快照，可挡住“打开就把文件覆写成骨架”那类事故。
+  try { shell.backupInstant(abs, read.content) } catch (_) {}
   // ⚠️ 双击文件行会在一帧内连续触发两次 click（各自走一遍 onFileClick→openFile→openMindMap），
   //    而本函数到 addWorkbook 之前有 await readText 挂起点：两次调用在"首次 addWorkbook 落地前"
   //    都通过了上面的 findByPath 早退检查（彼时文件尚未真正打开），于是各自再建一个 workbook
@@ -354,6 +358,8 @@ export const shell = {
   saveTextDialog(payload) { return hostCall('saveTextDialog', [payload]) },
   pickFile(opts) { return hostCall('pickFile', [opts]) },
   openWorkbookDialog() { return hostCall('openWorkbookDialog', []) },
+  // 打开即快照：捕获“修改前”好版本，防“打开即覆写”（独立于时间窗口的即时层）
+  backupInstant(filePath, content) { return hostCall('backupInstant', [filePath, content]) },
   importFileDialog(exts) { return hostCall('importFileDialog', [exts]) },
   renameFile(from, to) { return hostCall('renameFile', [from, to]) },
   setTitle(title) {

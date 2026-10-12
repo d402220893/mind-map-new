@@ -71,6 +71,15 @@ contextBridge.exposeInMainWorld('smmApi', {
   rendererReady: () => {
     ipcRenderer.send('smm:renderer-ready')
   },
+  // ===== 本地分层备份（查询 / 列举 / 恢复 / 立即落盘） =====
+  backup: {
+    status: () => ipcRenderer.invoke('smm:backup:status'),
+    list: filePath => ipcRenderer.invoke('smm:backup:list', { filePath }),
+    restore: (filePath, snapshotFile, destPath) =>
+      ipcRenderer.invoke('smm:backup:restore', { filePath, snapshotFile, destPath }),
+    flush: () => ipcRenderer.invoke('smm:backup:flush'),
+    instant: (filePath, content) => ipcRenderer.invoke('smm:backup:instant', { filePath, content })
+  },
   // ===== 安装向导 IPC =====
   installGetDefaultPath: () => ipcRenderer.invoke('install:get-default-path'),
   installBrowse: () => ipcRenderer.invoke('install:browse'),
