@@ -1400,7 +1400,11 @@ export default {
 
     // node_tree_render_end 兜底：每次渲染结束（编辑/切换/改主题/打开文件）后重应用全局背景 +
     // 刷新派生 UI 变量，覆盖库/文件自带背景，确保背景始终为全局画布背景、UI 跟随。
+    // 编辑节点期间（实时渲染每键入一次都触发本事件）画布背景不会变化，跳过以避免与
+    // initTheme 写真实背景产生冗余写盘、并杜绝图片背景在高频重渲染下的闪烁。
     onBgRenderEnd() {
+      const te = this.mindMap && this.mindMap.renderer && this.mindMap.renderer.textEdit
+      if (te && te.showTextEdit) return
       this.applyThemeBackground()
     },
 
@@ -1683,7 +1687,7 @@ export default {
         }
       })
       // 画布背景：源头阻断库 initTheme 对容器的背景写入（交由本项目独占绘制，避免被主题覆盖/泄漏 .smm）
-      patchCanvasBackgroundDecouple(this.mindMap)
+      patchCanvasBackgroundDecouple(this.mindMap, () => this.$store.state.localConfig)
       // 导出对齐：导出前临时把全局背景同步进 themeConfig，使导出与屏幕一致
       patchExportBackground(this.mindMap, () => {
         const s = this.$store && this.$store.state

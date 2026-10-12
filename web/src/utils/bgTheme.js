@@ -140,12 +140,18 @@ export function applyUiThemeFromBg(bg, root) {
 }
 
 // 直接把背景画到容器（全局语义，绕过库 themeConfig 的 mergeTheme 覆盖与 .smm 落盘）。
-// 库在 render()→initTheme() 中仍会向 el 写 opt.themeConfig 的背景，但本函数配合
-// patchCanvasBackgroundDecouple() 在每次 initTheme 后把 el 清透明，再由本函数（经事件兜底/初始化）重画，
-// 使画布恒为全局背景、且不会泄漏进 .smm。
+// 配合 patchCanvasBackgroundDecouple()：initTheme（每次 render）会把「真实全局背景」写回容器，
+// 本函数再做幂等兜底，使画布恒为全局背景、且不会泄漏进 .smm。
+//
+// 关键修复（v2.0.48）：用 __bgSignature 缓存「背景签名」，签名未变则整段跳过。
+// 否则每次 render（实时编辑每键入一次）都重写 backgroundImage，浏览器会重新解码/加载图片，
+// 导致画布背景在「白底↔图片」间高频闪动——即「修改节点内容时背景一直在变」的根因。
 export function applyCanvasBackgroundToEl(mindMap, bg) {
   const el = mindMap && mindMap.el
   if (!el || !el.style) return
+  const sig = bg && bg.type && bg.type !== 'default' ? `${bg.type}:${bg.value}` : 'default'
+  if (el.__bgSignature === sig) return
+  el.__bgSignature = sig
   if (!bg || bg.type === 'default') {
     el.style.backgroundColor = ''
     el.style.backgroundImage = 'none'
@@ -192,18 +198,18 @@ export function applyBackground(mindMap, bg) {
 }
 
 // 源头阻断：库 render()→initTheme() 会无条件把 opt.themeConfig 的背景写到 el，
-// 与本项目全局画布背景抢同一 DOM 属性。包装 initTheme：每次主题初始化完成后把 el 清透明，
-// 交由 applyCanvasBackgroundToEl（经事件兜底/初始化）独占绘制；不动 opt.themeConfig，故无 .smm 泄漏。
-export function patchCanvasBackgroundDecouple(mindMap) {
+// 与本项目全局画布背景抢同一 DOM 属性。包装 initTheme：每次主题初始化（即每次 render）完成后，
+// 直接把「真实全局背景」写回容器（经 applyCanvasBackgroundToEl，已对 backgroundImage 做幂等保护），
+// 不再先写 transient 再等 render-end 救——避免图片背景在渲染期出现中间态闪烁。
+// 不动 opt.themeConfig，故无 .smm 泄漏。
+export function patchCanvasBackgroundDecouple(mindMap, getLocalConfig) {
   if (!mindMap || mindMap.__bgDecoupled) return
   const _origInitTheme = mindMap.initTheme ? mindMap.initTheme.bind(mindMap) : null
   if (!_origInitTheme) return
   mindMap.initTheme = function (...args) {
     const r = _origInitTheme.apply(mindMap, args)
-    if (mindMap.el && mindMap.el.style) {
-      mindMap.el.style.backgroundColor = 'transparent'
-      mindMap.el.style.backgroundImage = 'none'
-    }
+    const cfg = getLocalConfig && getLocalConfig()
+    applyCanvasBackgroundToEl(mindMap, cfg && cfg.canvasBackground)
     return r
   }
   mindMap.__bgDecoupled = true

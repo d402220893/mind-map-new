@@ -120,6 +120,24 @@ test('applyCanvasBackgroundToEl(default) 清空内联背景，回退库/主题',
   assert.equal(mm.el.style.backgroundImage, 'none')
 })
 
+test('applyCanvasBackgroundToEl(image) 幂等：相同 URL 不重复赋值 backgroundImage（防编辑时闪烁）', () => {
+  let imgWrites = 0
+  const style = {}
+  Object.defineProperty(style, 'backgroundImage', {
+    get() { return this._bi || '' },
+    set(v) { imgWrites++; this._bi = v }
+  })
+  const mm = { el: { style } }
+  applyCanvasBackgroundToEl(mm, { type: 'image', value: 'data:img' })
+  assert.equal(imgWrites, 1)
+  // 相同签名第二次调用应整段跳过，backgroundImage 不再被赋值
+  applyCanvasBackgroundToEl(mm, { type: 'image', value: 'data:img' })
+  assert.equal(imgWrites, 1)
+  // 仅当 URL 真变化时才再写一次
+  applyCanvasBackgroundToEl(mm, { type: 'image', value: 'data:other' })
+  assert.equal(imgWrites, 2)
+})
+
 test('applyCanvasBackgroundToEl 缺 el 安全 no-op', () => {
   assert.doesNotThrow(() => applyCanvasBackgroundToEl(null, { type: 'color', value: '#000' }))
   assert.doesNotThrow(() => applyCanvasBackgroundToEl({}, { type: 'color', value: '#000' }))
@@ -168,7 +186,7 @@ test('patchExportBackground 导出前同步主题、导出后还原（不污染�
   assert.equal(tc.backgroundImage, 'none')
 })
 
-test('patchCanvasBackgroundDecouple 在 initTheme 后清空 el 背景，交由项目独占绘制', () => {
+test('patchCanvasBackgroundDecouple 在 initTheme 后写回真实全局背景（覆盖库主题背景，不闪）', () => {
   let initCount = 0
   const mm = {
     el: { style: {} },
@@ -177,11 +195,14 @@ test('patchCanvasBackgroundDecouple 在 initTheme 后清空 el 背景，交由�
       this.el.style.backgroundColor = '#xxxxxx' // 模拟库把主题背景写到 el
     }
   }
-  patchCanvasBackgroundDecouple(mm)
+  // 旧契约：initTheme 后被清成 transparent 再等 render-end 救；
+  // 新契约：直接在 initTheme 内把「真实全局背景」写回，消除渲染期中间态闪烁。
+  const getLocalConfig = () => ({ canvasBackground: { type: 'color', value: '#abcdef' } })
+  patchCanvasBackgroundDecouple(mm, getLocalConfig)
   mm.initTheme()
   assert.equal(initCount, 1)
-  assert.equal(mm.el.style.backgroundColor, 'transparent')
-  assert.equal(mm.el.style.backgroundImage, 'none')
+  // 库写下的主题背景被项目真实背景覆盖
+  assert.equal(mm.el.style.backgroundColor, '#abcdef')
 })
 
 test('patchCanvasBackgroundDecouple 幂等（仅包装一次）', () => {
