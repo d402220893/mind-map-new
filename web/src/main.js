@@ -155,7 +155,7 @@ function renderStartupFailure() {
 ;(function printBuildFingerprint() {
   try {
     if (typeof fetch !== 'function') return
-    fetch('/dist/build-info.json?_=' + Date.now())
+    fetch('./dist/build-info.json')
       .then(function (r) { return r && r.ok ? r.json() : null })
       .then(function (info) {
         if (info && info.version) {
@@ -220,7 +220,12 @@ const initApp = () => {
 
   // 首屏组件树（Edit 异步 chunk 699.js 加载+渲染）就绪后再移除静态 loading 遮罩，
   // 避免“窗口出来还是白屏假死”的体感——用户立刻看到加载动画，内容就绪才切换。
-  router.isReady().then(removeBootLoading).catch(removeBootLoading)
+  // 首屏闪屏（#boot-loading）移除时机：
+  // 主路径 —— 等渲染端画布真正构造完成（Edit.vue 派发 app:ready）再移除，
+  //   这样用户从"logo+spinner"直接过渡到完整画布，不会先露 6s 空画布。
+  // 兜底 —— 若画布信号因异常未到达，最多 15s 强制移除，避免永久卡闪屏。
+  window.addEventListener('app:ready', removeBootLoading)
+  setTimeout(removeBootLoading, 15000)
 
   // 系统双击/命令行传入的文件路径：主进程经 smm:open-file 推送，渲染端经 bridge 打开。
   // 收口到 workspaceBridge 的 shell 网关（视图不得直连宿主外壳，违背契约⑥）；

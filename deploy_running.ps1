@@ -6,13 +6,26 @@ param([string]$SrcAsar, [string]$DstAsar, [string]$ProcName)
 $ErrorActionPreference = 'Stop'
 $ts = Get-Date -Format 'yyyyMMdd_HHmmss'
 
-# 1) Kill the running instance to release the file lock
+# 1) Kill the running instance to release the file lock.
+# 注意：Get-Process -Name 对中文进程名在本环境会返回空（通配/编码坑），导致杀进程被跳过、
+# 运行中的 app 一直锁住 app.asar、Copy-Item 静默失败（或抛错被吞），构建日志却报"deploy OK"假成功。
+# 改用 Get-CimInstance Win32_Process 按精确名取 PID 杀（对中文名可靠），并带重试。
 if ($ProcName) {
-  $proc = Get-Process -Name $ProcName -ErrorAction SilentlyContinue
-  if ($proc) {
-    $proc | Stop-Process -Force
-    Write-Host ("killed " + $ProcName)
-    Start-Sleep -Seconds 1
+  $killedAny = $false
+  $procs = Get-CimInstance Win32_Process -Filter "Name = '$ProcName'" -ErrorAction SilentlyContinue
+  if ($procs) {
+    foreach ($p in $procs) {
+      try {
+        Stop-Process -Id $p.ProcessId -Force -ErrorAction Stop
+        Write-Host ("killed PID " + $p.ProcessId)
+        $killedAny = $true
+      } catch {
+        Write-Host ("kill PID " + $p.ProcessId + " ERR: " + $_.Exception.Message)
+      }
+    }
+    if ($killedAny) { Start-Sleep -Seconds 1 }
+  } else {
+    Write-Host ("no running instance of " + $ProcName)
   }
 }
 
@@ -40,7 +53,22 @@ if (-not (Test-Path $SrcAsar)) {
   Write-Error ("src asar missing: " + $SrcAsar)
   exit 1
 }
-Copy-Item -Force $SrcAsar $normalDst
+# 复制加重试：即使杀进程后文件锁未立即释放（Windows 句柄回收延迟），也最多重试 5 次（每次 1s）。
+$deployOk = $false
+for ($i = 0; $i -lt 5; $i++) {
+  try {
+    Copy-Item -Force $SrcAsar $normalDst -ErrorAction Stop
+    $deployOk = $true
+    break
+  } catch {
+    Write-Host ("copy attempt $i failed: " + $_.Exception.Message + " — retrying")
+    Start-Sleep -Seconds 1
+  }
+}
+if (-not $deployOk) {
+  Write-Error ("FAILED to deploy asar after 5 attempts (file likely still locked)")
+  exit 1
+}
 Write-Host ("deployed -> " + $DstAsar)
 
 # 4) Verify

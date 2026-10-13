@@ -71,6 +71,8 @@ contextBridge.exposeInMainWorld('smmApi', {
   rendererReady: () => {
     ipcRenderer.send('smm:renderer-ready')
   },
+  // 启动性能埋点：渲染进程把关键阶段时间戳发往主进程（写入 STARTUP_LOG）
+  perf: data => ipcRenderer.send('smm:startup-perf', data),
   // ===== 本地分层备份（查询 / 列举 / 恢复 / 立即落盘） =====
   backup: {
     status: () => ipcRenderer.invoke('smm:backup:status'),

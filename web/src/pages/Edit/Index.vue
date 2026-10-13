@@ -61,7 +61,7 @@ import Toolbar from './components/Toolbar.vue'
 import Edit from './components/Edit.vue'
 import FileTabs from './components/FileTabs.vue'
 import WorkspacePanel from './components/WorkspacePanel.vue'
-import MdEditor from './components/MdEditor.vue'
+import { defineAsyncComponent } from 'vue'
 import MdToolbar from './components/MdToolbar.vue'
 import MdSidebar from './components/MdSidebar.vue'
 import MissingLinkDialog from './components/MissingLinkDialog.vue'
@@ -82,7 +82,7 @@ export default {
     Edit,
     FileTabs,
     WorkspacePanel,
-    MdEditor,
+    MdEditor: defineAsyncComponent(() => import('./components/MdEditor.vue')),
     MdToolbar,
     MdSidebar,
     MissingLinkDialog

@@ -1,5 +1,4 @@
 const { app, BrowserWindow, dialog, Menu, ipcMain, shell } = require('electron')
-const http = require('http')
 const fs = require('fs')
 const path = require('path')
 const { execFile, spawn } = require('child_process')
@@ -133,11 +132,6 @@ function rendererLogPath() {
   }
 }
 
-// 本地静态服务器端口（仅监听 127.0.0.1，安全）
-const PORT = 51888
-// 实际监听端口（端口回退后会变，给 mainWindow.loadURL 用）
-let ACTIVE_PORT = PORT
-
 // 未捕获异常兜底日志：避免 Electron 弹原生 "JavaScript error in main process" 吓用户
 process.on('uncaughtException', err => {
   try {
@@ -148,43 +142,6 @@ process.on('uncaughtException', err => {
   } catch (e) {}
   // 主进程已不可信，强制退出避免悬挂；外层用户可重新启动应用
   try { app.exit(1) } catch (e) { process.exit(1) }
-})
-
-const MIME = {
-  '.html': 'text/html; charset=utf-8',
-  '.js': 'application/javascript; charset=utf-8',
-  '.css': 'text/css; charset=utf-8',
-  '.json': 'application/json; charset=utf-8',
-  '.ico': 'image/x-icon',
-  '.png': 'image/png',
-  '.jpg': 'image/jpeg',
-  '.svg': 'image/svg+xml',
-  '.woff': 'font/woff',
-  '.woff2': 'font/woff2',
-  '.ttf': 'font/ttf'
-}
-
-// 极简静态服务器：把 resources/app 作为站点根目录
-const server = http.createServer((req, res) => {
-  let urlPath = decodeURIComponent((req.url || '/').split('?')[0])
-  if (urlPath === '/') urlPath = '/index.html'
-  const filePath = path.normalize(path.join(APP_DIR, urlPath))
-  // 防止路径穿越
-  if (filePath !== APP_DIR && !filePath.startsWith(APP_DIR + path.sep)) {
-    res.writeHead(403)
-    res.end('forbidden')
-    return
-  }
-  fs.readFile(filePath, (err, data) => {
-    if (err) {
-      res.writeHead(404)
-      res.end('not found: ' + urlPath)
-      return
-    }
-    const ext = path.extname(filePath).toLowerCase()
-    res.writeHead(200, { 'Content-Type': MIME[ext] || 'application/octet-stream' })
-    res.end(data)
-  })
 })
 
 let mainWindow = null
@@ -295,6 +252,13 @@ ipcMain.on('smm:write-file-sync', (event, { filePath, content }) => {
 ipcMain.on('smm:renderer-ready', () => {
   rendererReady = true
   flushStartupFile()
+})
+
+// 启动性能埋点：渲染进程（Edit.vue 画布构造+插件注册完成后）把时间戳发来，
+// 主进程换算成相对 _bootT0 的差值写入 STARTUP_LOG，用于定位启动瓶颈（JS 解析 vs 画布渲染）。
+ipcMain.on('smm:startup-perf', (e, d) => {
+  if (!STARTUP_LOG || !d || typeof d.ts !== 'number') return
+  try { fs.appendFileSync(STARTUP_LOG, 'edit_ready ' + (d.ts - _bootT0) + '\n') } catch (_) {}
 })
 
 // 重命名本地文件（标签双击重命名用）：oldPath -> newPath
@@ -798,22 +762,10 @@ function registerUninstall(targetDir) {
   }
 }
 
-// 关闭静态 server（解决安装完毕后 spawn 出去的 exe 启动时 EADDRINUSE）
+// 关闭本地 server：自 v2.0.54 起主窗口改走 loadFile（file:// 直读 asar），
+// 不再起本地 HTTP server，故此处无需关闭任何 server；保留签名供 doInstall 调用不报错。
 function closeServer() {
-  return new Promise(resolve => {
-    if (!server.listening) return resolve()
-    try {
-      // Windows 上 keep-alive 连接可能阻塞 close，先强制踢掉
-      if (typeof server.closeAllConnections === 'function') server.closeAllConnections()
-    } catch (e) {}
-    try {
-      server.close(() => resolve())
-    } catch (e) {
-      resolve()
-    }
-    // 兜底：1.5s 强制 resolve（不让 await 永久挂起）
-    setTimeout(resolve, 1500)
-  })
+  return Promise.resolve()
 }
 
 // 真正执行安装（在渲染进程点击"安装"后由 IPC 触发）
@@ -870,8 +822,8 @@ async function doInstall(targetDir, opts, event) {
     const exePath = installedExe
     event.sender.send('install:progress', { phase: 'done', pct: 100, exePath })
 
-    // 5) 关闭本地 HTTP server（51888）—— 不关的话，后续 spawn 出去的新
-    // MindMap.exe 也会执行 server.listen(PORT) 并立即报 EADDRINUSE。
+    // 5) 关闭本地 HTTP server：自 v2.0.54 起主窗口与安装器均改走 loadFile（file:// 直读 asar），
+    // 不再起本地 HTTP server，故此处 closeServer() 为即时无操作；保留调用以兼容历史逻辑。
     await closeServer()
 
     // 6) 按用户选择决定是否启动已安装的程序（detached，安装器退出不影响它）
@@ -953,7 +905,7 @@ function createWindow() {
     minHeight: 600,
     title: '思绪思维导图',
     show: false,
-    backgroundColor: '#ffffff',
+    backgroundColor: '#f5f6fa',
     frame: false,
     // 关掉 thickFrame，否则 frame:false 的窗口两侧仍会画一条用于拖拽缩放的深色边框（用户反馈"两头的黑框"就是这个）
     thickFrame: false,
@@ -1014,8 +966,15 @@ function createWindow() {
     dialog.showErrorBox('渲染进程崩溃', JSON.stringify(details))
   })
 
-  mainWindow.loadURL('http://127.0.0.1:' + ACTIVE_PORT + '/index.html')
+  // 自 v2.0.54 起：主窗口改走 loadFile（file:// 直读 asar），彻底去掉本地 HTTP server
+  // （127.0.0.1:51888）→ 渲染进程不再经 Chromium 网络栈加载 asar 内资源，
+  // 规避 "Slow network is detected" 导致的字体/文本渲染停滞（此前约 12s）。
+  mainWindow.loadFile(path.join(APP_DIR, 'index.html'))
   bootMark('loadurl_called')
+  // 自 v2.0.56 起：窗口立即显示（不再等 ready-to-show），让 index.html 的内联
+  // 首屏闪屏（#boot-loading）在 loadFile 后约 100ms 即绘制，用户双击 exe/.smm
+  // 后立即看到 logo+spinner，而非空白 7s。闪屏在画布构造完（渲染端 app:ready）才移除。
+  try { mainWindow.show() } catch (e) {}
 
   mainWindow.webContents.on('did-finish-load', () => {
     bootMark('did_finish_load')
@@ -1034,8 +993,9 @@ function createWindow() {
   })
 
   mainWindow.once('ready-to-show', () => {
+    // 窗口已在 loadFile 后立即显示（见上），此处仅记录"内容首次可绘制"里程碑用于埋点；
+    // 不再调用 show()（重复调用无副作用，但此处保持单一显示入口更清晰）。
     bootMark('ready_to_show')
-    mainWindow.show()
   })
 
   mainWindow.on('closed', () => {
@@ -1060,40 +1020,10 @@ function createWindow() {
   })
 }
 
-// 端口回退：51888 被占就试 51889~51898（最多 10 个），都失败才报错退出。
-// 解决"本机 51888 已被其他程序占用 → 启动直接 EADDRINUSE"。
-function tryListen(startPort, cb, attempt) {
-  if (attempt === undefined) attempt = 0
-  if (attempt > 10) {
-    try {
-      dialog.showErrorBox(
-        '端口被占用',
-        '127.0.0.1 上 ' + startPort + '~' + (startPort + 10) + ' 端口均被占用。\n请关闭占用端口的程序后重试。'
-      )
-    } catch (e) {}
-    setTimeout(() => process.exit(1), 100)
-    return
-  }
-  const tryPort = startPort + attempt
-  server.once('error', err => {
-    if (err && err.code === 'EADDRINUSE') {
-      // 让出 tick 后递归，避免栈深
-      setImmediate(() => tryListen(startPort, cb, attempt + 1))
-    } else {
-      try { dialog.showErrorBox('启动失败', err.message) } catch (e) {}
-      setTimeout(() => process.exit(1), 100)
-    }
-  })
-  server.listen(tryPort, '127.0.0.1', () => {
-    ACTIVE_PORT = tryPort
-    bootMark('server_listening')
-    cb()
-  })
-}
-
-// 安装器模式完全脱离 HTTP server（install.html 是纯本地资源，loadFile 直读），
-// 从根本上解决"安装器自己 listen 51888 → spawn 出去的 MindMap.exe 撞端口"的问题。
-// 正常模式走 tryListen 做端口回退，避免本机 51888 被其他程序占用时启动失败。
+// 自 v2.0.54 起：安装器与正常模式都走 loadFile（file:// 直读 asar），完全不再起
+// 本地 HTTP server（127.0.0.1:51888）。这从根本上消除了"端口被占用 → 启动失败 /
+// 安装器与 spawned 的 MindMap.exe 撞端口"这一类问题，也避开了渲染进程经 Chromium
+// 网络栈加载 asar 资源被判定为 slow network 而停滞 ~12s 的启动慢根因。
 app.whenReady().then(() => {
   bootMark('app_ready')
   if (IS_INSTALL_MODE) {
@@ -1107,9 +1037,7 @@ app.whenReady().then(() => {
     } catch (e) {
       console.error('[backup] 初始化失败（已降级，不影响使用）:', e)
     }
-    tryListen(PORT, () => {
-      createWindow()
-    })
+    createWindow()
   }
 })
 

@@ -449,4 +449,13 @@ export function startOpenFileBridge() {
   return ok
 }
 
+// 启动性能埋点（契约⑥：视图不得直调 window.smmApi，必须收口到本网关）
+// perf 把渲染进程关键阶段时间戳发往主进程写入 STARTUP_LOG，用于定位启动瓶颈。
+export function perf(data) {
+  const api = (typeof window !== 'undefined' && window.smmApi) || null
+  if (api && typeof api.perf === 'function') {
+    try { api.perf(data) } catch (e) {}
+  }
+}
+
 export { encode, decodeSmm }

@@ -98,7 +98,7 @@ import MindMapLayoutPro from 'simple-mind-map/src/plugins/MindMapLayoutPro.js'
 import NodeBase64ImageStorage from 'simple-mind-map/src/plugins/NodeBase64ImageStorage.js'
 import Themes from 'simple-mind-map-plugin-themes'
 import { shouldFireGlobalShortcut } from '@/utils/shortcutGuard'
-import { navigate, shell } from '@/utils/workspaceBridge'
+import { navigate, shell, perf } from '@/utils/workspaceBridge'
 import { createAutosaveScheduler, resolveAutosaveTarget } from '@/utils/autosave'
 import { reduceDragMask } from '@/utils/dragMaskController'
 // 协同编辑插件
@@ -1702,6 +1702,15 @@ export default {
       //    computed 首次求值（mindMap 尚未创建）后恒为 null → 当前打开的脑图永远搜不到。
       this.$bus.$emit('mindmap-inited', this.mindMap)
       this.loadPlugins()
+      // ── 启动性能埋点：画布构造 + 插件注册完成（近似"应用初始化完"，首帧异步渲染稍后）──
+      try {
+        if (typeof perf === 'function') {
+          setTimeout(() => perf({ ts: Date.now() }), 60)
+        }
+        // 画布真正就绪：通知 index.html 移除首屏闪屏（#boot-loading），实现从闪屏
+        // 直接过渡到完整画布，而不是先露空画布再等 6s 构造。
+        window.dispatchEvent(new Event('app:ready'))
+      } catch (e) {}
       // 转发事件
       ;[
         'node_active',
