@@ -494,9 +494,12 @@ export default {
     // 存储数据当数据有变时
     bindSaveEvent() {
       this.$bus.$on('data_change', data => {
-        storeData({ root: data })
-        // 用户编辑：标记当前文件为“未保存”（加载/切换期间不标记，避免误标）
+        // ⚠️ 防串档（design §4.1 衍生，覆盖防护 P0 关联回归）：加载/切换期间（_isLoading=true）
+        // 当前 active 已切到新文件，而此刻到达的 data_change 往往属于“上一个正被替换的文件”，
+        // 若写回 active 会把它覆盖进新文件 → 内容丢失。此窗口内 sheetState 已由 loadSheetsContainer
+        // 注入完整 decoded 数据，跳过回写既防串档又不丢内容（加载期间本就不该有用户编辑落库）。
         if (this._isLoading) return
+        storeData({ root: data })
         // 打开/载入收尾的抑制窗口内：吸收节流晚到的 data_change，绝不误标脏
         // （数据已通过上面的 storeData 落库，抑制的只是"未保存"标记，不丢内容）
         if (this._suppressDirtyUntil && Date.now() < this._suppressDirtyUntil) return
@@ -793,7 +796,25 @@ export default {
       // 避免切换中途 active 翻簿导致看门狗误判别的 workbook）。loaded/failed 由 onRenderEnd
       // 真实置态。先清上一轮看门狗，避免陈旧定时器误触发（新看门狗在方法末尾统一挂）。
       const loadingId = getActiveWorkbookId()
+      // 保底置态（覆盖防护 P0 关联回归）：上一轮尚未置态（仍 loading）的文件，其 sheetState
+      // 已是完整 decoded 数据（loadSheetsContainer 一次性注入），直接放行 loaded，避免“渲染被
+      // 下一轮 setData 取代导致上一轮 node_tree_render_end 永不触发 → 卡 loading → 闸门 A 永久
+      // 拒绝保存 → 切回该文件后编辑存不进去 = 内容丢失”。
+      if (
+        this._prevLoadingId &&
+        this._prevLoadingId !== loadingId &&
+        getLoadPhase(this._prevLoadingId) === 'loading'
+      ) {
+        setLoadPhase(this._prevLoadingId, 'loaded')
+      }
+      this._prevLoadingId = loadingId
       setLoadPhase(loadingId, 'loading')
+      // 清理上一轮遗留的 onRenderEnd 闭包，避免多闭包竞态/泄漏（快速连续打开时上一轮渲染被
+      // 取代而 onRenderEnd 不触发 → 闭包永不 off 且上一 loadingId 卡死）。
+      if (this._loadRenderEnd && this.mindMap && typeof this.mindMap.off === 'function') {
+        this.mindMap.off('node_tree_render_end', this._loadRenderEnd)
+        this._loadRenderEnd = null
+      }
       if (this._loadWatchdog) { clearTimeout(this._loadWatchdog); this._loadWatchdog = null }
       // 载入前先登记「整个工作簿」的图片 key，并补全本表被引用却缺失的 key。
       // 老文件里可能残留跨工作表复制留下的悬空 key（表现为图片显示"加载失败"占位图），
@@ -867,8 +888,10 @@ export default {
         if (this.mindMap && typeof this.mindMap.off === 'function') {
           this.mindMap.off('node_tree_render_end', onRenderEnd)
         }
+        this._loadRenderEnd = null
       }
       if (this.mindMap && typeof this.mindMap.on === 'function') {
+        this._loadRenderEnd = onRenderEnd
         this.mindMap.on('node_tree_render_end', onRenderEnd)
       }
       // P0a（design §4.1）：看门狗仅在“真实卡死”时报警——20s 内若仍 loading（render_end
