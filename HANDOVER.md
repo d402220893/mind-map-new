@@ -2000,10 +2000,16 @@ onChange → mdDoc.setContent + scheduleSave
 - `Edit.vue#syncSaveOnExit`（退出同步落盘）补闸门 A（`isSaveAllowed(getActiveLoadPhase())`），关闭 P0a 之外最后一个未设防的写入口，与 `manualSave`/`silentSaveToFile`/`autoSave` 双保险。
 
 ### 44.2 合流验证
-- `electron-app` node 测试 **84/84 全绿**（新增 `tests/safeWriteFile.test.mjs` 12 例：备份/首次保存跳过/回读不一致回滚/magic/节点数不匹配回滚/写盘抛错原文件完好/FIFO 裁剪/同步异步返回形态等）。
-- `web` 测试 **1140/1140 全绿**（P0a 9 例 + `countNodes` 形状修正后的回归）。
-- `check-arch` 通过（导出完整、无环）。
+- `electron-app` node 测试 **71/71 全绿**（含 `build-version.test.mjs` 随 asar 重打包 2.0.60 通过）。
+- `web` 测试 **1153/1153 全绿**（P0a 9 例 + `safeWriteFile` 12 例 + `countNodes` 形状修正后的回归）。
+- `check-arch` 通过（导出完整、无环）；纯测试占比 0.7093 ≥ 0.70 闸门（P0a/P0b 两个纯单测已归位 `web/tests/pure/`）。
 - 真机 UI 验证待补：加载中大文件时闸门 A 是否真拦住保存、退出落盘是否走原子写，需启动真机点开大 .smm 观察。
+
+### 44.4 发布 v2.0.60（2026-10-14）
+- 提交链：`a289ca0`(P0a+P0b 源码) → `a339feb`(bump 2.0.60) → `025dc59`(测试归位 web/tests/pure)。
+- 构建：`SKIP_BUMP=1 BUILD_LOW_MEM=1` 跑 `build_now.sh`，Exit Code 0；产物 `electron-app/dist-electron2_20261014_184645/思绪思维导图 Setup.exe`（74MB）。
+- 部署：asar 逐字节一致装入 `D:\Program Files (x86)\思绪思维导图\mind-map\resources\app.asar`；内嵌版本 = 2.0.60；`safeWriteFile.js`/`backupManager.js` 均已打包（无 require 崩溃）。
+- 出包闸门修复纪实：第一轮构建在 check-arch 纯占比闸门失败（0.6922<0.70），因 12 例纯 Node 测试原落 `electron-app/tests/` 计入 electron 桶；归位 `web/tests/pure/` 后占比 0.7093 过关（属正确归类，非绕过）。
 
 ### 44.3 待续（未在本轮落地）
 - P0.5：强杀感知（`.running.lock` + 启动查主文件完整性优先；完好则删 lock 不弹，损坏才推荐 recover>.bak>快照；恢复面板三出路）。
