@@ -230,10 +230,10 @@ echo "stage-assert OK: _appstage/dist 与构建产物文件集合一致（$(cd d
 "$NODE" node_modules/@electron/asar/bin/asar.js pack _appstage _appstage.asar >> "$LOG" 2>&1
 SRC_ASAR="E:/03_学习文件/mind-map-main/electron-app/_appstage.asar"
 cd /e/03_学习文件/mind-map-main
-# ⚠️ 2026-10-13 再修正：用户正式启动入口 = 开始菜单快捷方式 →
-# D:\Program Files (x86)\思绪思维导图\思绪思维导图.exe（v2.0.57 已 NSIS 静默装入，
-# 快捷方式自动更新指向此处）。旧目标 D:\...\mind-map\ 无 exe、从未被用户启动，废弃。
-DST="D:/Program Files (x86)/思绪思维导图/resources/app.asar"
+# ⚠️ 2026-10-14 终审实证：用户正式启动入口 = D:\Program Files (x86)\思绪思维导图\mind-map\思绪思维导图.exe
+# （已 ls 确认：父目录 D:\...\思绪思维导图\思绪思维导图.exe 不存在，resources 是孤儿目录无 exe，不会启动）。
+# 故部署真源 = mind-map/resources/app.asar（下方 DST）。任何"改部署目标"前必须先 ls 确认 exe 实际位置。
+DST="D:/Program Files (x86)/思绪思维导图/mind-map/resources/app.asar"
 # ⚠️ 原来这里是 `... | tee -a "$LOG" || echo "DEPLOY 步骤返回非0，请检查日志" | tee -a "$LOG"`
 # —— 部署失败只打一行字就继续往下跑，最后还会打印 RESULT 和安装包大小，
 # 看起来"构建成功"，实际 D 盘还是旧代码。这类"报成功实则没部署"最耗排查时间，改为硬失败。
@@ -253,7 +253,7 @@ echo "asar deploy OK" | tee -a "$LOG"
 # app.bak_<ts>（留作回滚点，绝不删除），让 Electron 落到 app.asar（只读、Defender 只扫一次、
 # 连续读取）。asar 下运行时只读、不写回包内，用户数据仍在 AppData/临时目录，安全。
 # 回滚：若 asar 异常，把 resources/app.bak_<ts> 改名回 resources/app 即可恢复散目录模式。
-APP_DIR_DST="D:/Program Files (x86)/思绪思维导图/resources/app"
+APP_DIR_DST="D:/Program Files (x86)/思绪思维导图/mind-map/resources/app"
 if [ -d "$APP_DIR_DST" ]; then
   # 先杀进程（app/ 目录被运行中进程锁住时改名会失败）
   powershell -NoProfile -Command "Get-Process | Where-Object { \$_.ProcessName -like '*思绪思维导图*' } | Stop-Process -Force -ErrorAction SilentlyContinue; Start-Sleep -Milliseconds 1500" >> "$LOG" 2>&1
@@ -273,14 +273,14 @@ fi
 echo "stage-assert OK: 打包源无 noteCodeBar + 含防白屏兜底" | tee -a "$LOG"
 # 备份清理：每次改名产生 app.bak_<ts>，只匹配 app.bak_*，保留最新 3 个作回滚点，其余删除；
 # 绝不触碰正在运行的 app.asar。
-powershell -NoProfile -Command "\$r='D:/Program Files (x86)/思绪思维导图/resources'; \$b=@(Get-ChildItem -LiteralPath \$r -Directory | Where-Object { \$_.Name -like 'app.bak_*' } | Sort-Object Name -Descending); if (\$b.Count -gt 3) { \$b | Select-Object -Skip 3 | ForEach-Object { try { [System.IO.Directory]::Delete(\$_.FullName, \$true) } catch {} }; Write-Output ('backup-prune: removed ' + (\$b.Count - 3) + ', kept 3') } else { Write-Output ('backup-prune: kept ' + \$b.Count) }" >> "$LOG" 2>&1 || true
+powershell -NoProfile -Command "\$r='D:/Program Files (x86)/思绪思维导图/mind-map/resources'; \$b=@(Get-ChildItem -LiteralPath \$r -Directory | Where-Object { \$_.Name -like 'app.bak_*' } | Sort-Object Name -Descending); if (\$b.Count -gt 3) { \$b | Select-Object -Skip 3 | ForEach-Object { try { [System.IO.Directory]::Delete(\$_.FullName, \$true) } catch {} }; Write-Output ('backup-prune: removed ' + (\$b.Count - 3) + ', kept 3') } else { Write-Output ('backup-prune: kept ' + \$b.Count) }" >> "$LOG" 2>&1 || true
 echo "asar-active deploy OK" | tee -a "$LOG"
 
 # === [5/5c] 随包发布 code2mm 契约文档 + CLI 到运行真源 resources/devtools/ ===
 # code2mm 是「AI 读代码建脑图」的桥接工具，其契约文档（scripts/code2mm.md）与脚本
 # 需随 app 一起发布，使安装目录下的 resources/devtools/ 即可取用（松散文件，不被 asar 包裹，
 # 可直接被 AI/脚本读取）。NSIS 安装包侧由 package.json 的 extraResources 负责同一件事。
-RES_DIR="D:/Program Files (x86)/思绪思维导图/resources"
+RES_DIR="D:/Program Files (x86)/思绪思维导图/mind-map/resources"
 # 历史 NSIS extraResources 误把 devtools 写成同名文件（from=文件/to=裸名），必须清掉才能建目录
 if [ -e "$RES_DIR/devtools" ] && [ ! -d "$RES_DIR/devtools" ]; then
   rm -f "$RES_DIR/devtools" && echo "removed stray file $RES_DIR/devtools (was code2mm.mjs, not a dir)" | tee -a "$LOG"

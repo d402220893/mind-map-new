@@ -122,6 +122,7 @@ import {
   setActiveSheetId,
   getActiveSheetData,
   addSheet as apiAddSheet,
+  addWorkbook as apiAddWorkbook,
   removeSheet as apiRemoveSheet,
   renameSheet as apiRenameSheet,
   getSheetsContainer,
@@ -1202,6 +1203,9 @@ export default {
           version: 1,
           sheets: [{ name: 'Sheet1', data: content }]
         }
+        // 修复（HANDOVER §13 同类）：先创建新 workbook（切激活到新标签），
+        // 再 loadSheetsContainer —— 否则会直接覆盖「当前正在编辑的文件」（冲掉当前文件）。
+        apiAddWorkbook({ name: '未命名', filePath: '', kind: 'mindmap' })
         if (!loadSheetsContainer(container)) {
           this.$message.error('工作表文件格式不正确')
           return
@@ -1236,6 +1240,13 @@ export default {
           this.$message.error('创建失败：' + res.error)
           return
         }
+        // 修复（HANDOVER §13 同类）：先创建新 workbook（切激活到新标签），
+        // 再 loadSheetsContainer —— 否则会直接覆盖「当前正在编辑的文件」（冲掉当前文件）。
+        apiAddWorkbook({
+          name: defaultName.replace(/\.smm$/i, ''),
+          filePath: res.filePath,
+          kind: 'mindmap'
+        })
         if (!loadSheetsContainer(container)) {
           this.$message.error('工作表文件格式不正确')
           return

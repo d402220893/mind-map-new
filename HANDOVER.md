@@ -1351,7 +1351,7 @@ onRemove(w) {
 
 ### 32.1 版本与出包链现状
 
-* 当前版本 **2.0.10**（`electron-app/package.json`；`web/package.json` 的 `0.1.0` 是占位符，非真源）。
+* 当前版本 **2.0.59**（`electron-app/package.json`；`web/package.json` 的 `0.1.0` 是占位符，非真源）。
 * 出包唯一真源脚本：项目根 `build_now.sh`（`build.bat` 双击入口），六段流水线：
     `[0/5]依赖自检→[0.5/5]架构守卫+全量测试(硬闸门)→[1/5]vue build→[2/5]cp+剥51.la+指纹→[3/5]bump→[4/5]NSIS(可SKIP_NSIS=1)→[5/5]asar+部署D盘→[5/5b]同步resources/app`。
 * 安装包唯一产物：`electron-app/dist-electron2/思绪思维导图 Setup.exe`（`dist-electron/` 已废弃，Defender 锁 .asar 绕行遗留）。
@@ -1947,3 +1947,29 @@ onChange → mdDoc.setContent + scheduleSave
 1. **真正的防丢在根因**：窗口/即时备份都是“覆写后”才抓，若打开瞬间已把原文件覆写成骨架，备份里也是骨架。必须同步修“打开 .smm 被覆写为骨架”的 load/decode bug（v2.0.41 smmCodec 同类事故路径），并保存前写 `.bak`。
 2. **渲染端打开钩子**：双击/文件关联/md 打开应补调 `smmApi.backup.instant(filePath, content)`，目前仅 `smm:open-workbook` 对话框路径已接。
 3. **恢复 UI**：目前仅 IPC + 非破坏式 `restoreSnapshot`（默认复制到 `<原名>.restored_<时间戳>.<ext>`）；可选在设置/文件菜单加“从历史备份恢复”面板。
+
+## §42 v2.0.59：修复「新建文件冲掉当前正在编辑的文件」（覆盖文件 bug 复发）
+
+> 背景：用户反馈“打开/导入冲掉当前文件”的覆盖 bug 在 2.0 重写后疑似复发（HANDOVER §13 同类）。经实证复现 + 静态走链，结论与初判不同。
+
+### 42.1 实证结论（推翻“打开/导入仍冲掉当前文件”的假设）
+- `workspaceBridge.openMindMap`（双击/文件树打开 .smm）：**先 `addWorkbook` 切激活到新标签、再 `loadSheetsContainer`**，实测序列 A 完好、B 正常创建 → 安全。
+- `Edit.openContainerAsNewWorkbook`（导入/拖拽对话框）：先 `manualSave()` 再 `addWorkbook({skipOldWriteback:true})` 再 `loadSheetData` → 不冲当前文件。
+- `Edit.onContainerDrop`（拖拽 .smm）：`manualSave()` 后 `loadWorkbookFromRaw`→`openContainerAsNewWorkbook` → 安全。
+- 即“打开/导入”路径在 2.0 已用“先 addWorkbook 切激活再写”结构化解。
+
+### 42.2 真正的复发点：`Edit.newWorkbook`（工具栏“新建文件”/“另存为”）
+- **现象**：用户正在编辑文件 A，点“新建文件”（或“另存为”落盘后载入），**A 的内容被整个覆盖/丢失**，编辑丢失。
+- **根因**：`newWorkbook` 两分支（网页端无 saveWorkbook / 桌面端有 saveWorkbook）直接调 `loadSheetsContainer(container)`（= `WB.setActiveSheetState`，只写**当前激活 workbook**），**未先建新标签**。`loadSheetsContainer` 的不变量是“永远只作用于当前激活 workbook”，所以没切激活就写 = 把新内容直接塞进正在编辑的 A → 覆盖。
+- **修复**：在两分支 `loadSheetsContainer` 之前插入 `apiAddWorkbook({ name, filePath, kind:'mindmap' })`，**先切激活到新标签，再写**。这正是 HANDOVER §13 同类 bug 在“新建”动作上的残留，现已对齐“打开/导入”的既定正确结构。
+- 连带加固：`workspaceBridge.openMindMap` 在 `addWorkbook` 之前新增 `bus.$emit('before-workbook-switch')`，与 `openContainerAsNewWorkbook` 的 `manualSave` 对齐，确保切文件前先把当前文件持久化（一致性保护，避免切激活后再写回把旧画布数据落到新文件）。
+
+### 42.3 回归护城河
+- 新增 `web/tests/unit/workbookState-clobber.test.mjs`（3 例）：①危险样本（直接 setActiveSheetState 覆盖当前文件，记录缺陷类）；②修复后先 addWorkbook 再 setActiveSheetState（A/B 均完好）；③打开/新建时当前文件编辑不被串。
+- 纯状态机 `workbookState.js` 不依赖 Vue/DOM，可在 Node 下直接断言；`getWorkbookList().workbooks` 不含 `sheetState`（仅 id/name/filePath/kind/dirty），回归测试据此断言“是否产生了新标签”而非读 sheetState。
+- `web && npm test` 全量 **1131/1131 全绿**（check-arch EXIT 0，较 1024 新增 107 例），0 环、0 失败。
+
+### 42.4 出包（v2.0.59）
+- `build_now.sh`（不带 SKIP_BUMP）自增 2.0.58 → 2.0.59（package.json + make_installer.nsi 同步）；asar 部署到 `D:\Program Files (x86)\思绪思维导图\mind-map\resources\app.asar`，与本地 `_appstage.asar` 逐字节一致。
+- 安装包：`electron-app/dist-electron2_20261014_153240/思绪思维导图 Setup.exe`（≈71.5 MB，store 压缩绕过 Defender 锁）。
+- 部署目标 = 实际有 exe 的 `mind-map\` 子目录（2026-10-14 终审结论，见 MEMORY.md 构建与部署）。"}]

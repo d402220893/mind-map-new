@@ -156,6 +156,9 @@ async function openMindMap(abs) {
     }
     const container = decoded // { sheets, activeId }，loadSheetsContainer 期望的形状
     const name = baseName(abs).replace(/\.smm$/i, '')
+    // 切换前先把当前正在编辑的文件持久化到当前 workbook（与 openContainerAsNewWorkbook
+    // 的 manualSave 一致）。必须在 addWorkbook 切激活之前发，否则会写到新 workbook（冲掉当前文件）。
+    bus.$emit('before-workbook-switch')
     const wb = addWorkbook({ name, filePath: abs, kind: 'mindmap' })
     if (!loadSheetsContainer(container)) {
       return { ok: false, error: { code: 'E_BAD_SMM', message: '工作表容器为空' } }
