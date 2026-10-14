@@ -2011,6 +2011,14 @@ onChange → mdDoc.setContent + scheduleSave
 - 部署：asar 逐字节一致装入 `D:\Program Files (x86)\思绪思维导图\mind-map\resources\app.asar`；内嵌版本 = 2.0.60；`safeWriteFile.js`/`backupManager.js` 均已打包（无 require 崩溃）。
 - 出包闸门修复纪实：第一轮构建在 check-arch 纯占比闸门失败（0.6922<0.70），因 12 例纯 Node 测试原落 `electron-app/tests/` 计入 electron 桶；归位 `web/tests/pure/` 后占比 0.7093 过关（属正确归类，非绕过）。
 
+### 44.5 发布 v2.0.61（2026-10-14）—— 修「反复打开内容丢失」回归
+- 触发：用户实测 v2.0.60 仍反复打开丢内容。根因定位为两个与切换/打开竞态强相关的老 bug，其中②被 P0a 闸门放大。
+- 真凶① `bindSaveEvent#data_change`：`storeData({root:data})` 原在 `if(this._isLoading) return` **之前**执行 → 加载/切换期间仍写回**当前 active 文件**；上一文件渲染结束事件晚到时 active 已切走 → 旧数据覆盖进新文件（串档丢内容）。修复：`_isLoading` 期间整体跳过回写（此窗口 sheetState 已由 `loadSheetsContainer` 注入完整数据，不丢内容）。
+- 真凶② `loadSheetData`：每次加载 `mindMap.on('node_tree_render_end', onRenderEnd)` 注册新闭包**从不清理上一轮**；快速连续打开时上一轮渲染被取代致 `node_tree_render_end` 永不触发 → 上一 loadingId **永久卡 loading** → 闸门 A 永久拒绝其保存 → 切回后编辑存不进去。修复：① 开头保底把上一卡 loading 的文件放行 loaded（其 sheetState 已是完整 decoded 数据，可安全保存）；② 用 `this._loadRenderEnd` 单一引用注册，开头先 off 旧闭包，杜绝多闭包竞态/泄漏。
+- 提交链：`11d1fd8`(修) → bump 2.0.61 → 构建（Exit Code 0）。产物 `electron-app/dist-electron2_20261014_190731/思绪思维导图 Setup.exe`（74MB）；asar 逐字节装入运行真源，内嵌版本 2.0.61；`safeWriteFile.js` 已打包，两修复特征串（`_loadRenderEnd` / `_isLoading` 拦截）均在 asar 内。
+- 测试：web 1153/1153 绿；electron-app 71/71 绿（含 build-version 随 asar 重打包 2.0.61 通过）。
+- 数据恢复指引（已同步用户）：v2.0.60 起 `safeWriteFile` 覆盖前自动备份 `<名>.bak.<毫秒时间戳>`（FIFO 5），出问题 .smm 旁若有最新 .bak 改名回 .smm 即可恢复；另每 30min/6h/day 三层本地备份（`backupManager`）。需用户配合确认 .bak 存在性 + 复现步骤 + 控制台报错以 100% 定性。
+
 ### 44.3 待续（未在本轮落地）
 - P0.5：强杀感知（`.running.lock` + 启动查主文件完整性优先；完好则删 lock 不弹，损坏才推荐 recover>.bak>快照；恢复面板三出路）。
 - P1：Worker 异步初始化 + 完整 `Idle→Loading→Loaded/Failed` 状态机 + stall 探测器（仅报慢不翻 failed）。
