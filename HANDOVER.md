@@ -1972,4 +1972,40 @@ onChange → mdDoc.setContent + scheduleSave
 ### 42.4 出包（v2.0.59）
 - `build_now.sh`（不带 SKIP_BUMP）自增 2.0.58 → 2.0.59（package.json + make_installer.nsi 同步）；asar 部署到 `D:\Program Files (x86)\思绪思维导图\mind-map\resources\app.asar`，与本地 `_appstage.asar` 逐字节一致。
 - 安装包：`electron-app/dist-electron2_20261014_153240/思绪思维导图 Setup.exe`（≈71.5 MB，store 压缩绕过 Defender 锁）。
-- 部署目标 = 实际有 exe 的 `mind-map\` 子目录（2026-10-14 终审结论，见 MEMORY.md 构建与部署）。"}]
+- 部署目标 = 实际有 exe 的 `mind-map\` 子目录（2026-10-14 终审结论，见 MEMORY.md 构建与部署）。
+
+## §43 覆盖文件深层防护方案（设计稿，目标 v2.0.60，未落地）
+
+> v2.0.59 修"新建文件冲掉当前文件"（切激活顺序）后，用户要求从设计层面根治"覆盖文件"，列出 6 组诉求（保存前校验 / 空异常不覆盖 / 退出前自动备份 / 强杀恢复 / 修根本源 / 设计层面铁律）。完整设计稿见 `design/覆盖文件防护方案_v5.md`（v5 为最新；旧文件名 `design/覆盖文件防护方案.md` 会被编辑器缓冲反复回退，已弃用）。
+
+要点：① 用 `Idle→Loading→Loaded/Failed` 状态机替代 `Edit.vue:829` 的 1.5s 兜底定时器，只有 `Loaded` 才允许保存（`manualSave` 自身加闸门，不只 `autoSave`）；② `workbookState` 每 workbook 增 `loadPhase` + `lastGoodSize`，解耦"文件路径/可信数据/可保存"；③ 覆盖写前过三闸门（加载态/数据完整性/体积比对），异常写 `.recover` 而非覆盖；④ 收敛 `shell.writeFile` 为 `safeWriteFile`（备份→tmp+rename 原子→回读校验→更新 lastGoodSize），复用 `electron-app/backupManager.js`；⑤ 退出保存异步化 + "正在保存"确认；⑥ `.running.lock` + 启动恢复提示。分 P0–P3 四期，各带回归测试。本方案与 v2.0.59 修复正交、互为加固。
+
+**v2 修订（2026-10-14，按用户 10 项评审）**：优先级反转——**P0 = 止血三件套**（未加载完禁写 `manualSave`/`silentSaveToFile`/`autoSave` 闸门 + 覆盖前备份原子写 + 退出异步化含 `isQuitting`），从状态机拆出先上；状态机+异步化降为 P1。关键修正：看门狗改为 stall 探测器**只报"慢"绝不因超时翻 failed**（failed 仅真实错误）；`lastGoodSize` 打开即 seed + 按 workbook id 索引；体积 heuristic **默认关闭、不阻塞**（避免误报训练用户）；`.recover` 有时间戳命名/隔离/清理生命周期；强杀恢复**先查主文件完整性、绝不用旧 .bak 覆盖完好原文件**；闸门/保存决策下沉纯模块（saveGuard.js/writeSafety.js）可隔离单测；`dirty`=内容哈希变化；测试基线拆分（确定性纯模块=硬零 fail 闸门，Electron 集成测单独跑）。详见 `design/覆盖文件防护方案.md` §0.1 评审处理表。
+
+**v3 修订（2026-10-14，按用户 v2 二次评审 8 项）**：修正 v2 仍存的真漏洞——①**硬伤A（最关键）**：v2 的 P0 闸门A 依赖 `loaded` 却把真实 loaded 判据推迟到 P1、又保留 1.5s 定时器 → 闸门是假的。v3 把**删 1.5s 定时器 + `loaded` 只由 `node_tree_render_end`+根非空触发一并移回 P0**；P1 只补 loading/failed+stall+Worker。②硬伤B：`lastSavedHash` 打开即 seed，杜绝"打开未编辑→退出"误写。③硬伤C：闸门B 零节点仅对"曾非空(lastNodeCount>0/lastGoodSize>0)却变空"判 recover，纯新建空簿允许正常写（增 `lastNodeCount`）。④硬伤D：回读校验改解析一次（非仅比长度）。⑤硬伤E：通道边界写死——`action='recover'` 渲染侧直接写 .recover、完全不进 safeWriteFile、不产生 .bak。⑥遗留1：澄清"P0 真实闸门下加载中强杀不写盘→原文件不损坏"，lock 感知+恢复提示提到 **P0.5**（启动查主文件完整性优先，完好则删 lock 不弹）。⑦遗留2：新增 §2.4 保存目标判定（显式 workbookId 非瞬态 active），消切换竞态。⑧遗留3：定义 contentHash 规范化约束+稳定性单测。详见 `design/覆盖文件防护方案.md` §0.1 v3 处理表。
+
+**v4 修订（2026-10-14，按用户 v3 三轮评审 3 硬伤+4 边界+战略拆分）**：①**硬伤1（最严重）**：v3 的 P0 只有 idle/loaded，坏文件/空文件无 `failed` 归宿→静默失败、新建空簿到不了 loaded。v4 让 **P0 自带 `failed` 终态**（decode 错/无根→failed+明确错误 UI），且**新建空白簿直接置 `loaded`**（可信空态不等 render_end），已存在近空 .smm 有根→render_end 后 loaded。②**硬伤2**：强制"先 seed 三者、再置 loaded、同一同步块内完成"，render_end 处理器内部 seed→校验根→loaded，任一失败→failed，堵死 autoSave 抢跑窗口。③**硬伤3**：Electron 渲染进程无直写文件权，v3"渲染侧直接写 .recover"自相矛盾；重写 §5.4——所有落盘走主进程 `safeWriteFile(mode)`，`mode='recover'` 只写 .recover 不碰原文件不产生 .bak。④**边界1**：gate B 改按**总节点数==0**（跨 sheet 求和）判定，消多 sheet 单空 sheet 误伤。⑤**边界2**：contentHash 给明确 volatile/content 黑白名单（折叠=volatile、位置=content、激活 sheet=volatile）。⑥**边界3**：回读校验定深为 JSON.parse+magic+根存在+总节点数===写入前计数（轻量不重建实例）。⑦**边界4**：stallMs 的 k=1500ms/MB、历史按文件大小分桶持久化于 `<userData>/loadStats.json`。⑧**战略**：P0 拆为 **P0a（状态机止血，纯前端不碰主进程写服务）+ P0b（写安全，动主进程）+ P0.5（强杀感知）**，恢复"最小改动先上"。详见 `design/覆盖文件防护方案_v5.md` §0.2 v4 处理表（旧文件名被编辑器反复回退，已弃用）。
+
+**v5 修订（2026-10-14，按用户 v4 四轮评审 4 新细节问题+3 遗留）**：全部接受并修订为 v5（落盘文件 `design/覆盖文件防护方案_v5.md`，因旧文件名被编辑器缓冲反复回退）。①**新1（最关键）**：`failed` 终态必须有出口——澄清其为 **per-workbook 终态（非 app 终态）**，提供三条出路：关闭该 workbook / 从恢复面板选 .recover/.bak/快照重载（新建 workbook 重走状态机）/ 放弃加载以空白簿打开；否则坏文件用户只能杀应用。②**新2**：`seed` 的 `contentHash` 成本约束——只对规范化投影做 O(节点数) 增量哈希、不序列化整个容器；seed 三步纳入 P0a 性能验收（<100ms，超则降级快速指纹），避免用新同步重活换旧卡顿。③**新3**：gate B 判定优先级严格化——结构完整性（缺 sheets/root/无法遍历）**优先**于"合法空"判定，一律 recover，杜绝结构损坏的纯新建 container 漏过。④**新4**：`dirty` 语义明确 = 内容是否变化（非"是否发生过编辑"），"编辑后撤销回原样"不保存是有意设计。⑤遗留A：`.bak` 同样隔离出文件关联双击与"打开最近"，只在恢复面板可见。⑥遗留B：首次保存目标文件不存在→跳过备份直接 tmp→rename，避免复制不存在源抛错。⑦遗留C：P0a"纯前端"边界澄清——不碰写服务；seed 字节数由现有 open IPC 顺带返回，不新增写 IPC / 不新增独立读元信息 IPC。详见 `design/覆盖文件防护方案_v5.md` §0.3 v4→v5 处理表。
+
+## §44 覆盖文件防护落地：P0a + P0b（目标 v2.0.60）
+
+> 按 v5 评审“停止评审、进入实施，先 P0a 跑通再 P0b”的路线，两套改动已落地并通过单测。P0a 见 §43 末段；本节约 P0b 与合流验证。
+
+### 44.1 P0b：写安全（动主进程，收敛裸写为单一原子写服务）
+- 新建 `electron-app/safeWriteFile.js`（纯 CJS、依赖可注入 fs/path/now，Node 单测友好）：`safeWriteFile`（异步）/ `safeWriteFileSync`（同步，供 beforeunload sendSync 用），核心 `_writeCore` 四步——①**覆盖前先备份** `<原名>.bak.<YYYYMMDD_HHMMSSmmm>`（含毫秒防同秒碰撞，FIFO 保留最近 5 份）；②**tmp 写 + rename 原子替换**（rename 在 Windows 对已存在目标为覆盖语义，旧文件覆盖瞬间永不凭空消失）；③**轻量回读校验**——`.smm` 走 `JSON.parse`+magic(`app==='smm-multisheet'`)+总节点数===写入前计数（不重建 MindMap 实例，挡住“内容乱但长度对”）；其余文本走字节比对；④失败**回滚**（有 .bak 则恢复、无 .bak 即首次保存则删损坏文件，原文件本就不存在无丢失）。
+- 修设计硬伤：`countNodes` 此前在两处都误把 `sheet.data` 当根节点、漏数真实节点树 → 回读节点数校验形同虚设（无法检出子树损坏）。已统一改为下钻 `sheet.data.root`（`web/src/utils/saveGuard.js` 与 `safeWriteFile.js` 同语义一致），并据此修正 `workbookState-loadphase.test.mjs` 与新增 `safeWriteFile.test.mjs` 的容器形状（对齐真实落盘 `{app,sheets:[{data:{root}}]}`）。
+- `main.js` 接线：两个写盘 IPC（`smm:write-file` 异步、`smm:write-file-sync` 同步）统一收敛到 `safeWriteFile`/`safeWriteFileSync`；`isQuitting` 幂等守卫（`mainWindow.on('close')` 仅置位、不 preventDefault，渲染侧 beforeunload 已同步原子落盘，规避 §7.1 评审指出的“.catch 缺失导致关不掉窗口”死循环）；`before-quit` 仍 `backupManager.flushPending()` 兜底快照。
+- `build_now.sh` 打包白名单新增 `safeWriteFile.js`（否则 asar 内 require 失败白屏）。
+- `Edit.vue#syncSaveOnExit`（退出同步落盘）补闸门 A（`isSaveAllowed(getActiveLoadPhase())`），关闭 P0a 之外最后一个未设防的写入口，与 `manualSave`/`silentSaveToFile`/`autoSave` 双保险。
+
+### 44.2 合流验证
+- `electron-app` node 测试 **84/84 全绿**（新增 `tests/safeWriteFile.test.mjs` 12 例：备份/首次保存跳过/回读不一致回滚/magic/节点数不匹配回滚/写盘抛错原文件完好/FIFO 裁剪/同步异步返回形态等）。
+- `web` 测试 **1140/1140 全绿**（P0a 9 例 + `countNodes` 形状修正后的回归）。
+- `check-arch` 通过（导出完整、无环）。
+- 真机 UI 验证待补：加载中大文件时闸门 A 是否真拦住保存、退出落盘是否走原子写，需启动真机点开大 .smm 观察。
+
+### 44.3 待续（未在本轮落地）
+- P0.5：强杀感知（`.running.lock` + 启动查主文件完整性优先；完好则删 lock 不弹，损坏才推荐 recover>.bak>快照；恢复面板三出路）。
+- P1：Worker 异步初始化 + 完整 `Idle→Loading→Loaded/Failed` 状态机 + stall 探测器（仅报慢不翻 failed）。
+- P2：gate B（结构完整性优先于合法空判定，一律 recover）、`.recover` 通道（主进程 `safeWriteFile(mode='recover')` 只写 .recover 不碰原文件/不产生 .bak）、contentHash 规范化 volatile 黑白名单。

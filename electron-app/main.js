@@ -7,6 +7,8 @@ const { getAppExeName } = require('./install-meta')
 // 本地分层备份管理器（思绪思维导图）：仅本地、按内容哈希去重、30min/6h/day 三层轮转
 const { createBackupManager } = require('./backupManager')
 const backupManager = createBackupManager()
+// 原子写 + 覆盖前备份 + 回读校验 + 失败回滚（P0b，design §6.1）
+const { safeWriteFile, safeWriteFileSync } = require('./safeWriteFile')
 
 // 安装器模式：--install 参数或环境变量 MINDMAP_INSTALL=1
 const IS_INSTALL_MODE = process.argv.includes('--install') || process.env.MINDMAP_INSTALL === '1'
@@ -147,6 +149,10 @@ process.on('uncaughtException', err => {
 let mainWindow = null
 let installerWindow = null
 let firstErrorShown = false
+// P0b（design §7.1）：退出标志位，防“关闭→再触发关闭”死循环，并确保 before-quit 的
+// 兜底快照只跑一次。渲染进程在 beforeunload 已同步落盘（smm:write-file-sync 现已走原子写），
+// 故此处不 preventDefault，放行关闭；isQuitting 仅作幂等守卫。
+let isQuitting = false
 
 // 把菜单命令转发给渲染进程处理（保存/另存为/打开）
 function sendCmd(cmd) {
@@ -188,12 +194,14 @@ ipcMain.handle('smm:save-workbook', async (e, { content, defaultPath, defaultNam
   }
 })
 
-// 直接覆盖写入已有路径
+// 直接覆盖写入已有路径（P0b：经 safeWriteFile 收敛为「备份→tmp/rename→回读→回滚」原子写）
 ipcMain.handle('smm:write-file', async (e, { filePath, content }) => {
   try {
-    fs.writeFileSync(filePath, content, 'utf8')
+    const r = await safeWriteFile(null, { filePath, content })
+    if (!r.ok) return { ok: false, code: r.code, error: r.error, rolledBack: r.rolledBack }
+    // 时间窗口分层备份（与 safeWriteFile 的 .bak 回滚各司其职：.bak=覆盖前可回滚快照，此=历史版本）
     backupNotify(filePath, content)
-    return { ok: true }
+    return { ok: true, size: r.size, nodeCount: r.nodeCount }
   } catch (err) {
     return { ok: false, error: err.message }
   }
@@ -236,12 +244,16 @@ ipcMain.handle('smm:pick-file', async (e, { title, filters } = {}) => {
 })
 
 // 同步覆盖写入（渲染进程 beforeunload 同步落盘用；sendSync 调用，
-// 必须用 event.returnValue 返回结果，确保窗口关闭前写盘已完成）
+// 必须用 event.returnValue 返回结果，确保窗口关闭前写盘已完成；P0b 同样走 safeWriteFileSync 原子写）
 ipcMain.on('smm:write-file-sync', (event, { filePath, content }) => {
   try {
-    fs.writeFileSync(filePath, content, 'utf8')
+    const r = safeWriteFileSync(null, { filePath, content })
+    if (!r.ok) {
+      event.returnValue = { ok: false, code: r.code, error: r.error, rolledBack: r.rolledBack }
+      return
+    }
     backupNotify(filePath, content)
-    event.returnValue = { ok: true }
+    event.returnValue = { ok: true, size: r.size, nodeCount: r.nodeCount }
   } catch (err) {
     event.returnValue = { ok: false, error: err.message }
   }
@@ -998,6 +1010,13 @@ function createWindow() {
     bootMark('ready_to_show')
   })
 
+  // P0b（§7.1）：退出幂等守卫。渲染进程 beforeunload 已同步原子落盘，这里不 preventDefault，
+  // 仅置 isQuitting 防止重复进入；若将来改造为“异步保存后再关”，此守卫可避免 win.close() 死循环。
+  mainWindow.on('close', () => {
+    if (isQuitting) return
+    isQuitting = true
+  })
+
   mainWindow.on('closed', () => {
     mainWindow = null
   })
@@ -1047,6 +1066,7 @@ app.on('window-all-closed', () => {
 
 // 退出前把待修改文件兜底快照一次，避免“修改后未到下一个时间窗口就关机”导致丢失
 app.on('before-quit', () => {
+  isQuitting = true
   try { backupManager.flushPending() } catch (e) { console.error('[backup] flushPending 异常:', e) }
 })
 

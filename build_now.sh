@@ -215,7 +215,7 @@ if [ -d _appstage ]; then
   exit 1
 fi
 mkdir -p _appstage/dist
-cp package.json main.js preload.js backupManager.js index.html install.html install-meta.js appicon.ico _appstage/ 2>/dev/null
+cp package.json main.js preload.js backupManager.js safeWriteFile.js index.html install.html install-meta.js appicon.ico _appstage/ 2>/dev/null
 # 关键：先建好 _appstage/dist，再用 "dist/." 把内容平铺进去；
 # 严禁 "cp -r dist _appstage/dist"（若 _appstage/dist 已存在会生成 dist/dist 双层嵌套，致白屏/资源 404）
 cp -rf dist/. _appstage/dist/

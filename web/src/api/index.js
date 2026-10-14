@@ -347,3 +347,11 @@ export const applySaveAs = newPath => WB.applySaveAs(newPath)
 
 // 去重：同一绝对路径已在其它标签打开则返回该 workbook
 export const findByPath = filePath => WB.findByPath(filePath)
+
+// ===== P0a：加载态（loadPhase）与种子基准（委托 workbookState）=====
+// 闸门 A 依赖 getActiveLoadPhase() === 'loaded'；seedBaseline 在载入成功后落库基准。
+export const setLoadPhase = (id, phase) => WB.setLoadPhase(id, phase)
+export const getLoadPhase = id => WB.getLoadPhase(id)
+export const getActiveLoadPhase = () => WB.getActiveLoadPhase()
+export const setActiveLoadPhase = phase => WB.setActiveLoadPhase(phase)
+export const seedBaseline = (id, base) => WB.seedBaseline(id, base)

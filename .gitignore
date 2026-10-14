@@ -38,6 +38,8 @@ electron-app/_dist_old/
 electron-app/dist_old_*/
 # electron-builder 绕 Defender 锁时的备用输出目录（--config.directories.output=dist-electron2）
 electron-app/dist-electron2/
+# build_now.sh 每次出包唯一时间戳目录（dist-electron2_<YYYYMMDD_HHMMSS>），必排除
+electron-app/dist-electron2_*/
 # 根目录同名暂存快照（历史误提交，已清理）
 /_appstage/
 # electron 临时安装目录（旧产物）

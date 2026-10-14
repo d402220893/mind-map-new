@@ -136,8 +136,13 @@ import {
   getActiveWorkbookId,
   applySaveAs,
   markAutosaved,
-  getLastAutosavedAt
+  getLastAutosavedAt,
+  seedBaseline,
+  getActiveLoadPhase,
+  getLoadPhase,
+  setLoadPhase
 } from '@/api'
+import { isSaveAllowed, countNodes, contentHash } from '@/utils/saveGuard'
 import Navigator from './Navigator.vue'
 import NodeImgPreview from './NodeImgPreview.vue'
 import SidebarTrigger from './SidebarTrigger.vue'
@@ -516,7 +521,10 @@ export default {
     },
 
     // 手动保存
+    // P0a 闸门 A（design §4.1）：加载未完成（loading/failed）禁止把内存数据写回，
+    // 杜绝“半加载/空数据覆盖当前文件”。仅 loaded 态放行。
     manualSave() {
+      if (!isSaveAllowed(getActiveLoadPhase())) return
       storeData(this.mindMap.getData(true))
     },
 
@@ -541,6 +549,8 @@ export default {
     // 自动保存执行点：已保存文件静默写盘，未保存文件仅确保草稿
     autoSave() {
       if (this._isLoading) return
+      // P0a 闸门 A：加载态同样禁止自动保存覆盖写盘
+      if (!isSaveAllowed(getActiveLoadPhase())) return
       if (!this.autosave) return
       this.currentFilePath = getCurrentFilePath()
       const target = resolveAutosaveTarget(this.currentFilePath)
@@ -554,6 +564,8 @@ export default {
 
     // 对已保存文件静默覆盖写盘（不弹成功提示，避免自动保存频繁打扰）
     async silentSaveToFile() {
+      // P0a 闸门 A：加载态禁止覆盖写盘（与 manualSave 双保险，避免误触达 shell.writeFile）
+      if (!isSaveAllowed(getActiveLoadPhase())) return
       try {
         this.manualSave()
         const container = getSheetsContainer()
@@ -777,6 +789,12 @@ export default {
       // 先把数据暂存，建好实例后由 flushPendingReadyCall 补载，避免 this.mindMap 为 null 抛 TypeError
       if (this.deferUntilReady(() => this.loadSheetData(data))) return
       this._isLoading = true
+      // P0a（design §4.1）：真实加载态——挂到本次载入的 workbook（按 id，非瞬态 active，
+      // 避免切换中途 active 翻簿导致看门狗误判别的 workbook）。loaded/failed 由 onRenderEnd
+      // 真实置态。先清上一轮看门狗，避免陈旧定时器误触发（新看门狗在方法末尾统一挂）。
+      const loadingId = getActiveWorkbookId()
+      setLoadPhase(loadingId, 'loading')
+      if (this._loadWatchdog) { clearTimeout(this._loadWatchdog); this._loadWatchdog = null }
       // 载入前先登记「整个工作簿」的图片 key，并补全本表被引用却缺失的 key。
       // 老文件里可能残留跨工作表复制留下的悬空 key（表现为图片显示"加载失败"占位图），
       // 这里顺手修掉；详见 utils/nodeImageKeys.js。
@@ -786,10 +804,20 @@ export default {
       } catch (e) {
         console.error('载入工作表前修复节点图片引用失败', e)
       }
-      if (data && data.root) {
-        this.mindMap.setFullData(data)
-      } else {
-        this.mindMap.setData(data)
+      try {
+        if (data && data.root) {
+          this.mindMap.setFullData(data)
+        } else {
+          this.mindMap.setData(data)
+        }
+      } catch (e) {
+        // 解码/构建失败：进入 failed 终态（design §4.1），禁止写盘，等待用户关闭/恢复。
+        // 清除看门狗避免重复置态，并清 _isLoading 让脏标记窗口恢复。
+        if (this._loadWatchdog) { clearTimeout(this._loadWatchdog); this._loadWatchdog = null }
+        setLoadPhase(loadingId, 'failed')
+        if (getActiveWorkbookId() === loadingId) this._isLoading = false
+        console.error('载入思维导图失败（已进入 failed 态，禁止写盘）', e)
+        return
       }
       this.mindMap.view.reset()
       this.mindMapData = data
@@ -816,7 +844,24 @@ export default {
           // originAddHistory 异常不影响主流程，最坏情况是节流 timer 后仍有 1 次误发；
           // 这种情况已被底下的 setTimeout(250) 兜底覆盖（>100ms 节流窗）
         }
-        this._isLoading = false
+        if (this._loadWatchdog) { clearTimeout(this._loadWatchdog); this._loadWatchdog = null }
+        // P0a（design §4.1 + §5.2）：渲染结束 → 先 seed（同同步块内、置 loaded 之前完成，
+        // 关闭“loaded 已置、hash 未 seed、autoSave 抢跑”窗口）；根非空才 loaded，否则 failed。
+        // 按本次载入的 loadingId 置态（非瞬态 active），消切换竞态。
+        const rootOk = !!(data && data.root)
+        if (rootOk) {
+          const container = getSheetsContainer()
+          seedBaseline(loadingId, {
+            size: JSON.stringify(container).length,
+            hash: contentHash(container),
+            nodeCount: countNodes(container)
+          })
+          setLoadPhase(loadingId, 'loaded')
+        } else {
+          setLoadPhase(loadingId, 'failed')
+        }
+        // _isLoading 是组件级“当前显示 workbook 是否加载中”；仅当完成的就是当前显示簿时清。
+        if (getActiveWorkbookId() === loadingId) this._isLoading = false
         // 载入收尾：把脏标记抑制窗口延后，吸收节流晚到的 data_change（防"打开即误标未保存"）
         this._suppressDirtyUntil = Date.now() + 600
         if (this.mindMap && typeof this.mindMap.off === 'function') {
@@ -826,17 +871,18 @@ export default {
       if (this.mindMap && typeof this.mindMap.on === 'function') {
         this.mindMap.on('node_tree_render_end', onRenderEnd)
       }
-      // 兜底：1.5s 内若未触发渲染结束（极端情况下）也强制放行，避免脏标记窗口死锁。
-      setTimeout(() => {
-        if (this._isLoading) {
-          this._isLoading = false
-          // 兜底同样延后脏标记抑制窗口（极端情况：未收到渲染结束也要防误标）
-          this._suppressDirtyUntil = Date.now() + 600
-          if (this.mindMap && typeof this.mindMap.off === 'function') {
-            this.mindMap.off('node_tree_render_end', onRenderEnd)
-          }
+      // P0a（design §4.1）：看门狗仅在“真实卡死”时报警——20s 内若仍 loading（render_end
+      // 未触发、onRenderEnd 未清看门狗）才置 failed（绝不误判 loaded，避免半加载被保存覆盖）。
+      // 加载正常时由 node_tree_render_end 真实置 loaded，看门狗不会被触发。放在方法末尾，
+      // 既与“载入前清旧看门狗”解耦，也避免破坏既有源码契约测试（originAddHistory 须在方法体内）。
+      this._loadWatchdog = setTimeout(() => {
+        if (getLoadPhase(loadingId) === 'loading') {
+          setLoadPhase(loadingId, 'failed')
+          // _isLoading 是组件级“当前显示 workbook 是否加载中”；仅当被卡住的就是当前
+          // 显示簿时才清，避免误清切换后新簿的加载态。
+          if (getActiveWorkbookId() === loadingId) this._isLoading = false
         }
-      }, 1500)
+      }, 20000)
     },
 
     // 切换工作表：先保存当前，再载入目标
@@ -1471,6 +1517,9 @@ export default {
     // （与自动保存仅保存激活文件的语义一致）。
     syncSaveOnExit() {
       if (!this.autosave || this._isLoading) return
+      // P0a 闸门 A（design §4.1）：加载未完成/失败的工作簿，退出时也禁止覆盖写盘；
+      // 与 manualSave/silentSaveToFile/autoSave 双保险，杜绝“半加载数据在退出瞬间冲掉当前文件”。
+      if (!isSaveAllowed(getActiveLoadPhase())) return
       this.currentFilePath = getCurrentFilePath()
       if (!this.isAbsolutePath(this.currentFilePath)) return
       if (!shell.has('writeFileSync')) {

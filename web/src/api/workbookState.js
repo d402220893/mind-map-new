@@ -73,6 +73,16 @@ function normalize(w) {
   // 【详设 §5.2/D6】Tab 只存 kind（'mindmap' | 'markdown'），内容一律不在本模块
   w.kind = w.kind === 'markdown' ? 'markdown' : 'mindmap'
   if (typeof w.lastAutosavedAt !== 'number') w.lastAutosavedAt = 0
+  // P0a（design/覆盖文件防护方案_v5 §4.1）：加载态。取值域 idle/loading/loaded/failed。
+  // 默认 'loaded' 最安全——未知态的 workbook 应可被保存，而非被闸门永久拦死。
+  if (!w.loadPhase || !['idle', 'loading', 'loaded', 'failed'].includes(w.loadPhase)) {
+    w.loadPhase = 'loaded'
+  }
+  // P0a §5.2 种子基准字段：打开/载入成功后记录，供 gate B（异常体积/零节点）与
+  // dirty 判定使用。本次仅落库，不强制行为（强制在 P2）。
+  if (typeof w.lastGoodSize !== 'number') w.lastGoodSize = null
+  if (typeof w.lastSavedHash !== 'string') w.lastSavedHash = null
+  if (typeof w.lastNodeCount !== 'number') w.lastNodeCount = 0
   if (!w.sheetState || !Array.isArray(w.sheetState.sheets)) {
     w.sheetState = createDefaultSheetState(w.name)
   }
@@ -208,6 +218,10 @@ export function addWorkbook({
     sheetState: initialSheetState || createDefaultSheetState('Sheet1'),
     dirty: false
   })
+  // P0a（design §4.1）：打开已有文件（有绝对路径）→ loading，等待真实渲染结束
+  // （node_tree_render_end + 根非空）才置 loaded；新建空白簿（无路径）→ 直接 loaded
+  // （可信空态，不参与异步加载，避免“根未渲染导致永远到不了 loaded”）。
+  newWb.loadPhase = isAbsolutePath(newWb.filePath) ? 'loading' : 'loaded'
   s.workbooks.push(newWb)
   s.activeId = newWb.id
   persist()
@@ -326,6 +340,45 @@ export function applySaveAs(newPath) {
   wb.name = name || wb.name
   persist()
   return wb.name
+}
+
+// ===== P0a：加载态（loadPhase）与种子基准 =====
+// 取值域：'idle' | 'loading' | 'loaded' | 'failed'
+// 约定：仅 'loaded' 才允许把内存数据覆盖写盘（闸门 A，见 web/src/utils/saveGuard.js）。
+export function setLoadPhase(id, phase) {
+  const s = loadState()
+  const w = s.workbooks.find(x => x.id === id)
+  if (w && ['idle', 'loading', 'loaded', 'failed'].includes(phase)) {
+    w.loadPhase = phase
+    persist()
+  }
+}
+
+export function getLoadPhase(id) {
+  const s = loadState()
+  const w = s.workbooks.find(x => x.id === id)
+  return w ? w.loadPhase : 'loaded'
+}
+
+export function getActiveLoadPhase() {
+  return getLoadPhase(getActiveWorkbookId())
+}
+
+export function setActiveLoadPhase(phase) {
+  setLoadPhase(getActiveWorkbookId(), phase)
+}
+
+// 种子基准（design §5.2）：打开/载入成功后记录文件字节数、内容哈希、节点数，
+// 供后续 gate B（异常体积/零节点）/ dirty 判定使用。本次仅落库，不强制行为。
+// 调用方须保证在“置 loaded 之前、同一同步块内”完成，关闭 autoSave 抢跑窗口。
+export function seedBaseline(id, { size, hash, nodeCount } = {}) {
+  const s = loadState()
+  const w = s.workbooks.find(x => x.id === id)
+  if (!w) return
+  if (typeof size === 'number') w.lastGoodSize = size
+  if (typeof hash === 'string') w.lastSavedHash = hash
+  if (typeof nodeCount === 'number') w.lastNodeCount = nodeCount
+  persist()
 }
 
 // 清空全部状态（测试用）
