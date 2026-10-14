@@ -6,7 +6,7 @@ import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
 
-const sw = await import('../safeWriteFile.js')
+const sw = await import('../../../electron-app/safeWriteFile.js')
 const { safeWriteFile, safeWriteFileSync, countNodes, tsLabel, _writeCore } = sw
 
 function tmpDir() {

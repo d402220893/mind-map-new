@@ -1,5 +1,5 @@
 // 原子写 + 覆盖前备份 + 轻量回读校验 + 失败回滚（design §6.1，P0b）。
-// 纯模块：依赖可注入（fs/path/now），Node 单测友好（electron-app/tests/safeWriteFile.test.mjs）。
+// 纯模块：依赖可注入（fs/path/now），Node 单测友好（web/tests/pure/safeWriteFile.test.mjs）。
 //
 // 渲染进程的同步/异步覆盖写盘（smm:write-file / smm:write-file-sync）统一收敛到本模块，
 // 确保「覆盖前先备份、tmp+rename 原子替换、写后解析回读、失败回滚」四者齐备——
