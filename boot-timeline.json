@@ -1,0 +1,275 @@
+{
+ "generatedAt": "2026-10-15T07:45:31.379Z",
+ "exe": "D:/Program Files (x86)/思绪思维导图/mind-map/思绪思维导图.exe",
+ "roundsRequested": 20,
+ "roundsParsed": 20,
+ "failedRounds": [],
+ "hot": {
+  "editReadyLoaded": {
+   "n": 19,
+   "p50": 7917,
+   "p90": 8245,
+   "min": 7712,
+   "max": 25245
+  },
+  "editReadyOld": {
+   "n": 19,
+   "p50": 7946,
+   "p90": 8745,
+   "min": 7662,
+   "max": 25222
+  },
+  "t_jsload": {
+   "n": 19,
+   "p50": 7707,
+   "p90": 8011,
+   "min": 7440,
+   "max": 8022
+  }
+ },
+ "cold": {
+  "editReadyLoaded": null,
+  "editReadyOld": null
+ },
+ "perRound": [
+  {
+   "round": 1,
+   "wallMs": 40065,
+   "appReady": 194,
+   "loadurl": 266,
+   "dfl": 7919,
+   "firstRenderDone": null,
+   "editReadyLoaded": null,
+   "loadPhase": "",
+   "t_jsload": 7725
+  },
+  {
+   "round": 2,
+   "wallMs": 40125,
+   "appReady": 149,
+   "loadurl": 206,
+   "dfl": 7733,
+   "editReadyOld": 25222,
+   "firstRenderDone": 25245,
+   "editReadyLoaded": 25245,
+   "loadPhase": "loaded",
+   "t_jsload": 7584
+  },
+  {
+   "round": 3,
+   "wallMs": 40233,
+   "appReady": 146,
+   "loadurl": 202,
+   "dfl": 8131,
+   "editReadyOld": 8745,
+   "firstRenderDone": 8165,
+   "editReadyLoaded": 8165,
+   "loadPhase": "loaded",
+   "t_jsload": 7985
+  },
+  {
+   "round": 4,
+   "wallMs": 40135,
+   "appReady": 233,
+   "loadurl": 312,
+   "dfl": 8015,
+   "editReadyOld": 7994,
+   "firstRenderDone": 8038,
+   "editReadyLoaded": 8038,
+   "loadPhase": "loaded",
+   "t_jsload": 7782
+  },
+  {
+   "round": 5,
+   "wallMs": 39817,
+   "appReady": 178,
+   "loadurl": 247,
+   "dfl": 7895,
+   "editReadyOld": 8422,
+   "firstRenderDone": 7911,
+   "editReadyLoaded": 7910,
+   "loadPhase": "loaded",
+   "t_jsload": 7717
+  },
+  {
+   "round": 6,
+   "wallMs": 39858,
+   "appReady": 181,
+   "loadurl": 237,
+   "dfl": 8192,
+   "editReadyOld": 8172,
+   "firstRenderDone": 8212,
+   "editReadyLoaded": 8212,
+   "loadPhase": "loaded",
+   "t_jsload": 8011
+  },
+  {
+   "round": 7,
+   "wallMs": 39944,
+   "appReady": 189,
+   "loadurl": 255,
+   "dfl": 8020,
+   "editReadyOld": 8697,
+   "firstRenderDone": 8037,
+   "editReadyLoaded": 8037,
+   "loadPhase": "loaded",
+   "t_jsload": 7831
+  },
+  {
+   "round": 8,
+   "wallMs": 40001,
+   "appReady": 157,
+   "loadurl": 209,
+   "dfl": 7892,
+   "editReadyOld": 7873,
+   "firstRenderDone": 7913,
+   "editReadyLoaded": 7913,
+   "loadPhase": "loaded",
+   "t_jsload": 7735
+  },
+  {
+   "round": 9,
+   "wallMs": 39865,
+   "appReady": 189,
+   "loadurl": 253,
+   "dfl": 7865,
+   "editReadyOld": 7850,
+   "firstRenderDone": 7889,
+   "editReadyLoaded": 7889,
+   "loadPhase": "loaded",
+   "t_jsload": 7676
+  },
+  {
+   "round": 10,
+   "wallMs": 39923,
+   "appReady": 197,
+   "loadurl": 253,
+   "dfl": 7863,
+   "editReadyOld": 7847,
+   "firstRenderDone": 7882,
+   "editReadyLoaded": 7882,
+   "loadPhase": "loaded",
+   "t_jsload": 7666
+  },
+  {
+   "round": 11,
+   "wallMs": 40085,
+   "appReady": 177,
+   "loadurl": 236,
+   "dfl": 7863,
+   "editReadyOld": 7841,
+   "firstRenderDone": 7886,
+   "editReadyLoaded": 7886,
+   "loadPhase": "loaded",
+   "t_jsload": 7686
+  },
+  {
+   "round": 12,
+   "wallMs": 39944,
+   "appReady": 203,
+   "loadurl": 289,
+   "dfl": 7893,
+   "editReadyOld": 7872,
+   "firstRenderDone": 7917,
+   "editReadyLoaded": 7917,
+   "loadPhase": "loaded",
+   "t_jsload": 7690
+  },
+  {
+   "round": 13,
+   "wallMs": 39928,
+   "appReady": 193,
+   "loadurl": 257,
+   "dfl": 7778,
+   "editReadyOld": 7755,
+   "firstRenderDone": 7800,
+   "editReadyLoaded": 7800,
+   "loadPhase": "loaded",
+   "t_jsload": 7585
+  },
+  {
+   "round": 14,
+   "wallMs": 39920,
+   "appReady": 190,
+   "loadurl": 261,
+   "dfl": 7687,
+   "editReadyOld": 7662,
+   "firstRenderDone": 7712,
+   "editReadyLoaded": 7712,
+   "loadPhase": "loaded",
+   "t_jsload": 7497
+  },
+  {
+   "round": 15,
+   "wallMs": 40085,
+   "appReady": 276,
+   "loadurl": 346,
+   "dfl": 7716,
+   "editReadyOld": 7696,
+   "firstRenderDone": 7739,
+   "editReadyLoaded": 7739,
+   "loadPhase": "loaded",
+   "t_jsload": 7440
+  },
+  {
+   "round": 16,
+   "wallMs": 40288,
+   "appReady": 188,
+   "loadurl": 273,
+   "dfl": 7859,
+   "editReadyOld": 7834,
+   "firstRenderDone": 7878,
+   "editReadyLoaded": 7878,
+   "loadPhase": "loaded",
+   "t_jsload": 7671
+  },
+  {
+   "round": 17,
+   "wallMs": 40059,
+   "appReady": 260,
+   "loadurl": 334,
+   "dfl": 7967,
+   "editReadyOld": 7946,
+   "firstRenderDone": 7995,
+   "editReadyLoaded": 7995,
+   "loadPhase": "loaded",
+   "t_jsload": 7707
+  },
+  {
+   "round": 18,
+   "wallMs": 40290,
+   "appReady": 193,
+   "loadurl": 257,
+   "dfl": 8215,
+   "editReadyOld": 8194,
+   "firstRenderDone": 8245,
+   "editReadyLoaded": 8245,
+   "loadPhase": "loaded",
+   "t_jsload": 8022
+  },
+  {
+   "round": 19,
+   "wallMs": 40282,
+   "appReady": 191,
+   "loadurl": 245,
+   "dfl": 8070,
+   "editReadyOld": 8050,
+   "firstRenderDone": 8091,
+   "editReadyLoaded": 8091,
+   "loadPhase": "loaded",
+   "t_jsload": 7879
+  },
+  {
+   "round": 20,
+   "wallMs": 40221,
+   "appReady": 188,
+   "loadurl": 252,
+   "dfl": 8149,
+   "editReadyOld": 8121,
+   "firstRenderDone": 8170,
+   "editReadyLoaded": 8170,
+   "loadPhase": "loaded",
+   "t_jsload": 7961
+  }
+ ]
+}
