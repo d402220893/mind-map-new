@@ -14,6 +14,16 @@ export function isSaveAllowed(loadPhase) {
   return loadPhase === 'loaded'
 }
 
+// 退出前写盘闸门（闸门 A 衍生）：仅当“已加载完成”且“用户确实改过（dirty）”才允许写回磁盘。
+// 双条件缺一不可：
+// - loadPhase !== 'loaded'（加载中/失败/空闲）→ 禁止，杜绝半加载数据在退出瞬间冲掉当前文件；
+// - dirty !== true → 禁止，避免干净退出把“重灌草稿（可能空/陈旧/与磁盘不一致）”推上磁盘，
+//   这正是“反复打开软件导致文件丢失”的根因（启动首载走的是绕过 loadSheetData 的路径，
+//   loadPhase 默认 loaded，若无条件写回会把落后磁盘的草稿冲掉真实文件）。
+export function canExitSave(loadPhase, dirty) {
+  return loadPhase === 'loaded' && dirty === true
+}
+
 // 统计容器总节点数（跨所有 sheet 求和）。
 // 空/非法容器返回 0（gate B 判定“总节点数 === 0”时使用）。
 export function countNodes(container) {

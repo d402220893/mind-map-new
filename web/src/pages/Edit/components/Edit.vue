@@ -142,7 +142,8 @@ import {
   getLoadPhase,
   setLoadPhase
 } from '@/api'
-import { isSaveAllowed, countNodes, contentHash } from '@/utils/saveGuard'
+import { isSaveAllowed, canExitSave, countNodes, contentHash } from '@/utils/saveGuard'
+import { perfMark } from '@/utils/perfMark'
 import Navigator from './Navigator.vue'
 import NodeImgPreview from './NodeImgPreview.vue'
 import SidebarTrigger from './SidebarTrigger.vue'
@@ -323,6 +324,7 @@ export default {
     }
   },
   mounted() {
+    perfMark('edit_mounted')
     showLoading()
     this.getData()
     this.initWhenReady()
@@ -423,6 +425,11 @@ export default {
     if (this.autosaveScheduler) {
       this.autosaveScheduler.cancel()
       this.autosaveScheduler = null
+    }
+    // 清理首载看门狗，避免组件卸载后定时器仍改写 workbookState
+    if (this._initLoadWatchdog) {
+      clearTimeout(this._initLoadWatchdog)
+      this._initLoadWatchdog = null
     }
     // 容器一直不可见时 mindMap 从未创建（见 initWhenReady）→ destroy 必须判空
     if (this._mmReadyRO) {
@@ -904,6 +911,72 @@ export default {
           // _isLoading 是组件级“当前显示 workbook 是否加载中”；仅当被卡住的就是当前
           // 显示簿时才清，避免误清切换后新簿的加载态。
           if (getActiveWorkbookId() === loadingId) this._isLoading = false
+        }
+      }, 20000)
+    },
+
+    // 启动首次加载的受保护态（P0a 闸门 A 的“最后一块拼图”）。
+    // 背景：mounted→getData→initWhenReady 把 loadState() 重灌的 workbook 直接
+    // setFullData 进画布，走的是“初始载入不走 loadSheetData”这条路径（见 mounted 注释），
+    // 因此既不置 _isLoading、也不把 loadPhase 置 loading —— 保存闸门在启动恢复窗口
+    // 全程敞开。恢复期间触发的 data_change / 30s 自动保存 / 退出前写盘，会把“重灌草稿”
+    // （可能为空、陈旧、或因 localStorage 配额失败而落后于磁盘）半加载即冲写到磁盘，
+    // 正是“反复打开软件导致文件丢失”的真因（闸门 A 本应覆盖所有加载，唯独漏了首载）。
+    // 此处让首载与 loadSheetData 同语义：先 loading 关闸，首帧渲染结束再 loaded 开闸。
+    initLoadGuard() {
+      const initId = getActiveWorkbookId()
+      if (!initId) return
+      // 进入受保护 loading 态：闸门 A 立即关闭，恢复期间的任何写盘调用都被 isSaveAllowed 拦下。
+      setLoadPhase(initId, 'loading')
+      this._isLoading = true
+      const onInitRenderEnd = () => {
+        try {
+          if (this.mindMap && typeof this.mindMap.off === 'function') {
+            this.mindMap.off('node_tree_render_end', onInitRenderEnd)
+          }
+        } catch (e) {}
+        // 与 loadSheetData.onRenderEnd 同语义：根非空才 loaded（重灌草稿应始终有根，
+        // normalize 已保证 sheetState 合法；若极端损坏导致根为空则进 failed 禁止写盘）。
+        const container = getSheetsContainer()
+        const rootOk = !!(
+          container &&
+          Array.isArray(container.sheets) &&
+          container.sheets[0] &&
+          container.sheets[0].data &&
+          container.sheets[0].data.root
+        )
+        if (rootOk) {
+          // 先 seed（同同步块内、置 loaded 之前完成，关闭“loaded 已置、hash 未 seed、
+          // autoSave 抢跑”窗口），再开闸。
+          seedBaseline(initId, {
+            size: JSON.stringify(container).length,
+            hash: contentHash(container),
+            nodeCount: countNodes(container)
+          })
+          setLoadPhase(initId, 'loaded')
+        } else {
+          setLoadPhase(initId, 'failed')
+        }
+        // P0 度量基建：新口径 edit_ready_loaded = loaded 终态时刻（方案 §6.1），
+        // 旧 edit_ready（首帧近似，:1865）保留并行，聚合脚本以本标记为主指标。
+        perfMark('edit_ready_loaded', getLoadPhase(initId))
+        // 仅当完成的就是当前显示簿才清组件级加载态。
+        perfMark('first_render_done')
+        if (getActiveWorkbookId() === initId) this._isLoading = false
+        // 吸收节流晚到的 data_change（addHistory 节流 ~100ms），避免“恢复即误标未保存”。
+        this._suppressDirtyUntil = Date.now() + 600
+      }
+      if (this.mindMap && typeof this.mindMap.on === 'function') {
+        this.mindMap.on('node_tree_render_end', onInitRenderEnd)
+      }
+      // 兜底看门狗：初始数据已在 MindMap 构造期灌入画布，若渲染结束事件因故未触发，
+      // 20s 后强制置 loaded（非 failed）——重灌内容已显示，不应因事件丢失而永久关闭闸门。
+      this._initLoadWatchdog = setTimeout(() => {
+        if (getLoadPhase(initId) === 'loading') {
+          setLoadPhase(initId, 'loaded')
+          if (getActiveWorkbookId() === initId) this._isLoading = false
+          // 看门狗强制终态同样算新口径 edit_ready（终态=状态达成，不区分路径）
+          perfMark('edit_ready_loaded', 'loaded_watchdog')
         }
       }, 20000)
     },
@@ -1540,9 +1613,13 @@ export default {
     // （与自动保存仅保存激活文件的语义一致）。
     syncSaveOnExit() {
       if (!this.autosave || this._isLoading) return
-      // P0a 闸门 A（design §4.1）：加载未完成/失败的工作簿，退出时也禁止覆盖写盘；
-      // 与 manualSave/silentSaveToFile/autoSave 双保险，杜绝“半加载数据在退出瞬间冲掉当前文件”。
-      if (!isSaveAllowed(getActiveLoadPhase())) return
+      // P0a 闸门（design §4.1 衍生）：仅当“已加载完成”且“用户确实改过”才写回磁盘。
+      // ① loadPhase!=='loaded'（加载中/失败/空闲）→ 半加载数据禁止冲掉当前文件；
+      // ② dirty!==true → 干净退出不把重灌草稿（可能空/陈旧/与磁盘不一致）推上磁盘，
+      //    这是“反复打开软件导致文件丢失”的根因（首载重灌走绕过 loadSheetData 的路径，
+      //    loadPhase 默认 loaded，若无 dirty 闸门会无条件写回落后磁盘的草稿）。
+      const exitId = getActiveWorkbookId()
+      if (!canExitSave(getActiveLoadPhase(), exitId ? isDirty(exitId) : false)) return
       this.currentFilePath = getCurrentFilePath()
       if (!this.isAbsolutePath(this.currentFilePath)) return
       if (!shell.has('writeFileSync')) {
@@ -1630,6 +1707,7 @@ export default {
 
     // 初始化
     init() {
+      perfMark('init_start')
       if (this.mindMap) return
       let hasFileURL = this.hasFileURL()
       let { root, layout, theme, view } = this.mindMapData
@@ -1771,6 +1849,7 @@ export default {
           })
         }
       })
+      perfMark('mindmap_created')
       // 画布背景：源头阻断库 initTheme 对容器的背景写入（交由本项目独占绘制，避免被主题覆盖/泄漏 .smm）
       patchCanvasBackgroundDecouple(this.mindMap, () => this.$store.state.localConfig)
       // 导出对齐：导出前临时把全局背景同步进 themeConfig，使导出与屏幕一致
@@ -1828,6 +1907,10 @@ export default {
         })
       })
       this.bindSaveEvent()
+      // 启动首载进入受保护 loading 态：关闭保存闸门，杜绝恢复期间把重灌草稿冲写到磁盘
+      // （“反复打开软件导致文件丢失”的根因）。须在 bindSaveEvent 之后、首帧渲染之前注册，
+      // 以捕获初始 setFullData 引发的渲染结束事件。
+      this.initLoadGuard()
       // 如果应用被接管，那么抛出事件传递思维导图实例
       if (window.takeOverApp) {
         this.$bus.$emit('app_inited', this.mindMap)
@@ -1847,6 +1930,7 @@ export default {
       // 应用已保存的画布背景：背景已回归 simple-mind-map 主题（库原生渲染到容器），
       // 之后每次渲染结束由 node_tree_render_end → onBgRenderEnd 兜底重应用，确保不丢、UI 跟随。
       this.applyThemeBackground()
+      perfMark('init_done')
     },
 
     // 加载相关插件

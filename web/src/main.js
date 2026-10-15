@@ -15,6 +15,7 @@ import VueViewer from 'v-viewer'
 import i18n from './i18n'
 import { getLang } from '@/api'
 import bus from '@/utils/eventBus'
+import { perfMark } from '@/utils/perfMark'
 // 服务层（L0–L4 + 组合根）与视图之间的门面：内部持有服务单例，并把
 // tabs / confirm / importer 三个运行时钩子补挂进去（组合根创建时 UI 尚未挂载）。
 import {
@@ -183,10 +184,12 @@ function removeBootLoading() {
 }
 
 const initApp = () => {
+  perfMark('app_init_start')
   i18n.global.locale = getLang()
 
   // 服务层装配：任何一步失败都不得阻断挂载（否则整页白屏，且用户看不到任何可用功能）
   wireServices()
+  perfMark('wire_services_done')
 
   const app = createApp(App)
 
@@ -214,6 +217,7 @@ const initApp = () => {
 
   try {
     app.mount('#app')
+    perfMark('app_mount_done')
   } catch (e) {
     recordError('app.mount', e, true)
   }
@@ -250,12 +254,14 @@ const initApp = () => {
   // 解析/首屏渲染期间同步触发文件扫描 + 建索引（I/O 密集），拖慢启动。现延后到
   // 首屏路由就绪 + 浏览器空闲，工作区面板稍后填充，不影响首屏显示 Edit 内容。
   router.isReady().then(() => {
+    perfMark('router_ready')
     const runRestore = () => {
       try {
         const lastRoot = localStorage.getItem('wsLastRoot')
         const svc = getServices()
         if (lastRoot && svc && svc.workspaceService) {
           openWorkspace(lastRoot).then(r => {
+            perfMark('workspace_restored')
             if (!r || !r.ok) localStorage.removeItem('wsLastRoot')
           }).catch(() => {})
         }

@@ -112,6 +112,8 @@ export function loadState() {
       if (p && Array.isArray(p.workbooks) && p.workbooks.length) {
         p.workbooks.forEach(normalize)
         state = p
+        // 启动性能埋点：loadState 重灌完成（含 workbook 数量），纯 instrumentation
+        try { console.log('[PERF]', 'loadstate_done', Date.now(), p.workbooks.length) } catch (e) {}
         return state
       }
     } catch (e) {

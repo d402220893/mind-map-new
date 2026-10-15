@@ -14,6 +14,7 @@ import singleton from '@/services'
 import { EVT } from '@/services/events.js'
 import { decodeSmm, encode } from '@/services/smmCodec.js'
 import bus from '@/utils/eventBus'
+import { setPerfSink } from '@/utils/perfMark'
 import {
   findByPath,
   addWorkbook,
@@ -460,5 +461,9 @@ export function perf(data) {
     try { api.perf(data) } catch (e) {}
   }
 }
+
+// P0 度量基建：把网关注册为 perfMark 的落盘 sink（契约⑥——埋点工具不得直调 smmApi，
+// 统一经本网关转发 smm:startup-perf）。注册动作幂等，重复导入仅覆盖同一转发。
+setPerfSink(data => perf(data))
 
 export { encode, decodeSmm }

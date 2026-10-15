@@ -266,11 +266,20 @@ ipcMain.on('smm:renderer-ready', () => {
   flushStartupFile()
 })
 
-// 启动性能埋点：渲染进程（Edit.vue 画布构造+插件注册完成后）把时间戳发来，
-// 主进程换算成相对 _bootT0 的差值写入 STARTUP_LOG，用于定位启动瓶颈（JS 解析 vs 画布渲染）。
+// 启动性能埋点：渲染进程把关键阶段时间戳发来，主进程换算成相对 _bootT0 的差值写入 STARTUP_LOG。
+// 协议（P0 度量基建，2026-10-15）：
+//   { ts }                       → 旧行为：写 "edit_ready <delta>"（首帧近似口径，保留兼容）
+//   { name, ts, extra? }         → 写 "perf <name> <delta> [extra]"（如 edit_ready_loaded = loaded 终态口径）
 ipcMain.on('smm:startup-perf', (e, d) => {
   if (!STARTUP_LOG || !d || typeof d.ts !== 'number') return
-  try { fs.appendFileSync(STARTUP_LOG, 'edit_ready ' + (d.ts - _bootT0) + '\n') } catch (_) {}
+  try {
+    if (d.name && typeof d.name === 'string') {
+      const extra = d.extra != null && d.extra !== '' ? ' ' + d.extra : ''
+      fs.appendFileSync(STARTUP_LOG, 'perf ' + d.name + ' ' + (d.ts - _bootT0) + extra + '\n')
+    } else {
+      fs.appendFileSync(STARTUP_LOG, 'edit_ready ' + (d.ts - _bootT0) + '\n')
+    }
+  } catch (_) {}
 })
 
 // 重命名本地文件（标签双击重命名用）：oldPath -> newPath

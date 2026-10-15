@@ -31,6 +31,12 @@ ROOT=/e/03_学习文件/mind-map-main
 WEB="$ROOT/web"
 APP="$ROOT/electron-app"
 LOG=/e/03_学习文件/mind-map-main/build_now.log
+# EDR 兼容：把 TEMP/TMP 重定向到项目本地目录，避免 AppData\Local\Temp 在并发测试/构建下被
+# 实时扫描拦截导致 copyFileSync 等偶发失败（safeWriteFile 真实 fs 单测在并行负载下偶发 E_BACKUP，
+# 隔离跑/全量重跑均绿，属 EDR 对 Temp 的并发拦截，非代码缺陷）。项目本地目录 EDR 扫描压力更小。
+export TEMP="E:/03_学习文件/mind-map-main/_testtmp"
+export TMP="$TEMP"
+mkdir -p "$TEMP" 2>/dev/null || true
 : > "$LOG"
 echo "START $(date +%T)" | tee -a "$LOG"
 pkill -9 -f vue-cli-service.js 2>/dev/null || true
