@@ -4,9 +4,9 @@
     <div
       class="mdSidebarTrigger"
       @click.stop
-      :class="{ show: show, hasActive: show && active, isDark: isDark }"
+      :class="{ show: state !== 'hidden', hasActive: ['outline', 'search'].includes(state), isDark: isDark }"
     >
-      <div class="toggleShowBtn" :class="{ hide: !show }" @click="show = !show">
+      <div class="toggleShowBtn" :class="{ hide: state === 'hidden' }" @click="toggleShow">
         <span class="iconfont iconjiantouyou"></span>
       </div>
       <div class="trigger customScrollbar">
@@ -14,7 +14,7 @@
           class="triggerItem"
           v-for="item in items"
           :key="item.value"
-          :class="{ active: active === item.value }"
+          :class="{ active: state === item.value }"
           :title="item.name"
           @click="trigger(item)"
         >
@@ -28,13 +28,13 @@
     <div
       class="mdSidePanel"
       @click.stop
-      :class="{ show: show && !!active, isDark: isDark }"
+      :class="{ show: ['outline', 'search'].includes(state), isDark: isDark }"
     >
       <span class="closeBtn el-icon-close" @click="close"></span>
       <div class="panelHeader" v-if="activeTitle">{{ activeTitle }}</div>
       <div class="panelContent customScrollbar">
         <!-- 大纲 -->
-        <template v-if="active === 'outline'">
+        <template v-if="state === 'outline'">
           <div v-if="!sections.length" class="panelEmpty">尚无标题</div>
           <div
             v-for="(s, i) in sections"
@@ -50,7 +50,7 @@
         </template>
 
         <!-- 查找 -->
-        <template v-else-if="active === 'search'">
+        <template v-else-if="state === 'search'">
           <div class="searchBox">
             <span class="searchIcon iconfont iconsousuo"></span>
             <input
@@ -82,16 +82,20 @@
 <script>
 import { getActiveWorkbookId } from '@/api'
 import { mdDoc } from '@/utils/workspaceBridge'
+import { reduceSidebarState } from '@/utils/mdSidebarState'
 
 // md 编辑器右侧菜单栏：与思维导图右侧 SidebarTrigger+Sidebar 同款视觉。
-// 自包含（show/active 用本地 data，不写 vuex activeSidebar），
-// 避免与导图全局侧栏状态串（Edit.vue 以 v-show 常驻，导图栏会误读 md 的 active）。
+// 自包含（用本地 state 三态机，不写 vuex activeSidebar），避免与导图全局侧栏状态串。
+//
+// 三态机：'hidden' | 'icons' | 'outline' | 'search'
+// - hidden：图标栏整体隐藏（right:-60px），trigger 按钮不可达，因此不会从 hidden 直接进面板。
+// - icons ：只显示图标栏。
+// - outline / search：图标栏 + 对应面板展开。
 export default {
   name: 'MdSidebar',
   data() {
     return {
-      show: true, // 图标栏默认可见（与导图一致）
-      active: null, // 当前打开的面板：'outline' | 'search' | null
+      state: 'icons', // 默认图标栏可见、面板关闭
       sections: [],
       activeIndex: -1,
       query: '',
@@ -109,30 +113,43 @@ export default {
       ]
     },
     activeTitle() {
-      const it = this.items.find(x => x.value === this.active)
-      return it ? it.name : ''
+      if (this.state === 'outline') return '大纲'
+      if (this.state === 'search') return '查找'
+      return ''
     }
   },
   created() {
     this.$bus.$on('md-outline-changed', this.onOutline)
     // 工具栏"目录"按钮（MdToolbar）发出的开关：打开大纲面板
     this.$bus.$on('toggle-md-outline', this.openOutline)
+    // 点击编辑器区域（focusin）自动收起面板（回到 icons，不隐藏图标栏）
+    this.$bus.$on('md:sidebar-close-panel', this.close)
   },
   beforeUnmount() {
     this.$bus.$off('md-outline-changed', this.onOutline)
     this.$bus.$off('toggle-md-outline', this.openOutline)
+    this.$bus.$off('md:sidebar-close-panel', this.close)
   },
   methods: {
+    dispatch(action) {
+      this.state = reduceSidebarState(this.state, action)
+    },
+    toggleShow() {
+      this.dispatch({ type: 'toggleShow' })
+    },
     trigger(item) {
-      // 再次点击当前项 = 收起
-      this.active = this.active === item.value ? null : item.value
-      if (this.active === 'search') this.runSearch()
+      // hidden 状态下图标栏不可见、trigger 不可达，reducer 无需特判。
+      // 再次点击当前项 = 收起（回到 icons）；否则打开该面板。
+      this.dispatch({ type: 'trigger', item: item.value })
+      // dispatch 为同步赋值，此处 this.state 已是新值
+      if (this.state === 'search') this.runSearch()
     },
     openOutline() {
-      this.active = 'outline'
+      this.dispatch({ type: 'openOutline' })
     },
     close() {
-      this.active = null
+      // 仅收起面板（回到 icons），不隐藏图标栏，避免打断用户操作
+      this.dispatch({ type: 'close' })
     },
 
     // ── 大纲 ──
@@ -198,13 +215,14 @@ export default {
 
   &.isDark {
     .trigger {
-      background-color: #262a2e;
+      // 跟随画布背景派生实色（原硬编码 #262a2e 不随主题变）
+      background-color: var(--macos-bg);
 
       .triggerItem {
-        color: hsla(0, 0%, 100%, 0.6);
+        color: var(--macos-text-2);
 
         &:hover {
-          background-color: hsla(0, 0%, 100%, 0.05);
+          background-color: var(--macos-hover);
         }
       }
     }
@@ -257,8 +275,9 @@ export default {
   .trigger {
     position: relative;
     width: 60px;
-    border-color: #eee;
-    background-color: #fff;
+    border-color: var(--macos-border);
+    // 实色背景（用户要求不透明），跟随主题
+    background-color: var(--macos-bg);
     box-shadow: 0 2px 16px 0 rgba(0, 0, 0, 0.06);
     border-radius: 6px;
     max-height: calc(100vh - 190px);
@@ -272,12 +291,12 @@ export default {
       justify-content: center;
       align-items: center;
       cursor: pointer;
-      color: #464646;
+      color: var(--macos-text);
       user-select: none;
       white-space: nowrap;
 
       &:hover {
-        background-color: #ededed;
+        background-color: var(--macos-hover);
       }
 
       &.active {
@@ -304,9 +323,8 @@ export default {
   top: 110px;
   bottom: 0;
   width: 320px;
-  background-color: var(--macos-bg-glass-strong);
-  backdrop-filter: var(--macos-blur-strong);
-  -webkit-backdrop-filter: var(--macos-blur-strong);
+  // 实色背景（用户要求不透明），跟随主题；移除毛玻璃 backdrop-filter
+  background-color: var(--macos-bg);
   border-left: 1px solid var(--macos-border);
   border-top-left-radius: var(--macos-radius-xl);
   border-bottom-left-radius: var(--macos-radius-xl);
@@ -317,7 +335,7 @@ export default {
   z-index: 2;
 
   &.isDark {
-    background-color: var(--macos-bg-glass-strong);
+    background-color: var(--macos-bg);
     border-left-color: var(--macos-border);
 
     .panelHeader {
@@ -436,7 +454,7 @@ export default {
       padding: 0 10px 0 30px;
       border: 1px solid var(--macos-border);
       border-radius: 6px;
-      background-color: var(--macos-bg-glass);
+      background-color: var(--macos-bg);
       color: var(--macos-text);
       font-size: 13px;
       outline: none;

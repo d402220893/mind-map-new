@@ -12,9 +12,9 @@
         <span class="tbBtn" title="行内代码" @click="exec('code')">`</span>
       </div>
       <div class="tbGroup">
-        <span class="tbBtn" @click="exec('heading', { level: 1 })">H1</span>
-        <span class="tbBtn" @click="exec('heading', { level: 2 })">H2</span>
-        <span class="tbBtn" @click="exec('heading', { level: 3 })">H3</span>
+        <span class="tbBtn" @click="exec('heading1')">H1</span>
+        <span class="tbBtn" @click="exec('heading2')">H2</span>
+        <span class="tbBtn" @click="exec('heading3')">H3</span>
       </div>
       <div class="tbGroup">
         <span class="tbBtn" title="引用" @click="exec('blockQuote')">引用</span>
@@ -67,8 +67,10 @@ export default {
     toggle() {
       this.collapsed = !this.collapsed
     },
-    exec(cmd, payload) {
-      this.$bus.$emit('md:exec', payload ? { cmd, payload } : cmd)
+    exec(cmd) {
+      // 只传字符串命令名；带参数的命令（标题层级）已在 MdEditor 的命令映射层分派，
+      // 禁止再传对象，否则 Toast UI 会把对象当命令名索引而报 wwCommands[object Object]。
+      this.$bus.$emit('md:exec', cmd)
     },
     save() {
       this.$bus.$emit('md:save')

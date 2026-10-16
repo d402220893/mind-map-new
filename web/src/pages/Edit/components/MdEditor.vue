@@ -32,6 +32,9 @@ import { renameWorkbook, setCurrentFilePath, markDirty } from '@/api'
 import { clearHistoryBaseline } from '@/utils/mdHistory'
 import MindMapPreview from './MindMapPreview.vue'
 import { findBlockIndex, getTopLevelBlocks } from '@/utils/mdScroll'
+import { resolveMdCommand } from '@/utils/mdCommands'
+import { readClipboardImage, mimeToExt, randomHex } from '@/utils/clipboardImage'
+import { htmlTableToMd } from '@/utils/htmlTableToMd'
 
 const BIG_FILE = 1024 * 1024
 
@@ -309,12 +312,20 @@ export default {
     onExec(cmd) {
       if (!this.editor) return
       try {
-        this.editor.exec(cmd)
+        // 命令名 → 实际执行器（标题层级等带参命令在此分派，见 utils/mdCommands.js）
+        const fn = resolveMdCommand(cmd, this.editor)
+        if (fn) {
+          fn(this.editor)
+        } else {
+          // 未知命令透传 Toast UI 原生（兼容未来直接下发 Toast UI 命令名）
+          this.editor.exec(cmd)
+        }
       } catch (e) {
         // 不再静默吞错：命令名写错会在此暴露，避免"按钮无反应却无痕迹"
         console.error('[MdEditor] exec 失败:', cmd, e)
+        const label = typeof cmd === 'string' ? cmd : JSON.stringify(cmd)
         if (this.$message && this.$message.error) {
-          this.$message.error('命令执行失败：' + cmd)
+          this.$message.error('命令执行失败：' + label)
         }
       }
     },
@@ -344,12 +355,30 @@ export default {
         navigate(a.getAttribute('href'), this.filePath)
       }
       this._onPaste = e => {
-        const items = e.clipboardData && e.clipboardData.files
-        if (!items || !items.length) return
-        const f = items[0]
-        if (!/^image\//.test(f.type)) return
-        e.preventDefault()
-        this.pasteImage(f)
+        const cd = e.clipboardData
+        if (!cd) return
+        // 1. 图片（files + items 双路径，覆盖 Snipaste / Win 截图等只走 items 的场景）
+        const img = readClipboardImage(cd)
+        if (img) {
+          e.preventDefault()
+          this.pasteImage(img)
+          return
+        }
+        // 2. HTML 表格（Excel / 网页复制）
+        const html = cd.getData('text/html')
+        if (html && /<table/i.test(html)) {
+          e.preventDefault()
+          this.pasteTable(html)
+          return
+        }
+        // 3. 纯文本表格（tab 分隔 + 换行，Excel 也提供 text/plain）
+        const text = cd.getData('text/plain')
+        if (text && /\t/.test(text) && /\n/.test(text)) {
+          e.preventDefault()
+          this.pasteTsv(text)
+          return
+        }
+        // 其余走 Toast UI 默认粘贴
       }
       this._onKey = e => {
         if ((e.ctrlKey || e.metaKey) && (e.key === 's' || e.key === 'S')) {
@@ -357,9 +386,15 @@ export default {
           this.saveNow()
         }
       }
+      // 点击/聚焦编辑器区域：通知 md 侧边栏收起面板（回到 icons，不隐藏图标栏）。
+      // 粘贴/插入操作依赖编辑器当前光标，与面板是否打开无关，收起面板不影响插入位置。
+      this._onHostFocus = () => {
+        this.$bus.$emit('md:sidebar-close-panel')
+      }
       el.addEventListener('click', this._onClick, true)
       el.addEventListener('paste', this._onPaste, true)
       el.addEventListener('keydown', this._onKey, true)
+      el.addEventListener('focusin', this._onHostFocus, true)
     },
 
     detachDomHandlers() {
@@ -368,27 +403,68 @@ export default {
       if (this._onClick) el.removeEventListener('click', this._onClick, true)
       if (this._onPaste) el.removeEventListener('paste', this._onPaste, true)
       if (this._onKey) el.removeEventListener('keydown', this._onKey, true)
+      if (this._onHostFocus) el.removeEventListener('focusin', this._onHostFocus, true)
     },
 
     // ── 粘贴图片（§7.10.5）：写盘到 md 同目录 assets/ 后插入相对路径 ──
-    async pasteImage(file) {
-      const reader = new FileReader()
-      reader.onload = async () => {
-        const dataUrl = String(reader.result || '')
-        const base64 = dataUrl.split(',')[1] || ''
+    async pasteImage(blob) {
+      try {
+        const ext = mimeToExt(blob.type)
+        const name = 'paste-' + Date.now() + '-' + randomHex(4) + '.' + ext
         const dir = String(this.filePath || '').replace(/\\/g, '/').replace(/\/[^/]*$/, '')
-        const ext = (file.type || 'image/png').split('/')[1] || 'png'
-        const name = 'paste-' + Date.now() + '.' + ext
         const rel = 'assets/' + name
         const abs = (dir || '.') + '/' + rel
+
+        const dataUrl = await new Promise(resolve => {
+          const reader = new FileReader()
+          reader.onload = () => resolve(String(reader.result || ''))
+          reader.onerror = () => resolve('')
+          reader.readAsDataURL(blob)
+        })
+        const base64 = dataUrl.split(',')[1] || ''
+
         const svc = getServices().workspaceService
         const w = typeof svc.writeBinary === 'function'
           ? await svc.writeBinary(abs, base64, { encoding: 'base64' })
           : null
+
         // 写盘不可用（无工作区 / 环境不支持）→ 降级为 base64 内嵌，保证不丢内容
         this.onInsert({ text: w && w.ok ? '![](' + rel + ')' : '![](' + dataUrl + ')' })
+      } catch (e) {
+        console.error('[MdEditor] 粘贴图片失败:', e)
+        this.$message && this.$message.error('图片粘贴失败')
       }
-      reader.readAsDataURL(file)
+    },
+
+    // ── 粘贴 HTML 表格（Excel / 网页）：转 Markdown 表格插入 ──
+    pasteTable(html) {
+      const md = htmlTableToMd(html)
+      if (!md) {
+        // 解析失败（无 table 节点）→ 降级为纯文本粘贴，不丢内容
+        const plain = String(html || '').replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim()
+        if (plain) this.onInsert({ text: '\n' + plain + '\n' })
+        return
+      }
+      this.onInsert({ text: '\n' + md + '\n' })
+    },
+
+    // ── 粘贴纯文本表格（tab 分隔）：转 Markdown 表格插入 ──
+    pasteTsv(text) {
+      const lines = text.split('\n').filter(Boolean)
+      const cells = lines.map(line =>
+        line.split('\t').map(c => String(c).replace(/\|/g, '\\|').trim() || ' ')
+      )
+      if (cells.length === 0) return
+      const colCount = Math.max(...cells.map(r => r.length), 1)
+      const pad = row => {
+        while (row.length < colCount) row.push(' ')
+        return row
+      }
+      const body = cells.map(row => '| ' + pad(row).join(' | ') + ' |')
+      const sep = '| ' + Array(colCount).fill('---').join(' | ') + ' |'
+      // 分隔线在首行之后（Markdown 规范），而非整表之后
+      const md = [body[0], sep, ...body.slice(1)].join('\n')
+      this.onInsert({ text: '\n' + md + '\n' })
     },
 
     // ── 锚点定位（§7.10.3-③）──
