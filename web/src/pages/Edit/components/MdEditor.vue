@@ -34,7 +34,6 @@ import MindMapPreview from './MindMapPreview.vue'
 import { findBlockIndex, getTopLevelBlocks } from '@/utils/mdScroll'
 import { resolveMdCommand } from '@/utils/mdCommands'
 import { readClipboardImage, mimeToExt, randomHex } from '@/utils/clipboardImage'
-import { htmlTableToMd } from '@/utils/htmlTableToMd'
 
 const BIG_FILE = 1024 * 1024
 
@@ -357,18 +356,18 @@ export default {
       this._onPaste = e => {
         const cd = e.clipboardData
         if (!cd) return
-        // 1. 图片（files + items 双路径，覆盖 Snipaste / Win 截图等只走 items 的场景）
+        // 1. HTML 表格（Excel / 网页复制）优先：Toast UI WYSIWYG 原生即能正确渲染 HTML table。
+        //    Excel 复制的 HTML 里常带内嵌 base64 图片，若先走图片分支会被当成 Markdown 图片语法文本插入。
+        const html = cd.getData('text/html')
+        if (html && /<table/i.test(html)) {
+          // 不拦截，交给 Toast UI 默认 paste 处理；ProseMirror 会把 <table> 解析成真正的表格节点。
+          return
+        }
+        // 2. 图片（files + items 双路径，覆盖 Snipaste / Win 截图等只走 items 的场景）
         const img = readClipboardImage(cd)
         if (img) {
           e.preventDefault()
           this.pasteImage(img)
-          return
-        }
-        // 2. HTML 表格（Excel / 网页复制）
-        const html = cd.getData('text/html')
-        if (html && /<table/i.test(html)) {
-          e.preventDefault()
-          this.pasteTable(html)
           return
         }
         // 3. 纯文本表格（tab 分隔 + 换行，Excel 也提供 text/plain）
@@ -429,23 +428,11 @@ export default {
           : null
 
         // 写盘不可用（无工作区 / 环境不支持）→ 降级为 base64 内嵌，保证不丢内容
-        this.onInsert({ text: w && w.ok ? '![](' + rel + ')' : '![](' + dataUrl + ')' })
+        this.editor.exec('addImage', { imageUrl: w && w.ok ? rel : dataUrl, altText: '' })
       } catch (e) {
         console.error('[MdEditor] 粘贴图片失败:', e)
         this.$message && this.$message.error('图片粘贴失败')
       }
-    },
-
-    // ── 粘贴 HTML 表格（Excel / 网页）：转 Markdown 表格插入 ──
-    pasteTable(html) {
-      const md = htmlTableToMd(html)
-      if (!md) {
-        // 解析失败（无 table 节点）→ 降级为纯文本粘贴，不丢内容
-        const plain = String(html || '').replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim()
-        if (plain) this.onInsert({ text: '\n' + plain + '\n' })
-        return
-      }
-      this.onInsert({ text: '\n' + md + '\n' })
     },
 
     // ── 粘贴纯文本表格（tab 分隔）：转 Markdown 表格插入 ──

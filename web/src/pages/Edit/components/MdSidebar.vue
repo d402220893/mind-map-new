@@ -209,9 +209,9 @@ export default {
   display: flex;
   flex-direction: column;
   justify-content: flex-start;
-  // 低 z-index（同导图侧栏语义）：只需盖住非定位的编辑器内容，
-  // 让 Toast UI 弹层 / Element 消息（z-index 更高）保持在其之上。
-  z-index: 1;
+  // 必须高于 Toast UI WYSIWYG 容器（.toastui-editor-ww-container z-index:20），
+  // 否则面板展开后会被编辑器内容盖住，出现"点了没用/关不掉"。
+  z-index: 30;
 
   &.isDark {
     .trigger {
@@ -331,8 +331,8 @@ export default {
   display: flex;
   flex-direction: column;
   transition: right 0.32s cubic-bezier(0.32, 0.72, 0, 1);
-  // 面板在图标栏之上（同导图：面板 z 更高，压住图标栏右侧 15px 重叠区）
-  z-index: 2;
+  // 面板在图标栏之上；同步高于 Toast UI 编辑器容器（z-index:20）。
+  z-index: 31;
 
   &.isDark {
     background-color: var(--macos-bg);
