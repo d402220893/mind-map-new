@@ -215,8 +215,8 @@ export default {
 
   &.isDark {
     .trigger {
-      // 跟随画布背景派生实色（原硬编码 #262a2e 不随主题变）
-      background-color: var(--macos-bg);
+      // 跟随画布背景派生实色（--macos-bg 未定义，改用 --macos-surface）
+      background-color: var(--macos-surface);
 
       .triggerItem {
         color: var(--macos-text-2);
@@ -232,15 +232,16 @@ export default {
     right: 0;
   }
 
-  // 有面板展开时，图标栏让位到面板左侧（与导图 hasActive 一致）
-  &.hasActive {
-    right: 305px;
-  }
+  // 面板展开时不再整体让位 305px：面板改用 right:60px 紧贴图标栏左侧，
+  // 两者不重叠，也避免 hasActive 写死 305px 与面板宽度 320px 不一致的问题。
+  // &.hasActive { right: 305px; }
 
   .toggleShowBtn {
     position: absolute;
-    left: -6px;
-    width: 35px;
+    // 完全放在图标栏左侧外部，视觉宽度缩到 16px，不再压住"大纲/查找"图标。
+    // 父子 DOM 结构下，只有 left 设为负的视觉宽度，才能彻底避开图标内容。
+    left: -16px;
+    width: 16px;
     height: 60px;
     background: #409eff;
     top: 50%;
@@ -252,10 +253,10 @@ export default {
     border-bottom-left-radius: 10px;
     display: flex;
     align-items: center;
-    padding-left: 4px;
+    padding-left: 2px;
 
     &.hide {
-      left: -8px;
+      left: -18px;
 
       span {
         transform: rotateZ(180deg);
@@ -263,7 +264,8 @@ export default {
     }
 
     &:hover {
-      left: -18px;
+      // hover 继续向左伸出，不覆盖图标栏内容
+      left: -22px;
     }
 
     span {
@@ -276,8 +278,8 @@ export default {
     position: relative;
     width: 60px;
     border-color: var(--macos-border);
-    // 实色背景（用户要求不透明），跟随主题
-    background-color: var(--macos-bg);
+    // 实色背景（--macos-bg 变量未定义，会 fallback 透明，故改用已定义的 --macos-surface）
+    background-color: var(--macos-surface);
     box-shadow: 0 2px 16px 0 rgba(0, 0, 0, 0.06);
     border-radius: 6px;
     max-height: calc(100vh - 190px);
@@ -322,9 +324,12 @@ export default {
   right: -320px;
   top: 110px;
   bottom: 0;
-  width: 320px;
-  // 实色背景（用户要求不透明），跟随主题；移除毛玻璃 backdrop-filter
-  background-color: var(--macos-bg);
+  // 紧贴图标栏左侧（right:60px 展开），与图标栏不重叠；
+  // min() 保证窗口缩窄时面板自动变窄，不超出窗口左边界。
+  width: min(320px, calc(100vw - 60px - 16px));
+  max-width: calc(100vw - 60px - 16px);
+  // 实色背景（--macos-bg 未定义，改用 --macos-surface），不透出底下内容
+  background-color: var(--macos-surface);
   border-left: 1px solid var(--macos-border);
   border-top-left-radius: var(--macos-radius-xl);
   border-bottom-left-radius: var(--macos-radius-xl);
@@ -335,7 +340,7 @@ export default {
   z-index: 31;
 
   &.isDark {
-    background-color: var(--macos-bg);
+    background-color: var(--macos-surface);
     border-left-color: var(--macos-border);
 
     .panelHeader {
@@ -360,7 +365,8 @@ export default {
   }
 
   &.show {
-    right: 0;
+    // 展开时紧贴图标栏左侧（60px），与图标栏不重叠
+    right: 60px;
     box-shadow: -16px 0 44px rgba(0, 0, 0, 0.16);
   }
 
