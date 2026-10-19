@@ -502,6 +502,19 @@ ipcMain.handle('smm:move', async (e, { from, to } = {}) => {
   }
 })
 
+// 9b 字节级复制（文件列表「复制 / 粘贴」用；与 smm:move 区分：不删源、不 rename）。
+// 二进制安全（图片等）；命名去重由 workspaceService.copy 用 stat 循环负责。
+ipcMain.handle('smm:copy-file', async (e, { from, to } = {}) => {
+  try {
+    if (!from || !to) return { ok: false, code: 'E_BAD_ARG' }
+    if (fs.existsSync(to)) return { ok: false, code: 'E_EXISTS', path: to }
+    fs.copyFileSync(from, to)
+    return { ok: true, dest: to }
+  } catch (err) {
+    return { ok: false, code: 'E_COPY', message: err.message }
+  }
+})
+
 // 9 删除到回收站（禁 fs.rm；一次最多 20 条）
 ipcMain.handle('smm:trash', async (e, { paths: targets = [] } = {}) => {
   const list = targets.slice(0, TRASH_BATCH)

@@ -5,6 +5,7 @@ import { ok, fail, err } from './errors.js'
 import { EVT } from './events.js'
 import { runMigrations } from './migrations/index.js'
 import { createWorkspaceStore } from './state/workspaceStore.js'
+import { computeCopyName, computeConflictName, baseNameOf, parentDir } from '../utils/fileOps.js'
 
 export const IGNORE_DIRS = ['node_modules', '.git', '.mindlink', '_trash', 'dist-electron', 'dist-electron2']
 
@@ -209,10 +210,82 @@ export const createWorkspaceService = (ctx = {}) => {
     }
     return fsApi.trash(paths)
   }
+  /**
+   * 字节级复制/移动一组文件到目标目录（文件列表「复制 / 剪切 → 粘贴」用）。
+   * - 同目录粘贴 → 副本命名（"base - 副本.ext" / "(2)"…），不覆盖原文件；
+   * - 跨目录粘贴 → 落目标目录，同名冲突自动加 "(2)"/"(3)"…；
+   * - op='cut' 且目标恰为源所在目录 → 视为无操作（剪切到原地无意义），跳过；
+   * - op='cut' 跨目录 → 用 move（主进程 copy+回收站删除源），源随之消失。
+   * 命名去重用 fsApi.stat 循环探测，确保不静默覆盖。
+   * @returns ok({ results:[{ok,from,to}], anyFail }) / fail
+   */
+  async function copyFiles(paths, destDir, { op = 'copy' } = {}) {
+    if (!fsApi || typeof fsApi.copyFile !== 'function') {
+      return fail(err('E_NOT_SUPPORTED', { method: 'copyFile' }))
+    }
+    const dest = String(destDir || '').replace(/\\/g, '/').replace(/\/+$/, '')
+    if (!dest) return fail(err('E_BAD_ARG', { method: 'copyFiles' }))
+    const list = Array.isArray(paths) ? paths : []
+    const results = []
+    let anyFail = false
+    for (const src of list) {
+      const srcNorm = String(src || '').replace(/\\/g, '/')
+      const base = baseNameOf(srcNorm)
+      const srcDir = parentDir(srcNorm)
+      const sameDir = srcDir === dest
+      // 剪切到同目录 = 无操作
+      if (op === 'cut' && sameDir) continue
+      // 解析不冲突的目标名（stat 循环，上限 999 防呆）
+      let target = ''
+      let n = 1
+      while (true) {
+        const cand = dest + '/' + (sameDir ? computeCopyName(base, n) : computeConflictName(base, n))
+        const st = await fsApi.stat(cand)
+        if (!st.ok || !st.data || !st.data.exists) { target = cand; break }
+        n += 1
+        if (n > 999) { target = cand; break }
+      }
+      const r = op === 'cut' ? await move(srcNorm, target) : await fsApi.copyFile(srcNorm, target)
+      if (r.ok) results.push({ ok: true, from: srcNorm, to: target })
+      else { anyFail = true; results.push({ ok: false, from: srcNorm, to: target, error: r.error }) }
+    }
+    return ok({ results, anyFail })
+  }
+  /**
+   * 当前目录内"新建副本"（右键「新建副本」用）：复制自身并落 "base - 副本.ext"。
+   * @returns ok({ from, to }) / fail
+   */
+  async function duplicate(path) {
+    if (!fsApi || typeof fsApi.copyFile !== 'function') {
+      return fail(err('E_NOT_SUPPORTED', { method: 'copyFile' }))
+    }
+    const srcNorm = String(path || '').replace(/\\/g, '/')
+    const base = baseNameOf(srcNorm)
+    const dir = parentDir(srcNorm)
+    let target = ''
+    let n = 1
+    while (true) {
+      const cand = dir + '/' + computeCopyName(base, n)
+      const st = await fsApi.stat(cand)
+      if (!st.ok || !st.data || !st.data.exists) { target = cand; break }
+      n += 1
+      if (n > 999) { target = cand; break }
+    }
+    const r = await fsApi.copyFile(srcNorm, target)
+    return r.ok ? ok({ from: srcNorm, to: target }) : r
+  }
   /** 当前工作区文件列表（来自 L2 workspaceStore，非重复扫盘） */
   function files() {
     const st = workspace.get() || {}
     return Array.isArray(st.tree) ? st.tree : []
+  }
+
+  /** 单文件字节级复制（薄委托到 fsApi.copyFile；主进程 smm:copy-file IPC） */
+  async function copyFile(from, to) {
+    if (!fsApi || typeof fsApi.copyFile !== 'function') {
+      return fail(err('E_NOT_SUPPORTED', { method: 'copyFile' }))
+    }
+    return fsApi.copyFile(from, to)
   }
 
   // 索引视图（薄委托，不含实现）
@@ -224,6 +297,6 @@ export const createWorkspaceService = (ctx = {}) => {
     open, close, refresh, getRoot, abs, rel, inferRootFor,
     onFsAdd, onFsChange, onFsUnlink,
     readIndex, writeIndex, rebuildIndex,
-    pickDirectory, readText, writeText, writeBinary, reveal, stat, mkdirp, move, trash, files, setConfirm
+    pickDirectory, readText, writeText, writeBinary, reveal, stat, mkdirp, move, copyFile, copyFiles, duplicate, trash, files, setConfirm
   }
 }

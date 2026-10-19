@@ -34,6 +34,8 @@ import MindMapPreview from './MindMapPreview.vue'
 import { findBlockIndex, getTopLevelBlocks } from '@/utils/mdScroll'
 import { resolveMdCommand } from '@/utils/mdCommands'
 import { readClipboardImage, mimeToExt, randomHex } from '@/utils/clipboardImage'
+import { patchToastTableSelection } from '@/utils/toastTablePatch'
+import { createTableSelection } from '@/composables/useTableSelection'
 
 const BIG_FILE = 1024 * 1024
 
@@ -119,6 +121,21 @@ export default {
       )
       this.disableSpellcheck()
       this.attachDomHandlers()
+      // v2.0.71：Toast UI 3.2.2 表格选区崩溃修复（mousemove 选表格时
+      // TableOffsetMap.getCellIndex 在稀疏 rowInfo 下读 .offset 崩）。
+      // 运行时 monkeypatch 内部 TableSelection/TableOffsetMap 原型。
+      this.$nextTick(() => this.patchToastTable())
+    },
+
+    // 修复 Toast UI 表格选区崩溃：拿到内部 TableSelection 实例并 patch。
+    // 幂等；caretChange 也会再次尝试（确保 ProseMirror view 就绪后必中）。
+    patchToastTable() {
+      if (!this.editor) return
+      try {
+        patchToastTableSelection(this.editor)
+      } catch (e) {
+        if (typeof console !== 'undefined') console.warn('[思绪] patchToastTable 失败', e)
+      }
     },
 
     // 关闭浏览器原生拼写检查（中英文混排时满屏红色波浪线）。
@@ -245,6 +262,8 @@ export default {
     },
 
     updateCaret() {
+      // v2.0.71：caretChange 触发时 ProseMirror view 已就绪，确保表格补丁命中
+      this.patchToastTable()
       // 行:列 供状态栏；Toast UI 未直出行列，用选区偏移近似
       this.$bus.$emit('md:caret', { tabId: this.tabId, words: this.words })
     },
@@ -383,6 +402,18 @@ export default {
         if ((e.ctrlKey || e.metaKey) && (e.key === 's' || e.key === 'S')) {
           e.preventDefault()
           this.saveNow()
+          return
+        }
+        // Ctrl+A 两段式：首次选当前表格，再次放行浏览器默认（全文档）
+        if ((e.ctrlKey || e.metaKey) && (e.key === 'a' || e.key === 'A')) {
+          if (this._tableSel) this._tableSel.handleCtrlA(e)
+          return
+        }
+        // Shift+方向键：表格选区按方向扩展（到边界停止）；无表格选区时不拦截
+        if (e.shiftKey && this._tableSel && this._tableSel.state.active) {
+          const dirMap = { ArrowUp: 'up', ArrowDown: 'down', ArrowLeft: 'left', ArrowRight: 'right' }
+          const dir = dirMap[e.key]
+          if (dir && this._tableSel.extendSelection(dir)) e.preventDefault()
         }
       }
       // 点击/聚焦编辑器区域：通知 md 侧边栏收起面板（回到 icons，不隐藏图标栏）。
@@ -390,8 +421,25 @@ export default {
       this._onHostFocus = () => {
         this.$bus.$emit('md:sidebar-close-panel')
       }
+      // ── 复制/剪切表格选区兜底（§7.10.6）────────────────────────────────────
+      // Toast UI 3.2.2 的 CellSelection.content() 在多单元格表格复制时会读到
+      // undefined offset 而抛 TypeError（Cannot read properties of undefined
+      // (reading 'offset')）。我们在 capture 阶段先拦截，用安全的 getSelectedText()
+      // 生成纯文本并写入剪贴板，再阻止默认事件进入 Toast UI 的 captureCopy。
+      this._onCopy = e => this.handleTableCopyCut(e, false)
+      this._onCut = e => this.handleTableCopyCut(e, true)
+      // 表格 Excel 式选区控制器（拖动/列头/行头/Ctrl+A/Shift+方向键 + TSV+HTML 复制）
+      if (!this._tableSel) {
+        this._tableSel = createTableSelection({
+          getEditor: () => this.editor,
+          host: el
+        })
+      }
+      this._tableSel.bind()
       el.addEventListener('click', this._onClick, true)
       el.addEventListener('paste', this._onPaste, true)
+      el.addEventListener('copy', this._onCopy, true)
+      el.addEventListener('cut', this._onCut, true)
       el.addEventListener('keydown', this._onKey, true)
       el.addEventListener('focusin', this._onHostFocus, true)
     },
@@ -401,8 +449,69 @@ export default {
       if (!el) return
       if (this._onClick) el.removeEventListener('click', this._onClick, true)
       if (this._onPaste) el.removeEventListener('paste', this._onPaste, true)
+      if (this._onCopy) el.removeEventListener('copy', this._onCopy, true)
+      if (this._onCut) el.removeEventListener('cut', this._onCut, true)
       if (this._onKey) el.removeEventListener('keydown', this._onKey, true)
       if (this._onHostFocus) el.removeEventListener('focusin', this._onHostFocus, true)
+      if (this._tableSel) this._tableSel.unbind()
+    },
+
+    // 检测当前是否为「表格单元格内选区」，这是 Toast UI 3.2.2 复制崩溃的触发条件。
+    // 崩溃点：CellSelection.prototype.content() 中
+    //   map.getCellInfo(rowIdx, colIdx).offset
+    // 当 getCellInfo 返回 undefined 时抛 TypeError: Cannot read properties of undefined
+    // (reading 'offset')（@toast-ui/editor/dist/esm/index.js:16325）。
+    // 只要选区位于表格单元格内（$anchorCell 存在）就兜底，不管是否跨单元格：
+    // 单单元格内点击复制也可能命中 CellSelection 崩溃路径。
+    isCellTableSelection() {
+      const view = this.editor && this.editor.wwEditor && this.editor.wwEditor.view
+      const sel = view && view.state && view.state.selection
+      if (!sel || sel.empty) return false
+      // isCellSelection：跨单元格选择；$anchorCell：光标落在表格单元格内（含单 cell）
+      return !!(sel.isCellSelection || sel.$anchorCell)
+    },
+
+    handleTableCopyCut(e, isCut) {
+      // 优先走 Excel 式选区：复制为 TSV（粘 Excel）+ HTML（粘 Word/邮件），绕开原生 content() 崩溃路径
+      const ts = this._tableSel
+      if (ts && ts.state.active) {
+        const data = ts.copySelection()
+        if (data) {
+          try {
+            e.preventDefault()
+            e.stopPropagation()
+            if (e.clipboardData) {
+              e.clipboardData.setData('text/plain', data.tsv)
+              e.clipboardData.setData('text/html', data.html)
+            } else if (window.clipboardData) {
+              window.clipboardData.setData('Text', data.tsv)
+            }
+            if (isCut && this.editor && typeof this.editor.deleteSelection === 'function') {
+              this.editor.deleteSelection()
+            }
+          } catch (err) {
+            console.error('[MdEditor] 表格选区复制失败:', err)
+          }
+          return
+        }
+      }
+      // 兜底：旧 CellSelection 路径（单/多单元格，纯文本）
+      if (!this.isCellTableSelection()) return
+      try {
+        e.preventDefault()
+        e.stopPropagation()
+        const text = this.editor.getSelectedText()
+        if (e.clipboardData) {
+          e.clipboardData.setData('text/plain', text)
+        } else if (window.clipboardData) {
+          window.clipboardData.setData('Text', text)
+        }
+        if (isCut) {
+          this.editor.deleteSelection()
+        }
+      } catch (err) {
+        console.error('[MdEditor] 表格复制/剪切兜底失败:', err)
+      }
     },
 
     // ── 粘贴图片（§7.10.5）：写盘到 md 同目录 assets/ 后插入相对路径 ──
@@ -671,5 +780,35 @@ body.isDark .mdEditor .toastui-editor-contents pre code {
   background: transparent;
   border: none;
   padding: 0;
+}
+
+// ── Markdown 表格 Excel 式选区：行头选择条（左侧 overlay）──────────────
+// 仅 hover 表格时出现，点击选整行；不修改 <table> 结构。
+.mdTableRowGutter {
+  position: fixed;
+  z-index: 3200;
+  width: 12px;
+  display: none;
+  background: transparent;
+  pointer-events: auto;
+}
+.mdTableRowGutterSeg {
+  box-sizing: border-box;
+  border-left: 2px solid transparent;
+  cursor: pointer;
+  &:hover {
+    background: rgba(56, 123, 233, 0.22); // classic4 蓝 #387BE9
+    border-left-color: #387be9;
+  }
+}
+
+// 原生 CellSelection 选中单元格：贴合 classic4 配色，边框更清晰、表头更深
+.mdEditor .toastui-editor-contents td.toastui-editor-cell-selected,
+.mdEditor .toastui-editor-contents th.toastui-editor-cell-selected {
+  background: rgba(56, 123, 233, 0.18);
+  box-shadow: inset 0 0 0 1px rgba(56, 123, 233, 0.5);
+}
+.mdEditor .toastui-editor-contents th.toastui-editor-cell-selected {
+  background: rgba(30, 53, 86, 0.28); // 藏青 #1E3556，表头更深
 }
 </style>

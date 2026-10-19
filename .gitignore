@@ -52,3 +52,7 @@ _trash_pending_delete/
 
 # asar ef 手动提取时落在 electron-app/ 的临时指纹文件
 electron-app/build-info.json
+
+# ===== Test scratch artifacts (safeWriteFile / 单测临时目录，非源码) =====
+_testtmp/
+

@@ -42,6 +42,7 @@ contextBridge.exposeInMainWorld('smmApi', {
     ipcRenderer.invoke('smm:write-binary', { filePath, base64, ...opts }),
   mkdirp: dirPath => ipcRenderer.invoke('smm:mkdirp', { dirPath }),
   move: (from, to) => ipcRenderer.invoke('smm:move', { from, to }),
+  copyFile: (from, to) => ipcRenderer.invoke('smm:copy-file', { from, to }),
   trash: paths => ipcRenderer.invoke('smm:trash', { paths }),
   watch: root => ipcRenderer.invoke('smm:watch', { root }),
   unwatch: () => ipcRenderer.invoke('smm:unwatch'),

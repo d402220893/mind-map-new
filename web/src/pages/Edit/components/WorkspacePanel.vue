@@ -1,5 +1,9 @@
 <template>
-  <div class="workspacePanel" :class="{ isDark: isDark, collapsed: collapsed, resizing: resizing }">
+  <div
+    class="workspacePanel"
+    :class="{ isDark: isDark, collapsed: collapsed, resizing: resizing }"
+    @keydown="onPanelKey"
+  >
     <!-- 右缘拖拽手柄：拖宽/拖窄文件栏（宽度走 CSS 变量，蓝缝/画布/sheet 栏同步跟随） -->
     <div
       v-if="!collapsed"
@@ -136,16 +140,27 @@
           v-for="f in flatFiles"
           :key="f.path"
           class="wsFile"
-          :class="{ active: f.path === activePath, selected: selectedPaths.includes(f.path) }"
+          :class="{ active: f.path === activePath, selected: selectedPaths.includes(f.path), editing: editingPath === f.path }"
           :style="{ paddingLeft: 8 + f.depth * 14 + 'px' }"
           @click="onFileClick($event, f)"
           @dblclick="onFileDblClick(f)"
           @contextmenu.prevent.stop="onCtx($event, f)"
         >
-          <span class="wsCaret">{{ f.isDir ? (isDirCollapsed(f.path) ? '▸' : '▾') : '' }}</span>
-          <span class="wsIcon">{{ f.isDir ? (isDirCollapsed(f.path) ? '📁' : '📂') : iconOf(f.name) }}</span>
-          <span class="wsName">{{ f.name }}</span>
-          <span v-if="isDirtyTab(f.path)" class="wsDot" title="未保存">●</span>
+          <template v-if="editingPath === f.path">
+            <input
+              class="wsRenameInput"
+              v-model="editingName"
+              @keyup.enter="tryCommitRename(f)"
+              @keydown.esc.prevent="cancelRename"
+              @blur="tryCommitRename(f)"
+            />
+          </template>
+          <template v-else>
+            <span class="wsCaret">{{ f.isDir ? (isDirCollapsed(f.path) ? '▸' : '▾') : '' }}</span>
+            <span class="wsIcon">{{ f.isDir ? (isDirCollapsed(f.path) ? '📁' : '📂') : iconOf(f.name) }}</span>
+            <span class="wsName">{{ f.name }}</span>
+            <span v-if="isDirtyTab(f.path)" class="wsDot" title="未保存">●</span>
+          </template>
         </div>
         <div v-if="!flatFiles.length" class="wsEmptyTip">
           {{ filter ? '未找到结果' : '空文件夹' }}
@@ -160,18 +175,42 @@
       :style="{ left: ctxMenu.x + 'px', top: ctxMenu.y + 'px' }"
       @click="ctxMenu = null"
     >
-      <li v-if="ctxMenu.f && !ctxMenu.f.isDir" @click="openCtxFile">打开</li>
-      <li v-if="selectedPaths.length >= 1" @click="openSelected">打开选中的 {{ selectedPaths.length }} 个文件</li>
-      <li @click="newFileNear">新建文件</li>
-      <li @click="newFolderNear">新建文件夹</li>
-      <li v-if="ctxMenu.f && !ctxMenu.f.isDir" @click="renameCtxFile">重命名</li>
-      <li v-if="selectedPaths.length >= 1" class="danger" @click="deleteSelected">删除选中的 {{ selectedPaths.length }} 个文件</li>
-      <li v-if="ctxMenu.f && !ctxMenu.f.isDir" class="danger" @click="deleteCtxFile">删除此文件</li>
-      <li v-if="ctxMenu.f" @click="showProps">属性</li>
-      <li @click="copyPath">
-        {{ ctxMenu.f && !ctxMenu.f.isDir ? '复制文件路径' : '复制路径' }}
-      </li>
-      <li v-if="ctxMenu.f" @click="revealFile">在资源管理器中显示</li>
+      <!-- 文件右键：移除目录级操作（新建文件/新建文件夹），补 复制/剪切/新建副本 -->
+      <template v-if="ctxMenu.f && !ctxMenu.f.isDir">
+        <li @click="openCtxFile">打开</li>
+        <li v-if="selectedPaths.length >= 1" @click="openSelected">打开选中的 {{ selectedPaths.length }} 个文件</li>
+        <li class="wsSep"></li>
+        <li @click="copySelected">复制</li>
+        <li @click="cutSelected">剪切</li>
+        <li @click="duplicateCtxFile">新建副本</li>
+        <li class="wsSep"></li>
+        <li v-if="selectedPaths.length <= 1" @click="startRename(ctxMenu.f)">重命名</li>
+        <li class="danger" @click="deleteCtxFile">删除此文件</li>
+        <li v-if="selectedPaths.length >= 1" class="danger" @click="deleteSelected">删除选中的 {{ selectedPaths.length }} 个文件</li>
+        <li class="wsSep"></li>
+        <li @click="showProps">属性</li>
+        <li @click="copyPath">复制文件路径</li>
+        <li @click="revealFile">在资源管理器中显示</li>
+      </template>
+      <!-- 目录右键：不含复制/剪切/新建副本（目录复制语义复杂，留待后续） -->
+      <template v-else-if="ctxMenu.f && ctxMenu.f.isDir">
+        <li @click="startRename(ctxMenu.f)">重命名</li>
+        <li class="danger" @click="deleteCtxFile">删除此文件夹</li>
+        <li class="wsSep"></li>
+        <li @click="copyPath">复制文件夹路径</li>
+        <li @click="revealFile">在资源管理器中显示</li>
+      </template>
+      <!-- 空白区域右键：新建文件/文件夹 + 粘贴（有剪贴板才可用）+ 刷新 + 复制当前目录路径 -->
+      <template v-else>
+        <li @click="newFileNear">新建文件</li>
+        <li @click="newFolderNear">新建文件夹</li>
+        <li class="wsSep"></li>
+        <li v-if="hasClipboard()" @click="pasteClipboard">粘贴</li>
+        <li v-else class="disabled">粘贴</li>
+        <li class="wsSep"></li>
+        <li @click="refresh">刷新</li>
+        <li @click="copyPath">复制当前目录路径</li>
+      </template>
     </ul>
   </div>
 </template>
@@ -182,6 +221,10 @@ import { computeRangeSelection } from '@/utils/rangeSelect'
 import { getWorkbookList, renameWorkbook, removeWorkbook } from '@/api'
 import { decodeSmm } from '@/services/smmCodec'
 import { searchSmmContainer, stripHtml, truncate } from '@/utils/smmSearch'
+import { validateFileName, splitName, baseNameOf, parentDir } from '@/utils/fileOps'
+import { setClipboard, getClipboard, clearClipboard, hasClipboard } from '@/utils/fileClipboard'
+import { resolveFileListKey } from '@/utils/fileListKeyboard'
+import { isEditableTarget } from '@/utils/shortcutGuard'
 
 export default {
   name: 'WorkspacePanel',
@@ -207,7 +250,11 @@ export default {
       ctxMenu: null,
       activePath: '',
       selectedPaths: [], // 文件树多选态（Ctrl/Shift+左键），普通点击清空
-      lastSelectedPath: '', // 多选锚点：Shift+点击的连续区间起点
+      lastSelectedPath: '', // 最近一次聚焦的文件（键盘 Delete/Enter 作用目标；selectedPaths 为空时的兜底）
+      selAnchor: '', // 连续多选锚点：Shift+点击 / Shift+方向键 扩展选区时保持不变，普通点击重置
+      lastFile: '', // 最近一次单击/双击的文件（键盘快捷键 F2/Delete 的作用目标，selectedPaths 为空时兜底）
+      editingPath: '', // 内联重命名中的文件路径（空=非编辑态）
+      editingName: '', // 内联重命名输入框当前值
       collapsedDirs: [], // 已折叠目录（正斜杠归一化路径），按工作区 root 持久化到 localStorage
       collapseSmm: false, // 搜索结果「导图内容」分区折叠
       collapseMd: false, // 搜索结果「文档全文」分区折叠
@@ -574,6 +621,7 @@ export default {
     onFileClick(e, f) {
       if (f.isDir) {
         this.selectedPaths = []
+        this.selAnchor = ''
         this.lastSelectedPath = ''
         return this.toggleDir(f.path)
       }
@@ -589,16 +637,19 @@ export default {
       }
       if (ctrl) {
         this.toggleSelect(f.path)
+        this.selAnchor = f.path
         this.lastSelectedPath = f.path
         return
       }
       this.selectedPaths = []
+      this.selAnchor = f.path
       this.lastSelectedPath = f.path
       this.openFile(f)
     },
     onFileDblClick(f) {
       if (f.isDir) return
       this.selectedPaths = []
+      this.selAnchor = f.path
       this.lastSelectedPath = f.path
       this.openFile(f)
     },
@@ -607,12 +658,13 @@ export default {
       if (i >= 0) this.selectedPaths.splice(i, 1)
       else this.selectedPaths.push(path)
     },
-    // Shift+左键连续多选：以 lastSelectedPath 为锚点，选中到当前文件之间的所有文件
+    // Shift+左键连续多选：以 selAnchor 为锚点（普通点击/聚焦时重置），选中到当前文件之间的所有文件
     // （区间计算抽离到纯函数 computeRangeSelection，便于单测）
     selectRange(path, append) {
+      const anchor = this.selAnchor || this.lastSelectedPath || path
       this.selectedPaths = computeRangeSelection({
         files: this.flatFiles || [],
-        anchor: this.lastSelectedPath,
+        anchor,
         current: path,
         append,
         selected: this.selectedPaths
@@ -831,57 +883,6 @@ export default {
       }
       await this.refresh()
     },
-    async renameCtxFile() {
-      const f = this.ctxMenu && this.ctxMenu.f
-      if (!f || f.isDir) return
-      let name
-      try {
-        const r = await this.$prompt('输入新文件名', '重命名', {
-          confirmButtonText: '重命名',
-          cancelButtonText: '取消',
-          inputValue: f.name,
-          inputPattern: /.+/,
-          inputErrorMessage: '文件名不能为空'
-        })
-        name = String((r && r.value) || '').trim()
-      } catch (e) {
-        return // 取消
-      }
-      if (!name || name === f.name) return
-      if (/[\\/:*?"<>|]/.test(name)) {
-        this.$message.error('文件名不能包含 \\ / : * ? " < > | 字符')
-        return
-      }
-      const dir = String(f.path).replace(/\\/g, '/').replace(/\/[^/]*$/, '')
-      const to = dir + '/' + name
-      // 重名守卫（不静默覆盖已有文件）
-      const st = await getServices().workspaceService.stat(to)
-      if (st.ok && st.data && st.data.exists) {
-        this.$message.error('已存在同名文件：' + name)
-        return
-      }
-      const r2 = await getServices().workspaceService.move(f.path, to)
-      if (!r2.ok) {
-        this.$message.error('重命名失败：' + (r2.error && (r2.error.message || r2.error.code)))
-        return
-      }
-      // 该文件若以标签打开，同步标签名与路径（否则标签仍指向旧路径）
-      const list = getWorkbookList()
-      const hit = list.workbooks.find(w => w.filePath === f.path)
-      if (hit) {
-        renameWorkbook(hit.id, name, to)
-        // 关键：renameWorkbook 改的是 workbookState 模块内的 state，而 Index.vue 的
-        // workbooks 是 getWorkbookList() 返回的【全新快照副本】，不会自动跟随。必须显式
-        // 通知顶部标签栏与编辑区刷新，否则重命名后顶部文件名栏仍显示旧名。
-        // —— 与 FileTabs 自身的重命名路径（Index.renameWorkbook）保持一致。
-        this.$bus.$emit('workbook-list-changed')
-        if (hit.id === list.activeId) {
-          this.$bus.$emit('workbook-renamed', { id: hit.id, newPath: to })
-        }
-      }
-      if (this.activePath === f.path) this.activePath = to
-      await this.refresh()
-    },
     async deleteCtxFile() {
       const f = this.ctxMenu && this.ctxMenu.f
       if (!f || f.isDir) return
@@ -949,6 +950,231 @@ export default {
       this.selectedPaths = []
       this.ctxMenu = null
       await this.refresh()
+    },
+    // ── 复制 / 剪切 / 新建副本 / 粘贴（内部剪贴板 + 系统回收站语义）────────────
+    // 作用目标：多选态下对所有选中项生效；否则仅当前右键文件。
+    effectiveTargets() {
+      if (this.selectedPaths.length >= 1) return this.selectedPaths.slice()
+      const f = this.ctxMenu && this.ctxMenu.f
+      return f ? [f.path] : []
+    },
+    isDirPath(p) {
+      const f = this.flatFiles.find(n => n.path === p)
+      return !!(f && f.isDir)
+    },
+    copySelected() {
+      const targets = this.effectiveTargets().filter(p => !this.isDirPath(p))
+      if (!targets.length) return
+      setClipboard('copy', targets)
+      this.ctxMenu = null
+      this.$message.success('已复制 ' + targets.length + ' 个文件')
+    },
+    cutSelected() {
+      const targets = this.effectiveTargets().filter(p => !this.isDirPath(p))
+      if (!targets.length) return
+      setClipboard('cut', targets)
+      this.ctxMenu = null
+      this.$message.success('已剪切 ' + targets.length + ' 个文件')
+    },
+    async duplicateCtxFile() {
+      const targets = this.effectiveTargets().filter(p => !this.isDirPath(p))
+      if (!targets.length) return
+      this.ctxMenu = null
+      const svc = getServices().workspaceService
+      let n = 0
+      for (const p of targets) {
+        const r = await svc.duplicate(p)
+        if (r.ok) n++
+      }
+      this.$message.success('已新建 ' + n + ' 个副本')
+      await this.refresh()
+    },
+    async pasteClipboard() {
+      const clip = getClipboard()
+      if (!clip.op || !clip.paths.length) return
+      const destDir = this.ctxDir() // 空白菜单→工作区根；文件/目录菜单→其父目录
+      this.ctxMenu = null
+      const svc = getServices().workspaceService
+      const r = await svc.copyFiles(clip.paths, destDir, { op: clip.op })
+      if (!r.ok) {
+        this.$message.error('粘贴失败：' + (r.error && (r.error.message || r.error.code)))
+        return
+      }
+      const res = (r.data && r.data.results) || []
+      if (r.data && r.data.anyFail) {
+        this.$message.error('部分文件粘贴失败（可能正被占用）')
+      } else {
+        this.$message.success('已粘贴 ' + res.length + ' 个文件')
+      }
+      if (clip.op === 'cut') clearClipboard()
+      await this.refresh()
+    },
+    // ── 内联重命名（替代 $prompt，贴合资源管理器习惯）────────────────────────
+    startRename(f) {
+      if (!f) return
+      this.editingPath = f.path
+      this.editingName = f.name
+      this.ctxMenu = null
+      this.$nextTick(() => {
+        const inp = this.$el && this.$el.querySelector ? this.$el.querySelector('.wsRenameInput') : null
+        if (inp) {
+          inp.focus()
+          inp.select()
+        }
+      })
+    },
+    cancelRename() {
+      this.editingPath = ''
+      this.editingName = ''
+    },
+    // 提交内联重命名：Enter / 失焦触发。返回 'committed' | 'noop' | 'invalid' | 'confirm-cancel'
+    // （'invalid' → 调用方取消编辑态；'confirm-cancel' → 保留编辑态等待用户继续）
+    async tryCommitRename(f) {
+      if (this.editingPath !== f.path) return 'noop'
+      const name = String(this.editingName || '').trim()
+      const v = validateFileName(name)
+      if (!v.ok) {
+        this.$message.error(v.message || '文件名非法')
+        this.cancelRename()
+        return 'invalid'
+      }
+      if (name === f.name) {
+        this.cancelRename()
+        return 'noop'
+      }
+      const dir = parentDir(f.path)
+      const to = dir + '/' + name
+      // 扩展名变更警告（可能打不开），用户取消则保留编辑态
+      if (splitName(name).ext.toLowerCase() !== splitName(f.name).ext.toLowerCase()) {
+        try {
+          await this.$confirm(
+            '扩展名已变更，改了扩展名可能导致文件无法打开，确定重命名？',
+            '扩展名变更',
+            { type: 'warning', confirmButtonText: '确定', cancelButtonText: '取消' }
+          )
+        } catch (e) {
+          return 'confirm-cancel' // 保留编辑态
+        }
+      }
+      // 重名守卫
+      const st = await getServices().workspaceService.stat(to)
+      if (st.ok && st.data && st.data.exists) {
+        this.$message.error('已存在同名文件：' + name)
+        return 'invalid' // 保留编辑态，让用户改名
+      }
+      const r = await getServices().workspaceService.move(f.path, to)
+      if (!r.ok) {
+        this.$message.error('重命名失败：' + (r.error && (r.error.message || r.error.code)))
+        return 'invalid'
+      }
+      // 该文件若以标签打开，同步标签名与路径
+      const list = getWorkbookList()
+      const hit = list.workbooks.find(w => w.filePath === f.path)
+      if (hit) {
+        renameWorkbook(hit.id, name, to)
+        this.$bus.$emit('workbook-list-changed')
+        if (hit.id === list.activeId) {
+          this.$bus.$emit('workbook-renamed', { id: hit.id, newPath: to })
+        }
+      }
+      if (this.activePath === f.path) this.activePath = to
+      if (this.lastSelectedPath === f.path) this.lastSelectedPath = to
+      this.selectedPaths = this.selectedPaths.filter(p => p !== f.path)
+      this.selAnchor = to
+      this.cancelRename()
+      await this.refresh()
+      return 'committed'
+    },
+    // ── 面板级键盘快捷键（@keydown 绑定在根 div，仅面板内事件冒泡触发）──────
+    // 守卫：焦点在输入框/富文本（含 md 编辑器 contenteditable）时不拦截，避免误触。
+    // 具体「按键 → 动作」映射抽离到纯函数 resolveFileListKey（见 web/src/utils/fileListKeyboard.js）。
+    onPanelKey(e) {
+      if (isEditableTarget(document.activeElement)) return
+      const res = resolveFileListKey(e, {
+        root: this.root,
+        hasSelection: this.selectedPaths.length >= 1 || !!this.lastSelectedPath,
+        editingPath: this.editingPath,
+        fileCount: (this.flatFiles || []).length
+      })
+      if (!res.action) return
+      if (res.preventDefault) e.preventDefault()
+      const handlers = {
+        copy: this.copySelected,
+        cut: this.cutSelected,
+        paste: this.pasteClipboard,
+        selectAll: this.selectAllFiles,
+        rename: () => this.startRename(this.focusTarget()),
+        delete: this.deleteFocused,
+        open: this.openFocused,
+        clearSelection: () => {
+          this.selectedPaths = []
+          this.selAnchor = ''
+          this.lastSelectedPath = ''
+        },
+        refresh: this.refresh,
+        home: () => this.focusAt(0),
+        end: () => this.focusAt(this.flatFiles.length - 1),
+        extendUp: () => this.extendSelection(-1),
+        extendDown: () => this.extendSelection(1),
+        moveUp: () => this.focusAt(this.focusIndex() - 1),
+        moveDown: () => this.focusAt(this.focusIndex() + 1)
+      }
+      const fn = handlers[res.action]
+      if (fn) fn.call(this)
+    },
+    // 全选（仅文件，排除目录）
+    selectAllFiles() {
+      this.selectedPaths = (this.flatFiles || []).filter(f => !f.isDir).map(f => f.path)
+      if (this.selectedPaths.length) this.selAnchor = this.selectedPaths[0]
+      this.lastSelectedPath = this.selectedPaths[this.selectedPaths.length - 1] || ''
+    },
+    // Shift+方向键：以 selAnchor 为锚点向 delta 方向逐步扩展选区
+    extendSelection(delta) {
+      const files = this.flatFiles || []
+      if (!files.length) return
+      const focusPath = this.selectedPaths[this.selectedPaths.length - 1] || this.selAnchor || this.lastSelectedPath
+      let i = files.findIndex(f => f.path === focusPath)
+      if (i < 0) i = 0
+      const next = Math.min(files.length - 1, Math.max(0, i + delta))
+      if (next === i) return
+      this.selectRange(files[next].path, false)
+    },
+    focusIndex() {
+      const files = this.flatFiles || []
+      const p = this.selectedPaths[this.selectedPaths.length - 1] || this.lastSelectedPath
+      const i = files.findIndex(f => f.path === p)
+      return i < 0 ? 0 : i
+    },
+    focusTarget() {
+      const p = this.selectedPaths[this.selectedPaths.length - 1] || this.lastSelectedPath || this.activePath
+      return this.flatFiles.find(n => n.path === p)
+    },
+    focusAt(i) {
+      const files = this.flatFiles || []
+      if (!files.length) return
+      const idx = Math.min(files.length - 1, Math.max(0, i))
+      const f = files[idx]
+      this.selectedPaths = [f.path]
+      this.selAnchor = f.path
+      this.lastSelectedPath = f.path
+      this.$nextTick(() => {
+        const el = this.$el && this.$el.querySelector ? this.$el.querySelector('.wsFile.selected') : null
+        if (el && el.scrollIntoView) el.scrollIntoView({ block: 'nearest' })
+      })
+    },
+    openFocused() {
+      const p = this.selectedPaths[this.selectedPaths.length - 1] || this.lastSelectedPath || this.activePath
+      const f = this.flatFiles.find(n => n.path === p && !n.isDir)
+      if (f) this.openFile(f)
+    },
+    deleteFocused() {
+      if (this.selectedPaths.length >= 1) return this.deleteSelected()
+      const p = this.lastSelectedPath || this.activePath
+      if (!p) return
+      const f = this.flatFiles.find(n => n.path === p && !n.isDir)
+      if (!f) return
+      this.selectedPaths = [p]
+      return this.deleteSelected()
     }
   }
 }
@@ -1227,6 +1453,19 @@ export default {
         white-space: nowrap;
         text-overflow: ellipsis;
       }
+      // 内联重命名输入框：贴合条目高度，与 macOS 输入框一致
+      .wsRenameInput {
+        flex: 1;
+        height: 20px;
+        min-width: 0;
+        padding: 0 4px;
+        font-size: 12px;
+        border: 1px solid var(--macos-accent, #409eff);
+        border-radius: 4px;
+        background: var(--macos-bg-glass-strong);
+        color: var(--macos-text);
+        outline: none;
+      }
       .wsDot {
         flex: none;
         color: var(--macos-warning, #e6a23c);
@@ -1261,6 +1500,27 @@ export default {
       }
       &.danger {
         color: var(--macos-danger, #f56c6c);
+      }
+      // 分隔线（<li class="wsSep"> 仅作视觉分隔，不响应点击）
+      &.wsSep {
+        height: 1px;
+        padding: 0;
+        margin: 4px 0;
+        background-color: var(--macos-divider);
+        cursor: default;
+        pointer-events: none;
+        &:hover {
+          background-color: var(--macos-divider);
+        }
+      }
+      // 不可用的菜单项（如「粘贴」无剪贴板内容时）
+      &.disabled {
+        color: var(--macos-text-2);
+        opacity: 0.5;
+        cursor: default;
+        &:hover {
+          background-color: transparent;
+        }
       }
     }
   }

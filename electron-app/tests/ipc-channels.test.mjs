@@ -14,7 +14,8 @@ const fsApiSrc = fs.readFileSync(path.join(root, '..', 'web', 'src', 'services',
 const CHANNELS = [
   'smm:pick-directory', 'smm:read-tree', 'smm:stat-many', 'smm:read-text',
   'smm:write-text', 'smm:write-binary', 'smm:mkdirp', 'smm:move', 'smm:trash',
-  'smm:watch', 'smm:unwatch', 'smm:open-external', 'smm:reveal-in-folder'
+  'smm:watch', 'smm:unwatch', 'smm:open-external', 'smm:reveal-in-folder',
+  'smm:copy-file'
 ]
 
 for (const ch of CHANNELS) {
@@ -26,8 +27,8 @@ for (const ch of CHANNELS) {
   })
 }
 
-test('通道总数 = 13（§7.2 表）', () => {
-  assert.strictEqual(CHANNELS.length, 13)
+test('通道总数 = 14（含文件列表「复制/新建副本」用的 smm:copy-file）', () => {
+  assert.strictEqual(CHANNELS.length, 14)
 })
 
 test('fs:event 推送使用 smm:fs-event 且合并窗口 400ms', () => {

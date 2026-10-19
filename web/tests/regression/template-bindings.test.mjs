@@ -680,7 +680,7 @@ test('[右键菜单] 外点关闭 + 文件/文件夹/空白分级菜单', () => 
   assert.ok(/@contextmenu\.prevent="onCtxBlank\(\$event\)"/.test(vue), '空白区域应挂 onCtxBlank')
   assert.ok(/@contextmenu\.prevent\.stop="onCtx\(\$event, f\)"/.test(vue), '文件行右键必须 stop 冒泡')
   // 3) 分级菜单项
-  assert.ok(/<li v-if="ctxMenu\.f && !ctxMenu\.f\.isDir" @click="openCtxFile">打开<\/li>/.test(vue), '文件菜单应有「打开」')
+  assert.ok(/@click="openCtxFile">打开<\/li>/.test(vue), '文件菜单应有「打开」')
   assert.ok(/@click="newFileNear">新建文件<\/li>/.test(vue), '应有「新建文件」')
   assert.ok(/@click="newFolderNear">新建文件夹<\/li>/.test(vue), '应有「新建文件夹」')
   assert.ok(/@click="showProps">属性<\/li>/.test(vue), '应有「属性」')
@@ -703,7 +703,7 @@ test('[新建文件] 输入框按扩展名决定 md/smm', () => {
 
 test('[文件右键] 重命名与删除文件', () => {
   const vue = read(new URL('pages/Edit/components/WorkspacePanel.vue', SRC))
-  assert.ok(/@click="renameCtxFile">重命名<\/li>/.test(vue), '文件菜单应有「重命名」')
+  assert.ok(/@click="startRename\(ctxMenu\.f\)">重命名<\/li>/.test(vue), '文件菜单应有「重命名」')
   assert.ok(/class="danger" @click="deleteCtxFile">/.test(vue), '文件菜单应有红色「删除文件」')
   assert.ok(/workspaceService\.move\(f\.path, to\)/.test(vue), '重命名应经服务层 move')
   assert.ok(/workspaceService\.trash\(\[f\.path\]\)/.test(vue), '删除应走回收站 trash（不物理删除）')
@@ -711,7 +711,7 @@ test('[文件右键] 重命名与删除文件', () => {
   assert.ok(/removeWorkbook\(hit\.id\)/.test(vue), '删除后应关闭已打开的标签')
   assert.ok(/移入回收站/.test(vue), '删除前应有确认（回收站语义）')
   const svc = read(new URL('services/workspaceService.js', SRC))
-  assert.ok(/mkdirp, move, trash/.test(svc), 'workspaceService 导出应含 move/trash')
+  assert.ok(/,\s*move,/.test(svc) && /,\s*trash,/.test(svc), 'workspaceService 导出应含 move/trash')
 })
 
 test('[多选删除] 批量删除应删除全部选中文件而非仅一个', () => {
@@ -770,19 +770,19 @@ test('[良性告警] 主进程 console-message 不得为良性告警弹原生框
   assert.ok(/ResizeObserver loop \(limit exceeded/.test(seg[0]), '主进程侧模式应与渲染端一致')
 })
 
-test('[文件树重命名同步] WorkspacePanel.renameCtxFile 改完状态后必须通知顶部标签栏刷新', () => {
+test('[文件树重命名同步] WorkspacePanel.tryCommitRename 改完状态后必须通知顶部标签栏刷新', () => {
   const vue = read(new URL('pages/Edit/components/WorkspacePanel.vue', SRC))
-  const seg = vue.match(/async renameCtxFile\(\)[\s\S]*?\n    },/)
-  assert.ok(seg, '找不到 renameCtxFile 方法')
+  const seg = vue.match(/async tryCommitRename\(f\)[\s\S]*?\n    },/)
+  assert.ok(seg, '找不到 tryCommitRename 方法')
   assert.ok(
     /renameWorkbook\(hit\.id, name, to\)/.test(seg[0]),
-    'renameCtxFile 应调用 renameWorkbook 更新标签名/路径'
+    'tryCommitRename 应调用 renameWorkbook 更新标签名/路径'
   )
   // 关键契约：renameWorkbook 改的是模块内 state，Index 的 workbooks 是快照副本，
   // 必须 emit workbook-list-changed 触发 refreshWorkbooks，否则顶部文件名栏不变。
   assert.ok(
     /this\.\$bus\.\$emit\('workbook-list-changed'\)/.test(seg[0]),
-    'renameCtxFile 必须 emit workbook-list-changed（否则顶部文件名栏不刷新生效）'
+    'tryCommitRename 必须 emit workbook-list-changed（否则顶部文件名栏不刷新生效）'
   )
   assert.ok(
     /this\.\$bus\.\$emit\('workbook-renamed'/.test(seg[0]),

@@ -183,6 +183,12 @@ export const createFsApi = (ctx = {}) => {
     const r = await a.move(from, to)
     return r && r.ok === false ? fail(err(r.code || 'E_MOVE', { absPath: from })) : ok({ from, to })
   }
+  async function copyFile(from, to) {
+    const a = api()
+    if (!a || typeof a.copyFile !== 'function') return fail(err('E_NOT_SUPPORTED', { absPath: from, method: 'copyFile' }))
+    const r = await a.copyFile(from, to)
+    return r && r.ok === false ? fail(err(r.code || 'E_COPY', { absPath: from, message: r.message })) : ok({ from, to, dest: r && r.dest })
+  }
   async function trash(paths) {
     const a = api()
     if (!a || typeof a.trash !== 'function') return fail(err('E_NOT_SUPPORTED', { method: 'trash' }))
@@ -204,7 +210,7 @@ export const createFsApi = (ctx = {}) => {
   return {
     readText, writeText, writeBinary, exists, stat, readTree,
     watch, unwatch, openExternal,
-    mkdirp, move, trash, revealInFolder, pickDirectory
+    mkdirp, move, copyFile, trash, revealInFolder, pickDirectory
   }
 }
 
