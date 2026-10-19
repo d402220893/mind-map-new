@@ -2,6 +2,7 @@
   <div
     class="workspacePanel"
     :class="{ isDark: isDark, collapsed: collapsed, resizing: resizing }"
+    tabindex="-1"
     @keydown="onPanelKey"
   >
     <!-- 右缘拖拽手柄：拖宽/拖窄文件栏（宽度走 CSS 变量，蓝缝/画布/sheet 栏同步跟随） -->
@@ -619,6 +620,9 @@ export default {
     //   - 普通左键点击=打开文件（并清空多选态）
     // 双击也显式打开（兼顾「双击打开文件」诉求）。
     onFileClick(e, f) {
+      // 鼠标点选后把键盘焦点收回到面板根 div，否则 @keydown 收不到事件，
+      // F2/Delete/Ctrl+C/V 等面板快捷键在点选后全部失效。
+      this.$nextTick(() => this.refocusPanel())
       if (f.isDir) {
         this.selectedPaths = []
         this.selAnchor = ''
@@ -1030,6 +1034,18 @@ export default {
     cancelRename() {
       this.editingPath = ''
       this.editingName = ''
+      // 重命名结束（Enter/Esc/失焦提交）后把焦点收回面板，让 F2/Delete 等立即可用。
+      // 若焦点已落到面板外可编辑区（如编辑器），则不抢焦点。
+      this.refocusPanel()
+    },
+    // 把键盘焦点收回到面板根 div（仅当当前焦点不在面板内、也不是外部可编辑区）。
+    // 避免：① 重命名框 blur 到编辑器时把焦点抢回面板；② 焦点已在过滤/重命名框时重复聚焦。
+    refocusPanel() {
+      const root = this.$el
+      if (!root || typeof root.focus !== 'function') return
+      const ae = document.activeElement
+      if (ae && (root.contains(ae) || isEditableTarget(ae))) return
+      root.focus({ preventScroll: true })
     },
     // 提交内联重命名：Enter / 失焦触发。返回 'committed' | 'noop' | 'invalid' | 'confirm-cancel'
     // （'invalid' → 调用方取消编辑态；'confirm-cancel' → 保留编辑态等待用户继续）
@@ -1189,6 +1205,9 @@ export default {
   position: relative;
   display: flex;
   flex-direction: column;
+  // tabindex=-1 使面板可收键盘焦点（F2/Delete/Ctrl+C 等快捷键生效），
+  // 但聚焦时不显示默认描边，避免整条侧栏出现难看的焦点框。
+  outline: none;
   // 宽度真源是 --ws-panel-w（syncPanelVars 发布），拖拽右缘实时改
   width: var(--ws-panel-w, 240px);
   height: 100%;
