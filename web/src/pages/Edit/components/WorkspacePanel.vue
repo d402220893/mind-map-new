@@ -205,7 +205,7 @@
         <li @click="newFileNear">新建文件</li>
         <li @click="newFolderNear">新建文件夹</li>
         <li class="wsSep"></li>
-        <li v-if="hasClipboard()" @click="pasteClipboard">粘贴</li>
+        <li v-if="clipboardReady()" @click="pasteClipboard">粘贴</li>
         <li v-else class="disabled">粘贴</li>
         <li class="wsSep"></li>
         <li @click="refresh">刷新</li>
@@ -1008,6 +1008,10 @@ export default {
       }
       if (clip.op === 'cut') clearClipboard()
       await this.refresh()
+    },
+    // 模板用：把导入的 fileClipboard.hasClipboard 暴露为组件方法（Options API 模板访问不到模块作用域的导入函数）
+    clipboardReady() {
+      return hasClipboard()
     },
     // ── 内联重命名（替代 $prompt，贴合资源管理器习惯）────────────────────────
     startRename(f) {
