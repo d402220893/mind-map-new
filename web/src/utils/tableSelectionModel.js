@@ -6,7 +6,43 @@
 // （经 toastTablePatch 已安全的 setCellSelection），选区不进撤销栈、不触发 onChange。
 import { findTableSelection } from './toastTablePatch.js'
 
-/** 从 <table> DOM 提取纯文本矩阵 string[][]（含表头 th）。 */
+/**
+ * 检测表格是否含合并单元格（colspan / rowspan > 1）。
+ * 合并单元格下 DOM 索引与 ProseMirror 逻辑坐标错配，拖选会「张冠李戴」，
+ * 因此调用方应在命中时降级禁用拖拽选区（仅保留单单元格编辑）。
+ */
+export function hasMergedCells(tableEl) {
+  if (!tableEl || !tableEl.querySelector) return false
+  const m = tableEl.querySelector('td[colspan], td[rowspan], th[colspan], th[rowspan]')
+  if (!m) return false
+  const cs = parseInt(m.getAttribute('colspan') || '1', 10)
+  const rs = parseInt(m.getAttribute('rowspan') || '1', 10)
+  return cs > 1 || rs > 1
+}
+
+// 提取单元格文本，保留换行（<br>/<p> 还原为 \n），不无脑压缩空白。
+// 真实 DOM 走 childNodes 遍历；无 childNodes 的精简 mock 回退 textContent。
+function cellInnerText(cellEl) {
+  if (!cellEl) return ''
+  if (typeof cellEl.childNodes === 'undefined') return (cellEl.textContent || '').replace(/\s+/g, ' ').trim()
+  let out = ''
+  const walk = node => {
+    const kids = node.childNodes || []
+    for (const ch of kids) {
+      if (ch.nodeType === 3) out += ch.nodeValue || ''
+      else if (ch.nodeName === 'BR') out += '\n'
+      else if (ch.nodeName === 'P') {
+        if (out && !out.endsWith('\n')) out += '\n'
+        walk(ch)
+        if (!out.endsWith('\n')) out += '\n'
+      } else walk(ch)
+    }
+  }
+  walk(cellEl)
+  return out.replace(/\s+$/, '')
+}
+
+/** 从 <table> DOM 提取纯文本矩阵 string[][]（含表头 th），保留单元格内换行。 */
 export function getMatrix(tableEl) {
   if (!tableEl || !tableEl.querySelectorAll) return []
   const out = []
@@ -14,7 +50,7 @@ export function getMatrix(tableEl) {
   rows.forEach(tr => {
     const cells = tr.children
     const row = []
-    for (let i = 0; i < cells.length; i++) row.push((cells[i].textContent || '').replace(/\s+/g, ' ').trim())
+    for (let i = 0; i < cells.length; i++) row.push(cellInnerText(cells[i]))
     out.push(row)
   })
   return out

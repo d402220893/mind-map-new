@@ -52,15 +52,19 @@ export function serializeTsv(matrix, rect) {
   return lines.join('\n')
 }
 
-/** 序列化为 <table> HTML 片段，便于粘贴到 Word / 邮件。 */
+/** 序列化为 <table> HTML 片段，便于粘贴到 Word / 邮件。
+ *  - 选区首行用 <th> 语义（Word 可识别表头）；
+ *  - 单元格内换行还原为 <br>（保留多行文本，避免样式审查报告的「换行丢失」）。 */
 export function serializeHtml(matrix, rect) {
   if (!matrix || !rect) return ''
   const { r0, c0, r1, c1 } = rect
   const esc = s => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+  const escCell = s => esc(s).replace(/\n/g, '<br>')
   let html = '<table>'
   for (let r = r0; r <= r1; r++) {
     html += '<tr>'
-    for (let c = c0; c <= c1; c++) html += '<td>' + esc(cellText(matrix, r, c)) + '</td>'
+    const tag = r === r0 ? 'th' : 'td'
+    for (let c = c0; c <= c1; c++) html += '<' + tag + '>' + escCell(cellText(matrix, r, c)) + '</' + tag + '>'
     html += '</tr>'
   }
   html += '</table>'

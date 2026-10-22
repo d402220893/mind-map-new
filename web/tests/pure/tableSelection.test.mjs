@@ -34,9 +34,14 @@ test('serializeTsv：空 rect / 越界坐标补空串', () => {
   assert.strictEqual(serializeTsv(M, { r0: 0, c0: 0, r1: 3, c1: 2 }), 'A\tB\tC\n1\t2\t3\nx\ty\tz\n\t\t')
 })
 
-test('serializeHtml：<table> 片段 + 转义', () => {
+test('serializeHtml：首行 <th> 语义 + 转义', () => {
   const html = serializeHtml([['a<b', 'c>d']], { r0: 0, c0: 0, r1: 0, c1: 1 })
-  assert.strictEqual(html, '<table><tr><td>a&lt;b</td><td>c&gt;d</td></tr></table>')
+  assert.strictEqual(html, '<table><tr><th>a&lt;b</th><th>c&gt;d</th></tr></table>')
+})
+
+test('serializeHtml：单元格内换行还原为 <br>', () => {
+  const html = serializeHtml([['line1\nline2', 'plain']], { r0: 0, c0: 0, r1: 0, c1: 1 })
+  assert.strictEqual(html, '<table><tr><th>line1<br>line2</th><th>plain</th></tr></table>')
 })
 
 test('serializeMd：首行表头 + 分隔线 + 管道转义', () => {

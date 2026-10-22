@@ -6,16 +6,25 @@
 //  - 行头选择条（左侧 overlay）为唯一的额外 DOM，且不修改表格本身。
 // 复制时从「我们自己的 DOM 矩阵」序列化为 TSV+HTML+MD，绕开原生 content() 崩溃路径。
 import { normalizeRect, serializeTsv, serializeHtml, serializeMd } from '../utils/tableSelection.js'
-import { getMatrix, cellCoordsFromEvent, applyNativeSelection } from '../utils/tableSelectionModel.js'
+import { getMatrix, cellCoordsFromEvent, applyNativeSelection, hasMergedCells } from '../utils/tableSelectionModel.js'
 
 export function createTableSelection({ getEditor, host, onError }) {
   const state = { active: false, anchor: null, focus: null, rows: 0, cols: 0, tableEl: null }
   let selecting = false
+  let pending = false // mousedown 后尚未判定是否拖选（延迟判定，避免抢文本选中）
+  let downPoint = null // { x, y, info }
   let rafPending = false
   let lastMove = null
   let gutter = null
   let gutterVisible = false
+  let scrollRaf = false
   let ctrlAStage = 0 // 0=未选表；1=已选表（下一次 Ctrl+A 升级为全文档）
+
+  // 当前是否无文本选区（用于延迟判定：拖字时不开启表格选区）
+  function noTextSelection() {
+    const s = window.getSelection && window.getSelection()
+    return !s || s.isCollapsed || !s.toString()
+  }
 
   const editor = () => (getEditor ? getEditor() : null)
   const view = () => {
@@ -59,26 +68,46 @@ export function createTableSelection({ getEditor, host, onError }) {
       reset()
       return
     }
+    // 合并单元格表格：DOM 索引与 ProseMirror 逻辑坐标错配 → 禁用整个选区功能
+    if (hasMergedCells(info.tableEl)) {
+      reset()
+      return
+    }
     // 单元格内已有文本选区 → 文本优先，不触发表格选区
     const sel = window.getSelection && window.getSelection()
     if (sel && !sel.isCollapsed && sel.anchorNode && info.tableEl.contains(sel.anchorNode)) return
-    selecting = true
-    state.tableEl = info.tableEl
-    state.rows = info.rows
-    state.cols = info.cols
-    setRect({ r: info.r, c: info.c }, { r: info.r, c: info.c })
-    applyNativeSelection(editor(), state.tableEl, state.anchor, state.focus)
+    // 延迟判定：先记录按下点，mousemove 位移 > 5px 且无文本选区才开启表格选区，
+    // 避免单元格内拖字被误判为拖表（现象 5）。
+    pending = true
+    downPoint = { x: e.clientX || 0, y: e.clientY || 0, info }
   }
 
   function onMouseMove(e) {
-    if (!selecting) return
     lastMove = e
+    if (!pending && !selecting) return
     if (rafPending) return
     rafPending = true
     // 高亮更新用 rAF 节流，拖动帧率不卡
     requestAnimationFrame(() => {
       rafPending = false
-      if (!selecting || !lastMove) return
+      if (!lastMove) return
+      if (pending && !selecting) {
+        const dx = (lastMove.clientX || 0) - downPoint.x
+        const dy = (lastMove.clientY || 0) - downPoint.y
+        // 位移超阈值且当前无文本选区 → 确认为表格拖选，开启选区
+        if (Math.hypot(dx, dy) > 5 && noTextSelection()) {
+          selecting = true
+          state.tableEl = downPoint.info.tableEl
+          state.rows = downPoint.info.rows
+          state.cols = downPoint.info.cols
+          setRect({ r: downPoint.info.r, c: downPoint.info.c }, { r: downPoint.info.r, c: downPoint.info.c })
+          applyNativeSelection(editor(), state.tableEl, state.anchor, state.focus)
+          return // 本次 mousemove 已激活单格高亮，不再重复更新
+        } else {
+          return
+        }
+      }
+      if (!selecting) return
       const info = cellCoordsFromEvent(lastMove)
       if (!info) return
       setRect(state.anchor, { r: info.r, c: info.c })
@@ -86,8 +115,21 @@ export function createTableSelection({ getEditor, host, onError }) {
     })
   }
 
-  function onMouseUp() {
+  function onMouseUp(e) {
+    // 单击单格（按下后未拖选、位移小、无文本选区）→ 选中单格，兼容原单击高亮
+    if (pending && !selecting && e) {
+      const dx = (e.clientX || 0) - downPoint.x
+      const dy = (e.clientY || 0) - downPoint.y
+      if (Math.hypot(dx, dy) <= 5 && noTextSelection()) {
+        state.tableEl = downPoint.info.tableEl
+        state.rows = downPoint.info.rows
+        state.cols = downPoint.info.cols
+        setRect({ r: downPoint.info.r, c: downPoint.info.c }, { r: downPoint.info.r, c: downPoint.info.c })
+        applyNativeSelection(editor(), state.tableEl, state.anchor, state.focus)
+      }
+    }
     selecting = false
+    pending = false
   }
 
   function onClick(e) {
@@ -98,6 +140,7 @@ export function createTableSelection({ getEditor, host, onError }) {
     if (!th) return
     const tableEl = th.closest('table')
     if (!tableEl) return
+    if (hasMergedCells(tableEl)) return // 合并单元格表格不行/列头选区
     const rows = Array.from(tableEl.querySelectorAll('tr'))
     if (rows.indexOf(th.parentNode) !== 0) return // 仅首行为列头
     const cells = Array.from(th.parentNode.children)
@@ -108,7 +151,7 @@ export function createTableSelection({ getEditor, host, onError }) {
   }
 
   function selectColumn(c) {
-    if (!state.tableEl) return
+    if (!state.tableEl || hasMergedCells(state.tableEl)) return
     refreshDims()
     setRect({ r: 0, c }, { r: state.rows - 1, c })
     applyNativeSelection(editor(), state.tableEl, state.anchor, state.focus)
@@ -116,7 +159,7 @@ export function createTableSelection({ getEditor, host, onError }) {
   }
 
   function selectRow(r) {
-    if (!state.tableEl) return
+    if (!state.tableEl || hasMergedCells(state.tableEl)) return
     refreshDims()
     setRect({ r, c: 0 }, { r, c: state.cols - 1 })
     applyNativeSelection(editor(), state.tableEl, state.anchor, state.focus)
@@ -125,7 +168,7 @@ export function createTableSelection({ getEditor, host, onError }) {
   }
 
   function selectAllTable() {
-    if (!state.tableEl) return
+    if (!state.tableEl || hasMergedCells(state.tableEl)) return
     refreshDims()
     setRect({ r: 0, c: 0 }, { r: state.rows - 1, c: state.cols - 1 })
     applyNativeSelection(editor(), state.tableEl, state.anchor, state.focus)
@@ -133,7 +176,7 @@ export function createTableSelection({ getEditor, host, onError }) {
   }
 
   function extendSelection(dir) {
-    if (!state.active || !state.tableEl) return false
+    if (!state.active || !state.tableEl || hasMergedCells(state.tableEl)) return false
     refreshDims()
     const f = { ...state.focus }
     if (dir === 'left') f.c = Math.max(0, f.c - 1)
@@ -189,14 +232,19 @@ export function createTableSelection({ getEditor, host, onError }) {
       ctrlAStage = 0
       return false
     }
-    if (ctrlAStage >= 1) {
-      ctrlAStage = 0
-      return false
-    }
     // 键盘直接 Ctrl+A 时可能尚无鼠标交互，补全已知表格 DOM
     if (!state.tableEl) {
       const t = tableElFromCaret()
       if (t) state.tableEl = t
+    }
+    // 合并单元格表格：坐标错配，直接放行浏览器默认（全文档选择），不走表格选区
+    if (state.tableEl && hasMergedCells(state.tableEl)) {
+      ctrlAStage = 0
+      return false
+    }
+    if (ctrlAStage >= 1) {
+      ctrlAStage = 0
+      return false
     }
     e.preventDefault()
     selectAllTable()
@@ -257,8 +305,20 @@ export function createTableSelection({ getEditor, host, onError }) {
     const t = e.target && e.target.closest ? e.target.closest('table') : null
     if (t) hideGutter()
   }
+  // 滚动时重定位行头条；rAF 节流避免高频重排；表格滚出视口则隐藏。
   function onScroll() {
-    if (gutterVisible && state.tableEl) showGutterFor(state.tableEl)
+    if (scrollRaf) return
+    scrollRaf = true
+    requestAnimationFrame(() => {
+      scrollRaf = false
+      if (!gutterVisible || !state.tableEl) return
+      const rect = state.tableEl.getBoundingClientRect()
+      if (rect.bottom < 0 || rect.top > (window.innerHeight || 0)) {
+        hideGutter()
+        return
+      }
+      showGutterFor(state.tableEl)
+    })
   }
 
   function bind() {
