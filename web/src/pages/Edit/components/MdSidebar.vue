@@ -1,10 +1,11 @@
 <template>
   <div>
-    <!-- 右侧竖排图标栏：视觉同款 SidebarTrigger.vue（自包含，不污染 vuex activeSidebar） -->
+    <!-- 右侧竖排图标栏：视觉同款 SidebarTrigger.vue（自包含，不污染 vuex activeSidebar）。
+         大纲已移至左侧文件栏（WorkspacePanel 视图切换），右栏只留「查找」 -->
     <div
       class="mdSidebarTrigger"
       @click.stop
-      :class="{ show: state !== 'hidden', hasActive: ['outline', 'search'].includes(state), isDark: isDark }"
+      :class="{ show: state !== 'hidden', hasActive: state === 'search', isDark: isDark }"
     >
       <div class="toggleShowBtn" :class="{ hide: state === 'hidden' }" @click="toggleShow">
         <span class="iconfont iconjiantouyou"></span>
@@ -28,29 +29,13 @@
     <div
       class="mdSidePanel"
       @click.stop
-      :class="{ show: ['outline', 'search'].includes(state), isDark: isDark }"
+      :class="{ show: state === 'search', isDark: isDark }"
     >
       <span class="closeBtn el-icon-close" @click="close"></span>
       <div class="panelHeader" v-if="activeTitle">{{ activeTitle }}</div>
       <div class="panelContent customScrollbar">
-        <!-- 大纲 -->
-        <template v-if="state === 'outline'">
-          <div v-if="!sections.length" class="panelEmpty">尚无标题</div>
-          <div
-            v-for="(s, i) in sections"
-            :key="s.id || i"
-            class="olItem"
-            :class="{ active: i === activeIndex }"
-            :style="{ paddingLeft: 10 + (s.level - 1) * 14 + 'px' }"
-            :title="s.title"
-            @click="jumpOutline(s)"
-          >
-            {{ s.title }}
-          </div>
-        </template>
-
         <!-- 查找 -->
-        <template v-else-if="state === 'search'">
+        <template v-if="state === 'search'">
           <div class="searchBox">
             <span class="searchIcon iconfont iconsousuo"></span>
             <input
@@ -85,19 +70,18 @@ import { mdDoc } from '@/utils/workspaceBridge'
 import { reduceSidebarState } from '@/utils/mdSidebarState'
 
 // md 编辑器右侧菜单栏：与思维导图右侧 SidebarTrigger+Sidebar 同款视觉。
-// 自包含（用本地 state 三态机，不写 vuex activeSidebar），避免与导图全局侧栏状态串。
+// 自包含（用本地 state 状态机，不写 vuex activeSidebar），避免与导图全局侧栏状态串。
+// 大纲已移至左侧文件栏（WorkspacePanel「文件树/大纲」视图切换），右栏只留「查找」。
 //
-// 三态机：'hidden' | 'icons' | 'outline' | 'search'
+// 三态机：'hidden' | 'icons' | 'search'
 // - hidden：图标栏整体隐藏（right:-60px），trigger 按钮不可达，因此不会从 hidden 直接进面板。
 // - icons ：只显示图标栏。
-// - outline / search：图标栏 + 对应面板展开。
+// - search：图标栏 + 查找面板展开。
 export default {
   name: 'MdSidebar',
   data() {
     return {
       state: 'icons', // 默认图标栏可见、面板关闭
-      sections: [],
-      activeIndex: -1,
       query: '',
       results: []
     }
@@ -108,26 +92,19 @@ export default {
     },
     items() {
       return [
-        { name: '大纲', value: 'outline', icon: 'iconfuhao-dagangshu' },
         { name: '查找', value: 'search', icon: 'iconsousuo' }
       ]
     },
     activeTitle() {
-      if (this.state === 'outline') return '大纲'
       if (this.state === 'search') return '查找'
       return ''
     }
   },
   created() {
-    this.$bus.$on('md-outline-changed', this.onOutline)
-    // 工具栏"目录"按钮（MdToolbar）发出的开关：打开大纲面板
-    this.$bus.$on('toggle-md-outline', this.openOutline)
     // 点击编辑器区域（focusin）自动收起面板（回到 icons，不隐藏图标栏）
     this.$bus.$on('md:sidebar-close-panel', this.close)
   },
   beforeUnmount() {
-    this.$bus.$off('md-outline-changed', this.onOutline)
-    this.$bus.$off('toggle-md-outline', this.openOutline)
     this.$bus.$off('md:sidebar-close-panel', this.close)
   },
   methods: {
@@ -144,25 +121,9 @@ export default {
       // dispatch 为同步赋值，此处 this.state 已是新值
       if (this.state === 'search') this.runSearch()
     },
-    openOutline() {
-      this.dispatch({ type: 'openOutline' })
-    },
     close() {
       // 仅收起面板（回到 icons），不隐藏图标栏，避免打断用户操作
       this.dispatch({ type: 'close' })
-    },
-
-    // ── 大纲 ──
-    onOutline({ sections }) {
-      this.sections = sections || []
-      this.activeIndex = -1
-    },
-    jumpOutline(s) {
-      this.activeIndex = this.sections.indexOf(s)
-      this.$bus.$emit('md-scroll-to-anchor', {
-        anchor: s.anchor,
-        line: s.startLine
-      })
     },
 
     // ── 查找 ──
@@ -238,7 +199,7 @@ export default {
 
   .toggleShowBtn {
     position: absolute;
-    // 完全放在图标栏左侧外部，视觉宽度缩到 16px，不再压住"大纲/查找"图标。
+    // 完全放在图标栏左侧外部，视觉宽度缩到 16px，不再压住「查找」图标。
     // 父子 DOM 结构下，只有 left 设为负的视觉宽度，才能彻底避开图标内容。
     left: -16px;
     width: 16px;
@@ -352,7 +313,6 @@ export default {
       color: var(--macos-text-2);
     }
 
-    .olItem,
     .srItem {
       color: var(--macos-text);
     }
@@ -417,27 +377,6 @@ export default {
     padding: 16px;
     color: var(--macos-text-2);
     font-size: 12px;
-  }
-
-  .olItem {
-    height: 28px;
-    line-height: 28px;
-    padding-right: 10px;
-    cursor: pointer;
-    overflow: hidden;
-    white-space: nowrap;
-    text-overflow: ellipsis;
-    color: var(--macos-text);
-    font-size: 12px;
-
-    &:hover {
-      background-color: var(--macos-hover);
-    }
-
-    &.active {
-      background-color: var(--macos-hover-strong);
-      color: var(--macos-accent);
-    }
   }
 
   // 查找

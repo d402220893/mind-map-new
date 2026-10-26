@@ -23,6 +23,7 @@
           v-if="!isZenMode && workspaceDocked"
           ref="wsPanel"
           :mindMap="activeMindMap"
+          :outlineEnabled="activeKind === 'markdown'"
           @collapse="wsCollapsed = $event"
         />
         <div class="mainCol">

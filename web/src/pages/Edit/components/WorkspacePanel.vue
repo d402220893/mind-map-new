@@ -51,6 +51,20 @@
       />
     </div>
 
+    <!-- 视图切换：大纲与文件树二选一（仅 md 模式提供大纲；大纲自右侧悬浮栏移入左栏） -->
+    <div v-if="outlineEnabled" class="wsViewTabs">
+      <span
+        class="wsViewTab"
+        :class="{ active: panelView === 'files' }"
+        @click="showFilesView"
+      >文件树</span>
+      <span
+        class="wsViewTab"
+        :class="{ active: panelView === 'outline' }"
+        @click="showOutlineView"
+      >大纲</span>
+    </div>
+
     <!-- 索引降级提示（§8.7 错误态：内联可操作） -->
     <div v-if="indexStatus === 'readonly-index'" class="wsNotice" @click="rebuild">
       ⚠ 未建立索引，点此重建
@@ -72,8 +86,24 @@
       class="wsBody customScrollbar"
       @contextmenu.prevent="onCtxBlank($event)"
     >
+      <!-- 大纲视图（md 模式）：点击标题跳正文；与文件树/搜索结果二选一 -->
+      <template v-if="outlineEnabled && panelView === 'outline'">
+        <div v-if="!outlineSections.length" class="wsEmptyTip">尚无标题</div>
+        <div
+          v-for="(s, i) in outlineSections"
+          :key="s.id || i"
+          class="wsOlItem"
+          :class="{ active: i === outlineActiveIndex }"
+          :style="{ paddingLeft: 10 + (s.level - 1) * 14 + 'px' }"
+          :title="s.title"
+          @click="jumpToOutline(s)"
+        >
+          {{ s.title }}
+        </div>
+      </template>
+
       <!-- 统一搜索结果（md 全文 + smm 导图内容，同屏展示） -->
-      <template v-if="hasSearchResult">
+      <template v-else-if="hasSearchResult">
         <div class="wsGroupTitle">
           搜索结果（导图 {{ smmHitCount }} · 文档 {{ (searchResults || []).length }}）
           <span class="wsLink" @click="clearSearch">清除</span>
@@ -226,6 +256,7 @@ import { validateFileName, splitName, baseNameOf, parentDir } from '@/utils/file
 import { setClipboard, getClipboard, clearClipboard, hasClipboard } from '@/utils/fileClipboard'
 import { resolveFileListKey } from '@/utils/fileListKeyboard'
 import { isEditableTarget } from '@/utils/shortcutGuard'
+import { reducePanelView } from '@/utils/panelViewState'
 
 export default {
   name: 'WorkspacePanel',
@@ -233,6 +264,11 @@ export default {
     mindMap: {
       type: Object,
       default: null
+    },
+    // md 模式才提供「大纲」视图（导图模式无 md 标题可解析，tab 整体隐藏）
+    outlineEnabled: {
+      type: Boolean,
+      default: false
     }
   },
   data() {
@@ -259,6 +295,9 @@ export default {
       collapsedDirs: [], // 已折叠目录（正斜杠归一化路径），按工作区 root 持久化到 localStorage
       collapseSmm: false, // 搜索结果「导图内容」分区折叠
       collapseMd: false, // 搜索结果「文档全文」分区折叠
+      panelView: 'files', // 左栏主体视图：'files' 文件树/搜索 | 'outline' 大纲（二选一，纯函数 panelViewState）
+      outlineSections: [], // 当前 md 文档标题大纲（md-outline-changed 广播；[{id,level,title,anchor,startLine}]）
+      outlineActiveIndex: -1, // 大纲当前跳转命中项（高亮）
       unsubs: [],
       rebuiltTimer: null,
       liveMindMap: null, // mindMap 实例（经 mindmap-inited 事件广播；prop 可能为 null）
@@ -317,6 +356,9 @@ export default {
     // 索引重建进度（§8.7）：L3 不 emit，由 workspaceService.progressRelay 上抛，
     // 经 workspaceBridge 转到 $bus；这里只消费。
     this.$bus.$on('index:rebuilding', this.onIndexProgress)
+    // md 大纲（MdEditor 渲染后广播）+ 工具栏「目录」按钮开关（MdToolbar 发出）
+    this.$bus.$on('md-outline-changed', this.onMdOutline)
+    this.$bus.$on('toggle-md-outline', this.openOutlineView)
     // 恢复上次拖拽的面板宽度并发布 CSS 变量（蓝缝/画布/sheet 栏都消费）
     try {
       const saved = parseInt(localStorage.getItem('wsPanelWidth') || '', 10)
@@ -348,6 +390,8 @@ export default {
     this.$bus.$off('workbook-switched', this.syncActive)
     this.$bus.$off('mindmap-inited', this.onMindmapInited)
     this.$bus.$off('index:rebuilding', this.onIndexProgress)
+    this.$bus.$off('md-outline-changed', this.onMdOutline)
+    this.$bus.$off('toggle-md-outline', this.openOutlineView)
     if (this.rebuiltTimer) clearTimeout(this.rebuiltTimer)
     ;(this.unsubs || []).forEach(fn => {
       try {
@@ -440,6 +484,36 @@ export default {
         this.progress = Math.max(0, Math.min(99, Math.round((p.scanned / p.total) * 100)))
       }
     },
+    // ── 大纲视图（md 模式；状态转换走纯函数 panelViewState，可单测）──
+    showFilesView() {
+      this.panelView = reducePanelView(this.panelView, { type: 'showFiles' })
+    },
+    showOutlineView() {
+      this.panelView = reducePanelView(this.panelView, {
+        type: 'showOutline',
+        outlineEnabled: this.outlineEnabled
+      })
+    },
+    // 工具栏「目录」按钮（MdToolbar 经 toggle-md-outline 广播）：切到大纲视图；
+    // 面板收起态下先展开，否则用户点了毫无反应
+    openOutlineView() {
+      this.showOutlineView()
+      if (this.collapsed) {
+        this.collapsed = false
+        this.$emit('collapse', false)
+        this.syncPanelVars()
+      }
+    },
+    // MdEditor 渲染后广播最新标题结构；切 tab 时旧编辑器卸载、新编辑器重新广播
+    onMdOutline(payload) {
+      this.outlineSections = (payload && payload.sections) || []
+      this.outlineActiveIndex = -1
+    },
+    jumpToOutline(s) {
+      this.outlineActiveIndex = this.outlineSections.indexOf(s)
+      // MdEditor 监听并滚动到对应标题（原右栏同款事件，消费方不变）
+      this.$bus.$emit('md-scroll-to-anchor', { anchor: s.anchor, line: s.startLine })
+    },
     async openFolder() {
       const r = await pickAndOpenWorkspace()
       if (!r.ok && r.error && r.error.code !== 'E_NOT_SUPPORTED') {
@@ -491,6 +565,8 @@ export default {
         this.smmResults = null
         return
       }
+      // 命中列表只出现在文件树视图；当前在大纲视图则切回，避免「搜了却看不到结果」
+      if (this.outlineEnabled) this.showFilesView()
       await Promise.all([this.runFullText(q), this.runSmmSearch(q)])
     },
     async runFullText(q) {
@@ -1314,6 +1390,56 @@ export default {
       &:focus {
         border-color: var(--macos-accent);
       }
+    }
+  }
+
+  // 视图切换（文件树/大纲二选一）：分段式小 tab，轻量风格同 wsInput；
+  // 颜色全走 --macos-* 变量，暗色随全局变量自动翻转（本组件无 .isDark 硬编码覆盖）
+  .wsViewTabs {
+    flex: none;
+    margin: 0 6px 6px;
+    display: flex;
+    gap: 2px;
+    padding: 2px;
+    border-radius: 6px;
+    background: var(--macos-bg-glass-strong);
+    .wsViewTab {
+      flex: 1;
+      height: 22px;
+      line-height: 22px;
+      text-align: center;
+      font-size: 12px;
+      border-radius: 4px;
+      cursor: pointer;
+      user-select: none;
+      color: var(--macos-text-2);
+      &:hover {
+        color: var(--macos-text);
+      }
+      &.active {
+        background: var(--macos-accent);
+        color: #fff;
+      }
+    }
+  }
+
+  // 大纲条目（自右栏 MdSidebar 的 .olItem 移植：缩进表层级，hover/active 同款反馈）
+  .wsOlItem {
+    height: 28px;
+    line-height: 28px;
+    padding-right: 10px;
+    cursor: pointer;
+    overflow: hidden;
+    white-space: nowrap;
+    text-overflow: ellipsis;
+    color: var(--macos-text);
+    font-size: 12px;
+    &:hover {
+      background-color: var(--macos-hover);
+    }
+    &.active {
+      background-color: var(--macos-hover-strong);
+      color: var(--macos-accent);
     }
   }
 
