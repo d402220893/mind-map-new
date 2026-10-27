@@ -199,13 +199,18 @@
       </template>
     </div>
 
-    <!-- 右键菜单：f=null 表示空白区域（作用目标是工作区根目录） -->
-    <ul
-      v-if="ctxMenu"
-      class="wsCtxMenu"
-      :style="{ left: ctxMenu.x + 'px', top: ctxMenu.y + 'px' }"
-      @click="ctxMenu = null"
-    >
+    <!-- 右键菜单：f=null 表示空白区域（作用目标是工作区根目录）。
+         Teleport 到 body：面板根带 backdrop-filter 会形成层叠上下文并收编 fixed 定位，
+         菜单留面板内会被右侧 fixed 画布盖住（只显示一半）；挂 body 后坐标即视口语义，正常显示。
+         样式在非 scoped 块（见文件末尾），Teleport 后 scoped 后代选择器会整条失配。 -->
+    <Teleport to="body">
+      <ul
+        v-if="ctxMenu"
+        ref="ctxMenuEl"
+        class="wsCtxMenu"
+        :style="{ left: ctxMenu.x + 'px', top: ctxMenu.y + 'px' }"
+        @click="ctxMenu = null"
+      >
       <!-- 文件右键：移除目录级操作（新建文件/新建文件夹），补 复制/剪切/新建副本 -->
       <template v-if="ctxMenu.f && !ctxMenu.f.isDir">
         <li @click="openCtxFile">打开</li>
@@ -242,7 +247,8 @@
         <li @click="refresh">刷新</li>
         <li @click="copyPath">复制当前目录路径</li>
       </template>
-    </ul>
+      </ul>
+    </Teleport>
   </div>
 </template>
 
@@ -257,6 +263,7 @@ import { setClipboard, getClipboard, clearClipboard, hasClipboard } from '@/util
 import { resolveFileListKey } from '@/utils/fileListKeyboard'
 import { isEditableTarget } from '@/utils/shortcutGuard'
 import { reducePanelView } from '@/utils/panelViewState'
+import { clampMenuPosition } from '@/utils/menuPosition'
 
 export default {
   name: 'WorkspacePanel',
@@ -801,12 +808,34 @@ export default {
     },
     onCtx(e, f) {
       this.ctxMenu = { x: e.clientX, y: e.clientY, f }
+      // Teleport 到 body 后下一帧实测尺寸，钳制到视口内（防贴边溢出）
+      this.$nextTick(() => this.clampCtxMenu())
     },
     // 空白区域右键：作用目标是工作区根目录（搜索结果区不弹新建菜单）
     onCtxBlank(e) {
       if (this.hasSearchResult) return
       if (!this.root) return
       this.ctxMenu = { x: e.clientX, y: e.clientY, f: null }
+      this.$nextTick(() => this.clampCtxMenu())
+    },
+    // 右键菜单坐标钳制：实测菜单尺寸后调用纯函数 clampMenuPosition 修正，
+    // 避免菜单贴窗口右/底缘时被裁切或溢出（Teleport 已解决画布遮挡问题，这是第二步）。
+    clampCtxMenu() {
+      if (!this.ctxMenu) return
+      const el = this.$refs.ctxMenuEl
+      if (!el) return
+      const mw = el.offsetWidth || 160
+      const mh = el.offsetHeight || 200
+      const pos = clampMenuPosition(
+        this.ctxMenu.x,
+        this.ctxMenu.y,
+        mw,
+        mh,
+        window.innerWidth,
+        window.innerHeight
+      )
+      this.ctxMenu.x = pos.x
+      this.ctxMenu.y = pos.y
     },
     // 全局外点关闭右键菜单（捕获阶段；点在菜单内部放行，由菜单 @click 处理）
     onGlobalClickClose(e) {
@@ -1627,52 +1656,6 @@ export default {
       color: var(--macos-text-2);
     }
   }
-
-  .wsCtxMenu {
-    position: fixed;
-    z-index: 3000;
-    margin: 0;
-    padding: 4px 0;
-    list-style: none;
-    min-width: 160px;
-    border: 1px solid var(--macos-border);
-    border-radius: 6px;
-    background: var(--macos-bg-glass-strong);
-    backdrop-filter: var(--macos-blur-strong);
-    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.18);
-    li {
-      padding: 5px 12px;
-      cursor: pointer;
-      font-size: 12px;
-      &:hover {
-        background-color: var(--macos-hover-strong);
-      }
-      &.danger {
-        color: var(--macos-danger, #f56c6c);
-      }
-      // 分隔线（<li class="wsSep"> 仅作视觉分隔，不响应点击）
-      &.wsSep {
-        height: 1px;
-        padding: 0;
-        margin: 4px 0;
-        background-color: var(--macos-divider);
-        cursor: default;
-        pointer-events: none;
-        &:hover {
-          background-color: var(--macos-divider);
-        }
-      }
-      // 不可用的菜单项（如「粘贴」无剪贴板内容时）
-      &.disabled {
-        color: var(--macos-text-2);
-        opacity: 0.5;
-        cursor: default;
-        &:hover {
-          background-color: transparent;
-        }
-      }
-    }
-  }
 }
 </style>
 
@@ -1731,6 +1714,56 @@ export default {
     left: 0;
     .wsPillIcon {
       transform: rotateZ(0deg);
+    }
+  }
+}
+
+// 右键菜单：Teleport 到 body 渲染，故必须放非 scoped（同 .wsPill——scoped 会编译成
+// 后代选择器 `.workspacePanel .wsCtxMenu[data-v-x]`，与 Teleport 后的 DOM 失配致整条失效）。
+// 视觉与面板内一致；暗色走 --macos-* 变量自动跟随。
+.wsCtxMenu {
+  position: fixed;
+  z-index: 3000;
+  margin: 0;
+  padding: 4px 0;
+  list-style: none;
+  min-width: 160px;
+  border: 1px solid var(--macos-border);
+  border-radius: 6px;
+  background: var(--macos-bg-glass-strong);
+  backdrop-filter: var(--macos-blur-strong);
+  -webkit-backdrop-filter: var(--macos-blur-strong);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.18);
+  li {
+    padding: 5px 12px;
+    cursor: pointer;
+    font-size: 12px;
+    &:hover {
+      background-color: var(--macos-hover-strong);
+    }
+    &.danger {
+      color: var(--macos-danger, #f56c6c);
+    }
+    // 分隔线（<li class="wsSep"> 仅作视觉分隔，不响应点击）
+    &.wsSep {
+      height: 1px;
+      padding: 0;
+      margin: 4px 0;
+      background-color: var(--macos-divider);
+      cursor: default;
+      pointer-events: none;
+      &:hover {
+        background-color: var(--macos-divider);
+      }
+    }
+    // 不可用的菜单项（如「粘贴」无剪贴板内容时）
+    &.disabled {
+      color: var(--macos-text-2);
+      opacity: 0.5;
+      cursor: default;
+      &:hover {
+        background-color: transparent;
+      }
     }
   }
 }

@@ -612,7 +612,10 @@ test('[蓝色竖条] wsPill 与右侧 SidebarTrigger 同款外观', () => {
     /&:hover\s+\.wsPillIcon\s*\{[^}]*opacity:\s*1/s.test(vue),
     '悬停时图标应显现'
   )
-  assert.ok(!/box-shadow/.test(vue.slice(vue.lastIndexOf('<style lang="less">'))), '蓝缝不应带阴影（与右侧无阴影观感一致）')
+  // ⚠️ 收紧到 .wsPill 规则块内：非 scoped 块现已承载 .wsCtxMenu（右键菜单，带 box-shadow
+  // 是正当的层级区分），不能因菜单有阴影误判蓝缝带阴影。真实意图是「蓝缝本身无阴影」。
+  const wsPillBlock = vue.match(/\.wsPill\s*\{[\s\S]*?\n\}/)
+  assert.ok(wsPillBlock && !/box-shadow/.test(wsPillBlock[0]), '蓝缝不应带阴影（与右侧无阴影观感一致）')
   assert.ok(/border-top-right-radius:\s*10px/.test(vue), '蓝条圆角应与右侧一致(10px)')
   assert.ok(/<Teleport to="body">/.test(vue), '蓝条必须 Teleport 到 body（否则被 fixed 画布盖住，收起后找不到）')
   assert.ok(/z-index:\s*3000/.test(vue), '蓝条 z-index 必须高于画布')
